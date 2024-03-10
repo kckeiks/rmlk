@@ -1,0 +1,26 @@
+#[derive(Debug)]
+#[repr(u8)]
+pub enum Op {
+    NoOp,
+    Dup,
+    Add,
+    Acc,
+    Sub,
+    Mul,
+    Div,
+    Sqr,
+    Sqrt,
+    Log,
+    Sum,
+    SumRows,
+    Mean,
+    Argmax,
+    Repeat,
+    RepeatBack,
+    Concat,
+    SiluBack,
+    Normalize,
+    RmsNormalize,
+    RmsNormalizeBack,
+    GroupNormalize,
+}
