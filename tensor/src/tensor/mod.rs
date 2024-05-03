@@ -125,6 +125,10 @@ where
         let ptr = Rc::new_in(RefCell::new(raw_tensor), alloc);
         Ok(Self::from_ptr(ptr))
     }
+
+    pub(crate) fn ptr(&self) -> RawTensorPtr<T, T::MetadataAlloc> {
+        self.inner.clone()
+    }
 }
 
 pub struct Builder<A: TensorAllocator> {

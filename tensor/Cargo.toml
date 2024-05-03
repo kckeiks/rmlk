@@ -6,3 +6,9 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
 bytes = {  version = "1.5", default-features = false }
+env_logger = { version = "0.11", optional = true }
+log = { version = "0.4", optional = true }
+
+[features]
+default = ["debug"]
+debug = ["env_logger", "log"]

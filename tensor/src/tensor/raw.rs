@@ -158,7 +158,7 @@ impl<A: TensorAllocator> RawTensor<A> {
 
         let mut section = &mut data[index..index + dtype.size()];
         let value = value.to_bytes();
-        MaybeUninit::write_slice(section, value.as_ref());
+        MaybeUninit::copy_from_slice(section, value.as_ref());
 
         Ok(())
     }
@@ -189,6 +189,7 @@ impl<A: TensorAllocator> RawTensor<A> {
 
         tensor_c.src[0] = Some(a);
         tensor_c.src[1] = Some(b);
+        tensor_c.op = op;
 
         Ok(tensor_c)
     }

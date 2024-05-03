@@ -1,12 +1,15 @@
 use crate::alloc::TensorAllocator;
 use crate::compute;
+use crate::compute::{ComputeError, Job, Plan, Worker};
 use crate::tensor::op::Op;
 use crate::tensor::raw::RawTensorPtr;
-use std::alloc::Allocator;
+use std::alloc::{Allocator, Global};
 use std::collections::{HashSet, VecDeque};
+use std::sync::mpsc;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
+#[derive(Debug)]
 pub enum GraphError {
     InvalidTensor,
     TensorNotFound,
@@ -20,6 +23,15 @@ pub enum Order {
 pub struct GraphBuilder<A> {
     alloc: A,
     order: Order,
+}
+
+impl GraphBuilder<Global> {
+    pub(crate) fn new() -> Self {
+        Self {
+            alloc: Global,
+            order: Order::EvalOrderLeftToRight,
+        }
+    }
 }
 
 impl<A: Allocator + Clone> GraphBuilder<A> {
@@ -82,10 +94,14 @@ impl<A: Allocator + Clone> GraphBuilder<A> {
             }
         }
 
+        let mut pool = Vec::new_in(self.alloc.clone());
+        pool.push(Worker::new());
+
         Ok(Graph {
             nodes,
             leaves,
             order: self.order,
+            pool,
         })
     }
 
@@ -99,10 +115,14 @@ impl<A: Allocator + Clone> GraphBuilder<A> {
 
         self.visit_parents(&mut nodes, &mut leaves, root.clone())?;
 
+        let mut pool = Vec::new_in(self.alloc.clone());
+        pool.push(Worker::new());
+
         Ok(Graph {
             nodes,
             leaves,
             order: self.order,
+            pool,
         })
     }
 
@@ -141,6 +161,7 @@ pub struct Graph<A: Allocator, T: TensorAllocator> {
     nodes: Vec<RawTensorPtr<T, T::MetadataAlloc>, A>,
     leaves: Vec<RawTensorPtr<T, T::MetadataAlloc>, A>,
     order: Order,
+    pool: Vec<Worker, A>,
 }
 
 impl<A, T> Graph<A, T>
@@ -154,12 +175,202 @@ where
             let dst = node.try_borrow().unwrap();
             match dst.op {
                 Op::Add => {
-                    unimplemented!()
+                    let (tx, rx) = mpsc::sync_channel(1);
+                    let worker = self.pool.first().unwrap();
+                    let a = dst.src[0]
+                        .as_ref()
+                        .expect("At least two operands to exist")
+                        .try_borrow()
+                        .map_err(|_| GraphError::TensorNotFound)?;
+                    let b = dst.src[1]
+                        .as_ref()
+                        .expect("At least two operands to exist")
+                        .try_borrow()
+                        .map_err(|_| GraphError::TensorNotFound)?;
+                    let job = Job {
+                        plan: Plan::Add {
+                            a: unsafe { a.light_tensor() },
+                            b: unsafe { b.light_tensor() },
+                            dst: unsafe { dst.light_tensor() },
+                            index: 0,
+                            total: 1,
+                        },
+                        finished: tx,
+                    };
+                    worker.execute(job).unwrap();
+                    let r = rx.recv().unwrap();
                 }
                 _ => unimplemented!(),
             }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::graph::GraphBuilder;
+    use crate::tensor::{Builder, Tensor};
+    use log::debug;
+
+    #[test]
+    fn test_graph_compute_1d() {
+        let mut builder = Builder::default();
+        let shape = [10];
+        let mut a = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            a.set(&[i], i as f32).unwrap();
+        }
+        let mut b = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            b.set(&[i], i as f32).unwrap();
+        }
+        let mut c = a.add(b).unwrap();
+        // Todo: `add` should initialize?
+        for i in 0..shape[0] {
+            c.set(&[i], 0.0f32).unwrap();
+        }
+        let mut graph_builder = GraphBuilder::new();
+        let graph = graph_builder.build_graph_rec(c.ptr()).unwrap();
+        graph.compute().unwrap();
+
+        let mut result = Vec::new();
+        for i in 0..shape[0] {
+            let val = c.get(&[i]).unwrap();
+            result.push(val);
+        }
+
+        let expected = vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0];
+
+        debug!("result={result:?}");
+        debug!("expected={expected:?}");
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_graph_compute_2d() {
+        let mut builder = Builder::default();
+        let shape = [10, 10];
+        let mut a = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                a.set(&[i, j], j as f32).unwrap();
+            }
+        }
+        let mut b = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                b.set(&[i, j], j as f32).unwrap();
+            }
+        }
+        let mut c = a.add(b).unwrap();
+        // Todo: `add` should initialize?
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                c.set(&[i, j], 0.0f32).unwrap();
+            }
+        }
+        let mut graph_builder = GraphBuilder::new();
+        let graph = graph_builder.build_graph_rec(c.ptr()).unwrap();
+        graph.compute().unwrap();
+
+        let mut result = Vec::new();
+        for i in 0..shape[0] {
+            let mut row = Vec::new();
+            for j in 0..shape[1] {
+                let val = c.get(&[i, j]).unwrap();
+                row.push(val);
+            }
+            result.push(row);
+        }
+
+        let expected = vec![
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+        ];
+
+        debug!("result={result:?}");
+        debug!("expected={expected:?}");
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_graph_compute_3d() {
+        let mut builder = Builder::default();
+        let shape = [10, 10, 10];
+        let mut a = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    a.set(&[i, j, k], k as f32).unwrap();
+                }
+            }
+        }
+        let mut b = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    b.set(&[i, j, k], k as f32).unwrap();
+                }
+            }
+        }
+        let mut c = a.add(b).unwrap();
+        // Todo: `add` should initialize?
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    c.set(&[i, j, k], 0.0f32).unwrap();
+                }
+            }
+        }
+        let mut graph_builder = GraphBuilder::new();
+        let graph = graph_builder.build_graph_rec(c.ptr()).unwrap();
+        graph.compute().unwrap();
+
+        let mut result = Vec::new();
+        for i in 0..shape[0] {
+            let mut row = Vec::new();
+            for j in 0..shape[1] {
+                let mut col = Vec::new();
+                for k in 0..shape[2] {
+                    let val = c.get(&[i, j, k]).unwrap();
+                    col.push(val);
+                }
+                row.push(col);
+            }
+            result.push(row);
+        }
+
+        let mut expected = Vec::new();
+        for i in 0..shape[0] {
+            expected.push(vec![
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+            ]);
+        }
+
+        debug!("result={result:?}");
+        debug!("expected={expected:?}");
+
+        assert_eq!(result, expected);
     }
 }
