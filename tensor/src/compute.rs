@@ -121,6 +121,7 @@ pub fn compute_forward_add(
 
     debug!("row_count={row_count};rows_per_thread={rows_per_thread};start={start};end={end}");
 
+    // Algorithm taken from llama.cpp.
     for i in start..end {
         let i03 = i / (a.shape[2] * a.shape[1]);
         let i02 = (i - i03 * a.shape[2] * a.shape[1]) / a.shape[1];
@@ -146,7 +147,7 @@ pub fn compute_forward_add(
             core::slice::from_raw_parts_mut(ptr, b.shape[0])
         };
         let src_b_ptr = unsafe {
-            let offset = (i03 * a.stride[3] + i02 * a.stride[2] + i01 * a.stride[1]);
+            let offset = (i13 * a.stride[3] + i12 * a.stride[2] + i11 * a.stride[1]);
             let ptr = b.data.as_mut()[offset..].as_mut_ptr() as *mut f32;
             core::slice::from_raw_parts_mut(ptr, b.shape[0])
         };
@@ -159,7 +160,9 @@ pub fn compute_forward_add(
         );
 
         for i in 0..nr0 {
-            for j in i..b.shape[0] {
+            // Todo: For broadcasting, we have to advance offset of `dst_ptr` and `src_a_ptr`
+            // by `i * src_b_ptr.shape[0]`.
+            for j in 0..b.shape[0] {
                 dst_ptr[j] = src_a_ptr[j] + src_b_ptr[j];
             }
         }

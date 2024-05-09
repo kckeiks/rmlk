@@ -373,4 +373,87 @@ mod test {
 
         assert_eq!(result, expected);
     }
+
+    #[test]
+    fn test_graph_compute_4d() {
+        let mut builder = Builder::default();
+        let shape = [10, 10, 10, 10];
+        let mut a = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    for l in 0..shape[3] {
+                        a.set(&[i, j, k, l], l as f32).unwrap();
+                    }
+                }
+            }
+        }
+        let mut b = builder.new_tensor::<f32>(&shape).unwrap();
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    for l in 0..shape[3] {
+                        b.set(&[i, j, k, l], l as f32).unwrap();
+                    }
+                }
+            }
+        }
+        let mut c = a.add(b).unwrap();
+        // Todo: `add` should initialize?
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                for k in 0..shape[2] {
+                    for l in 0..shape[3] {
+                        c.set(&[i, j, k, l], 0.0f32).unwrap();
+                    }
+                }
+            }
+        }
+        let mut graph_builder = GraphBuilder::new();
+        let graph = graph_builder.build_graph_rec(c.ptr()).unwrap();
+        graph.compute().unwrap();
+
+        let mut result = Vec::new();
+        for i in 0..shape[0] {
+            let mut arr2 = Vec::new();
+            for j in 0..shape[1] {
+                let mut arr3 = Vec::new();
+                for k in 0..shape[2] {
+                    let mut arr4 = Vec::new();
+                    for l in 0..shape[3] {
+                        let val = c.get(&[i, j, k, l]).unwrap();
+                        arr4.push(val);
+                    }
+                    arr3.push(arr4);
+                }
+                arr2.push(arr3);
+            }
+            result.push(arr2);
+        }
+
+        let mut expected = Vec::new();
+        for i in 0..shape[0] {
+            let mut row = Vec::new();
+            for j in 0..shape[1] {
+                row.push(vec![
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                    vec![0.0_f32, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+                ]);
+            }
+            expected.push(row);
+        }
+
+        debug!("result={result:?}");
+        debug!("expected={expected:?}");
+
+        assert_eq!(result, expected);
+    }
 }
