@@ -10,3 +10,7 @@ mod alloc;
 mod compute;
 mod graph;
 mod tensor;
+mod tensorv2;
+mod providers;
+
+pub use tensor::op::Op;
