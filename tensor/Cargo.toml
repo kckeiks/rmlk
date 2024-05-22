@@ -5,10 +5,13 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
-bytes = {  version = "1.5", default-features = false }
-env_logger = { version = "0.11", optional = true }
-log = { version = "0.4", optional = true }
+rmlk-cuda = { path = "../cuda" }
+cudarc = {  version = "0.11", default-features = false, features = ["cublas", "cuda-version-from-build-system", "driver", "f16"]}
+half = "2.4"
 
-[features]
-default = ["debug"]
-debug = ["env_logger", "log"]
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "bench_main"
+harness = false

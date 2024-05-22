@@ -3,5 +3,11 @@ name = "rmlk-cuda"
 version = "0.0.0"
 edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
+build = "build.rs"
 
 [dependencies]
+cudarc = {  version = "0.11", default-features = false, features = ["cuda-version-from-build-system", "driver"]}
+
+[build-dependencies]
+bindgen_cuda = "0.1.1"
+

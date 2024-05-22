@@ -1,8 +1,8 @@
-use std::alloc::Layout;
-use std::ptr::NonNull;
 use crate::tensor::dtype::DType;
 use crate::tensor::op::Op;
-use crate::tensor::raw::{MAX_DIMS, MAX_SRC, RawTensorPtr};
+use crate::tensor::raw::{RawTensorPtr, MAX_DIMS, MAX_SRC};
+use std::alloc::Layout;
+use std::ptr::NonNull;
 
 pub struct Tensor<A> {
     pub dtype: DType,
@@ -12,4 +12,3 @@ pub struct Tensor<A> {
     pub layout: Layout,
     pub data: Option<NonNull<[u8]>>,
 }
-

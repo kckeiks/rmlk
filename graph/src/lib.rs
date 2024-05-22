@@ -2,5 +2,3 @@
 
 mod graph;
 mod node;
-mod tensor;
-mod provider;
