@@ -9,8 +9,8 @@ pub fn gemm_config<T>(
     (b, m, n, k): (usize, usize, usize, usize),
     // Todo: Make Layout object.
     // (shape, stride)
-    (lhs_layout): (&[usize], &[usize]),
-    (rhs_layout): (&[usize], &[usize]),
+    lhs_layout: (&[usize], &[usize]),
+    rhs_layout: (&[usize], &[usize]),
 ) -> Result<StridedBatchedConfig<T>> {
     let rhs_stride = rhs_layout.1;
     let (transa, lda) = match rhs_stride {

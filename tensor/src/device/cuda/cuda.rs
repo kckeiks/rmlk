@@ -65,7 +65,7 @@ where
                     (rhs_shape, rhs_stride),
                 )
                 .unwrap();
-                let mut out = unsafe { self.device.alloc::<f32>(b * m * n).unwrap() };
+                let mut out_slice = unsafe { self.device.alloc::<f32>(b * m * n).unwrap() };
                 let cublas = CudaBlas::new(self.device.clone()).unwrap();
                 unsafe {
                     cuda::ops::matmul::gemm_stride_batched_f32(
@@ -73,10 +73,11 @@ where
                         config,
                         &rhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
                         &lhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
-                        &mut out,
+                        &mut out_slice,
                     )
                     .unwrap();
-                }
+                };
+                let _ = out.set_data(Arc::new(Data::F32(out_slice)));
             }
             DType::F64 => {
                 todo!()
@@ -378,5 +379,39 @@ mod test {
             .unwrap();
         let result = cuda.dtoh_f16(out_tensor.data().unwrap()).unwrap();
         assert_eq!(result, vec![f16::from_f32(6.0); elem_num])
+    }
+
+    #[test]
+    fn test_matmul_f32() {
+        let device = CudaDevice::new(0).unwrap();
+        let cuda = Cuda::new(device, Global);
+
+        let shape = [1, 2, 2];
+
+        let mut lhs_strides = [0usize; 3];
+        lhs_strides[2] = 1;
+        for i in (0..2).rev() {
+            lhs_strides[i] += lhs_strides[i + 1] * shape[i + 1];
+        }
+        let mut rhs_strides = [0usize; 3];
+        rhs_strides[2] = 1;
+        for i in (0..2).rev() {
+            rhs_strides[i] += rhs_strides[i + 1] * shape[i + 1];
+        }
+
+        let mut lhs_tensor = Tensor::new(DType::F32, shape.to_vec(), lhs_strides.to_vec());
+        let mut rhs_tensor = Tensor::new(DType::F32, shape.to_vec(), rhs_strides.to_vec());
+        let mut out_tensor = Tensor::new(DType::F32, shape.to_vec(), lhs_strides.to_vec());
+
+        let lhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();
+        let rhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();
+
+        lhs_tensor.set_data(Arc::new(lhs_data));
+        rhs_tensor.set_data(Arc::new(rhs_data));
+
+        cuda.matmul(&lhs_tensor, &rhs_tensor, &mut out_tensor)
+            .unwrap();
+        let result = cuda.dtoh_f32(out_tensor.data().unwrap()).unwrap();
+        assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }
 }
