@@ -5,6 +5,7 @@ use crate::device::{cuda, Device, Error};
 use crate::dtype::DType;
 use crate::op::Op;
 use crate::tensor::Tensor;
+use cudarc::cublas::CudaBlas;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
 use std::alloc::Allocator;
@@ -35,7 +36,56 @@ where
         Self { alloc, device }
     }
 
-    pub fn kernel(&self, op: Op, dtype: DType) -> cuda::Result<CudaFunction> {
+    pub fn matmul(
+        &self,
+        lhs: &Tensor<Self>,
+        rhs: &Tensor<Self>,
+        out: &mut Tensor<Self>,
+    ) -> Result<()> {
+        let lhs_shape = lhs.shape();
+        let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
+        let m = lhs_shape[lhs_shape.len() - 2];
+        let k = lhs_shape[lhs_shape.len() - 1];
+
+        let rhs_shape = rhs.shape();
+        let n = rhs_shape[rhs_shape.len() - 2];
+
+        match *lhs.dtype() {
+            DType::F16 => {
+                todo!()
+            }
+            DType::F32 => {
+                let lhs_stride = lhs.stride();
+                let rhs_stride = rhs.stride();
+                let config = cuda::ops::matmul::gemm_config::<f32>(
+                    1.0,
+                    0.0,
+                    (b, m, n, k),
+                    (lhs_shape, lhs_stride),
+                    (rhs_shape, rhs_stride),
+                )
+                .unwrap();
+                let mut out = unsafe { self.device.alloc::<f32>(b * m * n).unwrap() };
+                let cublas = CudaBlas::new(self.device.clone()).unwrap();
+                unsafe {
+                    cuda::ops::matmul::gemm_stride_batched_f32(
+                        &cublas,
+                        config,
+                        &rhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
+                        &lhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
+                        &mut out,
+                    )
+                    .unwrap();
+                }
+            }
+            DType::F64 => {
+                todo!()
+            }
+        }
+        Ok(())
+    }
+
+    fn kernel(&self, op: Op, dtype: DType) -> cuda::Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],

@@ -58,7 +58,7 @@ pub fn gemm_config<T>(
     })
 }
 
-unsafe fn gemm_stride_batched_f32(
+pub unsafe fn gemm_stride_batched_f32(
     cublas: &CudaBlas,
     config: StridedBatchedConfig<f32>,
     a: &CudaView<f32>,
