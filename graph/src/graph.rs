@@ -13,23 +13,33 @@ pub enum GraphError {
 
 pub struct GraphBuilder<D: Device> {
     nodes: HashMap<Vec<u8, D::Allocator>, NonNull<Node<D>>>,
-    roots: HashSet<NonNull<Node<D>>>,
+    input: HashSet<Vec<u8, D::Allocator>>,
+    outputs: HashSet<Vec<u8, D::Allocator>>,
 }
 
 impl<D> GraphBuilder<D>
 where
     D: Device,
 {
-    pub fn new(device: D) -> Self {
+    pub fn new(_device: D) -> Self {
         Self {
             nodes: HashMap::new(),
-            roots: HashSet::new(),
+            input: HashSet::new(),
+            outputs: HashSet::new(),
         }
     }
 
     pub fn insert(&mut self, id: Vec<u8, D::Allocator>, node: Node<D>) -> Option<NonNull<Node<D>>> {
         let ptr = NonNull::new(Box::into_raw(Box::new(node))).expect("dada");
         self.nodes.insert(id, ptr)
+    }
+
+    pub fn insert_input(&mut self, id: Vec<u8, D::Allocator>) {
+        self.input.insert(id.clone());
+    }
+
+    pub fn insert_output(&mut self, id: Vec<u8, D::Allocator>) {
+        self.outputs.insert(id.clone());
     }
 
     pub fn get(&self, id: &Vec<u8, D::Allocator>) -> Option<NonNull<Node<D>>> {
@@ -51,31 +61,43 @@ where
             dst.as_mut().input_link(src);
             src.as_mut().output_link(dst);
         }
-        self.roots.insert(dst);
         Ok(())
     }
 
     pub fn build(self) -> Graph<D> {
         Graph {
+            inputs: self.input,
+            outputs: self.outputs,
             nodes: self.nodes,
-            initializers: self.roots,
         }
     }
 }
 
 pub struct Graph<D: Device> {
+    inputs: HashSet<Vec<u8, D::Allocator>>,
+    outputs: HashSet<Vec<u8, D::Allocator>>,
     nodes: HashMap<Vec<u8, D::Allocator>, NonNull<Node<D>>>,
-    initializers: HashSet<NonNull<Node<D>>>,
 }
 
 impl<D> Graph<D>
 where
     D: Device,
 {
+    pub fn outputs(&self) -> impl Iterator<Item = NonNull<Node<D>>> + '_ {
+        self.nodes
+            .iter()
+            .filter(|(k, v)| self.outputs.contains(*k))
+            .map(|(_, v)| *v)
+    }
+
     pub fn forward(&mut self) -> Result<()> {
-        for mut node in self.initializers.iter().copied() {
+        for (id, mut node) in self.nodes.iter_mut() {
+            if self.inputs.contains(id) {
+                continue;
+            }
+
             unsafe {
-                node.as_mut().execute();
+                node.as_mut().execute().map_err(|_| GraphError::InvalidTensor)?;
             }
         }
 
@@ -85,7 +107,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::device::{CpuDevice, Device, EncodedTensor, MockTensor};
+    use crate::device::{CpuDevice, CpuTensor, Device, EncodedTensor};
     use crate::graph::GraphBuilder;
     use crate::node::Node;
 
@@ -100,7 +122,6 @@ mod test {
                     value: 1,
                 })
                 .unwrap(),
-            (),
             device.allocator(),
         );
         let tensor_b = Node::<CpuDevice>::new(
@@ -110,19 +131,20 @@ mod test {
                     value: 1,
                 })
                 .unwrap(),
-            (),
             device.allocator(),
         );
         let tensor_c = Node::<CpuDevice>::new(
             device
                 .new_tensor(EncodedTensor { op: true, value: 0 })
                 .unwrap(),
-            (),
             device.allocator(),
         );
         builder.insert("a".to_string().into_bytes(), tensor_a);
+        builder.insert_input("a".to_string().into_bytes());
         builder.insert("b".to_string().into_bytes(), tensor_b);
+        builder.insert_input("b".to_string().into_bytes());
         builder.insert("c".to_string().into_bytes(), tensor_c);
+        builder.insert_output("c".to_string().into_bytes());
         builder
             .link(&"c".to_string().into_bytes(), &"a".to_string().into_bytes())
             .unwrap();
@@ -131,11 +153,17 @@ mod test {
             .unwrap();
         let mut graph = builder.build();
         graph.forward().unwrap();
-        let c_ = graph.nodes.get(&"c".to_string().into_bytes()).unwrap();
-        let node = graph.initializers.get(c_).unwrap();
-        assert_eq!(
-            unsafe { node.as_ref().tensor() },
-            &MockTensor { value: Some(2) }
-        );
+        let len = graph.outputs().count();
+        assert_eq!(len, 1);
+        for node in graph.outputs() {
+            let tensor = unsafe { node.as_ref().tensor() };
+            assert_eq!(
+                tensor,
+                &CpuTensor {
+                    op: Some(()),
+                    value: 2
+                }
+            );
+        }
     }
 }

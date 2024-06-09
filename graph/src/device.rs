@@ -1,6 +1,5 @@
 use crate::node::Node;
 use std::alloc::{Allocator, Global};
-use std::ops::Add;
 use std::ptr::NonNull;
 
 #[derive(Debug)]
@@ -11,26 +10,24 @@ pub enum DeviceError {
 pub type Result<T> = std::result::Result<T, DeviceError>;
 
 pub trait Device: Clone {
-    type Tensor: TensorTr<Self> + TryFrom<EncodedTensor, Error = DeviceError>;
+    type Tensor: Tensor<Self>;
     type Allocator: Allocator + Clone;
-    type Op;
     fn allocator(&self) -> Self::Allocator;
-
-    fn new_tensor(&self, input: EncodedTensor) -> Result<Self::Tensor> {
-        input.try_into()
-    }
+    fn new_tensor(&self, input: EncodedTensor) -> Result<Self::Tensor>;
 }
 
 #[derive(Clone)]
 pub struct CpuDevice;
 
 impl Device for CpuDevice {
-    type Tensor = MockTensor;
+    type Tensor = CpuTensor;
     type Allocator = Global;
-    type Op = ();
-
     fn allocator(&self) -> Self::Allocator {
         Global
+    }
+
+    fn new_tensor(&self, input: EncodedTensor) -> Result<Self::Tensor> {
+        input.try_into()
     }
 }
 
@@ -40,42 +37,41 @@ pub struct EncodedTensor {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MockTensor {
-    pub(crate) value: Option<u32>,
+pub struct CpuTensor {
+    pub(crate) op: Option<()>,
+    pub(crate) value: u32,
 }
 
-impl Add for MockTensor {
-    type Output = Self;
+pub trait Tensor<D: Device> {
+    type Op;
+    fn op(&self) -> Option<Self::Op>;
+    fn forward(&mut self, inputs: &[NonNull<Node<D>>]) -> Result<()>;
+}
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            value: Some(self.value.unwrap() + rhs.value.unwrap()),
-        }
+impl Tensor<CpuDevice> for CpuTensor {
+    type Op = ();
+
+    fn op(&self) -> Option<Self::Op> {
+        self.op
     }
-}
 
-pub trait TensorTr<D: Device> {
-    fn execute(&mut self, inputs: &[NonNull<Node<D>>]) -> Result<()>;
-}
-
-impl TensorTr<CpuDevice> for MockTensor {
-    fn execute(&mut self, inputs: &[NonNull<Node<CpuDevice>>]) -> Result<()> {
-        let mut sum = 0;
-        for input in inputs.iter().copied() {
-            unsafe {
-                *self = *self + *input.as_ref().tensor();
-            }
-        }
+    fn forward(&mut self, inputs: &[NonNull<Node<CpuDevice>>]) -> Result<()> {
+        let a = inputs.get(0).unwrap();
+        let b = inputs.get(1).unwrap();
+        let tensor_a = unsafe { a.as_ref().tensor() };
+        let tensor_b = unsafe { b.as_ref().tensor() };
+        self.value = tensor_a.value + tensor_b.value;
         Ok(())
     }
 }
 
-impl TryFrom<EncodedTensor> for MockTensor {
+impl TryFrom<EncodedTensor> for CpuTensor {
     type Error = DeviceError;
 
     fn try_from(value: EncodedTensor) -> Result<Self> {
         Ok(Self {
-            value: Some(value.value),
+            op: if value.op { Some(()) } else { None },
+            value: value.value,
         })
     }
 }

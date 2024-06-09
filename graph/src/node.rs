@@ -1,12 +1,12 @@
-use crate::device::{Device, TensorTr};
-use std::alloc::{Allocator, Global};
+use crate::device::{Device, Tensor};
 use std::ptr::NonNull;
 
+pub type Result<T> = std::result::Result<T, ()>;
 pub type Link<F> = Option<NonNull<Node<F>>>;
 
 pub struct Node<D: Device> {
+    /// The tensor.
     tensor: D::Tensor,
-    op: D::Op,
     // Order from left to right.
     // Input nodes where self is the op and output.
     inputs: Vec<NonNull<Node<D>>, D::Allocator>,
@@ -19,10 +19,9 @@ impl<D> Node<D>
 where
     D: Device,
 {
-    pub fn new(tensor: D::Tensor, op: D::Op, allocator: D::Allocator) -> Self {
+    pub fn new(tensor: D::Tensor, allocator: D::Allocator) -> Self {
         Self {
             tensor,
-            op,
             inputs: Vec::new_in(allocator.clone()),
             outputs: Vec::new_in(allocator),
         }
@@ -31,8 +30,8 @@ where
         &self.tensor
     }
 
-    pub fn op(&self) -> &D::Op {
-        &self.op
+    pub fn op(&self) -> Option<<D::Tensor as Tensor<D>>::Op> {
+        self.tensor.op()
     }
 
     pub fn inputs(&self) -> &[NonNull<Node<D>>] {
@@ -59,7 +58,8 @@ where
         self.outputs.push(node);
     }
 
-    pub fn execute(&mut self) {
-        self.tensor.execute(self.inputs.as_slice()).unwrap();
+    pub fn execute(&mut self) -> Result<()> {
+        self.tensor.forward(self.inputs.as_slice()).unwrap();
+        Ok(())
     }
 }
