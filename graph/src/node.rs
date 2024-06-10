@@ -1,5 +1,5 @@
-use crate::device::{Device, Tensor};
 use std::ptr::NonNull;
+use crate::device::{Device, Tensor};
 
 pub type Result<T> = std::result::Result<T, ()>;
 pub type Link<F> = Option<NonNull<Node<F>>>;

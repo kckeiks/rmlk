@@ -107,7 +107,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::device::{CpuDevice, CpuTensor, Device, EncodedTensor};
+    use crate::device::{cpu::{CpuDevice, CpuTensor}, Device, EncodedTensor};
     use crate::graph::GraphBuilder;
     use crate::node::Node;
 
