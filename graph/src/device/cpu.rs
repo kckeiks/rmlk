@@ -1,8 +1,8 @@
+use crate::device;
+use crate::device::{Device, Tensor};
+use crate::node::Node;
 use std::alloc::Global;
 use std::ptr::NonNull;
-use crate::device;
-use crate::device::{Device, DeviceError, EncodedTensor, Tensor};
-use crate::node::Node;
 
 #[derive(Clone)]
 pub struct CpuDevice;
@@ -14,8 +14,8 @@ impl Device for CpuDevice {
         Global
     }
 
-    fn new_tensor(&self, input: EncodedTensor) -> device::Result<Self::Tensor> {
-        input.try_into()
+    fn tensor(&self, _input: rmlk_hir::Tensor) -> device::Result<Self::Tensor> {
+        todo!()
     }
 }
 
@@ -39,16 +39,5 @@ impl Tensor<CpuDevice> for CpuTensor {
         let tensor_b = unsafe { b.as_ref().tensor() };
         self.value = tensor_a.value + tensor_b.value;
         Ok(())
-    }
-}
-
-impl TryFrom<EncodedTensor> for CpuTensor {
-    type Error = DeviceError;
-
-    fn try_from(value: EncodedTensor) -> device::Result<Self> {
-        Ok(Self {
-            op: if value.op { Some(()) } else { None },
-            value: value.value,
-        })
     }
 }

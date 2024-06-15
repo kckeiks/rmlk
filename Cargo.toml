@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["fonnx", "graph", "runtime", "poc", "tensor"]
+members = ["graph", "runtime", "poc", "hir", "tensor"]
 
 [workspace.dependencies]
 criterion = { version = "0.5", default-features = false }

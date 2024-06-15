@@ -29,8 +29,8 @@ enum AttributeType {
 }
 
 pub struct ValueInfo {
-    name: String,
-    ty: Type,
-    doc_string: Option<String>,
-    metadata_props: Vec<StringStringEntryProto>,
+    pub name: String,
+    pub ty: Type,
+    pub doc_string: Option<String>,
+    pub metadata_props: Vec<StringStringEntryProto>,
 }

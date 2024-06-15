@@ -7,8 +7,8 @@ pub struct Type {
 }
 
 enum InnerType {
+    Map { map: HashMap<i32, Type> },
     Tensor { elem_type: i32, shape: TensorShape },
     Sequence { elem_type: Vec<Type> },
-    Map { map: HashMap<i32, Type> },
     SparseTensor { elem_type: i32, shape: TensorShape },
 }

@@ -1,30 +1,24 @@
-pub mod cpu;
+mod cpu;
 
+use crate::node::Node;
+pub use cpu::{CpuDevice, CpuTensor};
 use std::alloc::Allocator;
 use std::ptr::NonNull;
-use crate::node::Node;
+
+pub type Result<T> = std::result::Result<T, DeviceError>;
 
 #[derive(Debug)]
 pub enum DeviceError {
     Unknown,
 }
 
-pub type Result<T> = std::result::Result<T, DeviceError>;
-
 pub trait Device: Clone {
     type Tensor: Tensor<Self>;
     type Allocator: Allocator + Clone;
     fn allocator(&self) -> Self::Allocator;
-    fn new_tensor(&self, input: EncodedTensor) -> Result<Self::Tensor>;
-}
-
-pub struct EncodedTensor {
-    pub op: bool,
-    pub value: u32,
+    fn tensor(&self, input: rmlk_hir::Tensor) -> Result<Self::Tensor>;
 }
 
 pub trait Tensor<D: Device> {
-    type Op;
-    fn op(&self) -> Option<Self::Op>;
-    fn forward(&mut self, inputs: &[NonNull<Node<D>>]) -> Result<()>;
+    fn forward(&mut self, inputs: &[Node<D>]) -> Result<()>;
 }

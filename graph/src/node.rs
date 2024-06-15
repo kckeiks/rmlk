@@ -1,65 +1,74 @@
-use std::ptr::NonNull;
 use crate::device::{Device, Tensor};
+use crate::op::Op;
 
-pub type Result<T> = std::result::Result<T, ()>;
-pub type Link<F> = Option<NonNull<Node<F>>>;
+pub type Result<T> = std::result::Result<T, NodeError>;
+
+pub enum NodeError {
+    Unknown,
+}
 
 pub struct Node<D: Device> {
+    /// The device.
+    device: D,
+    /// The identifier of the operator for this tensor.
+    op: Op,
     /// The tensor.
-    tensor: D::Tensor,
+    tensor: Option<D::Tensor>,
     // Order from left to right.
     // Input nodes where self is the op and output.
-    inputs: Vec<NonNull<Node<D>>, D::Allocator>,
+    inputs: Vec<usize, D::Allocator>,
     // Order from left to right.
     // Output node where self is the input.
-    outputs: Vec<NonNull<Node<D>>, D::Allocator>,
+    outputs: Vec<usize, D::Allocator>,
 }
 
 impl<D> Node<D>
 where
     D: Device,
 {
-    pub fn new(tensor: D::Tensor, allocator: D::Allocator) -> Self {
+    pub fn new(op: Op, device: D) -> Self {
         Self {
-            tensor,
-            inputs: Vec::new_in(allocator.clone()),
-            outputs: Vec::new_in(allocator),
+            op,
+            tensor: None,
+            inputs: Vec::new_in(device.allocator()),
+            outputs: Vec::new_in(device.allocator()),
+            device,
         }
     }
+
     pub fn tensor(&self) -> &D::Tensor {
         &self.tensor
     }
 
-    pub fn op(&self) -> Option<<D::Tensor as Tensor<D>>::Op> {
-        self.tensor.op()
+    pub fn op(&self) -> Op {
+        self.op
     }
 
-    pub fn inputs(&self) -> &[NonNull<Node<D>>] {
+    pub fn inputs(&self) -> &[usize] {
         self.inputs.as_slice()
     }
 
-    pub fn outputs(&self) -> &[NonNull<Node<D>>] {
-        self.outputs.as_slice()
-    }
-
-    pub fn inputs_mut(&mut self) -> &mut Vec<NonNull<Node<D>>, D::Allocator> {
+    pub fn inputs_mut(&mut self) -> &mut Vec<Node<D>, D::Allocator> {
         self.inputs.as_mut()
     }
 
-    pub fn outputs_mut(&mut self) -> &mut Vec<NonNull<Node<D>>, D::Allocator> {
-        self.outputs.as_mut()
+    pub fn set_input(&mut self, node_id: usize) {
+        self.inputs.push(node_id);
     }
 
-    pub unsafe fn input_link(&mut self, node: NonNull<Node<D>>) {
-        self.inputs.push(node);
+    pub fn outputs(&self) -> &[usize] {
+        self.outputs.as_slice()
     }
 
-    pub unsafe fn output_link(&mut self, node: NonNull<Node<D>>) {
-        self.outputs.push(node);
+    pub fn set_output(&mut self, node_id: usize) {
+        self.outputs.push(node_id);
     }
 
-    pub fn execute(&mut self) -> Result<()> {
-        self.tensor.forward(self.inputs.as_slice()).unwrap();
-        Ok(())
+    pub fn execute(&mut self, inputs: &[Node<D>]) -> Result<()> {
+        self.tensor
+            .as_mut()
+            .ok_or(NodeError::Unknown)?
+            .forward(inputs)
+            .map_err(|_| NodeError::Unknown)
     }
 }
