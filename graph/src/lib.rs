@@ -5,7 +5,7 @@ pub mod device;
 mod graph;
 mod node;
 mod op;
-mod order;
+mod traversal;
 
 pub use builder::GraphBuilder;
 pub use node::Node;

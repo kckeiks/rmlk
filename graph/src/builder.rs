@@ -1,19 +1,17 @@
 use crate::device::Device;
-use crate::graph::Graph;
+use crate::graph::{Graph, GraphError};
 use crate::node::Node;
+use crate::traversal;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub type Result<T> = std::result::Result<T, BuilderError>;
-
-pub enum BuilderError {
-    Unknown,
-}
+pub type Result<T> = std::result::Result<T, GraphError>;
 
 pub struct GraphBuilder<D: Device> {
     /// The device.
     device: D,
     /// All the nodes in the graph.
-    nodes: Vec<Node<D>, D::Allocator>,
+    nodes: Vec<Arc<Node<D>, D::Allocator>, D::Allocator>,
     /// Inputs of the graph.
     input: Vec<usize, D::Allocator>,
     /// Outputs of the graph.
@@ -38,7 +36,7 @@ where
 
     pub fn add_node(&mut self, node: Node<D>) -> Result<usize> {
         let id = self.nodes.len();
-        self.nodes.push(node);
+        self.nodes.push(Arc::new_in(node, self.device.allocator()));
         Ok(id)
     }
 
@@ -59,9 +57,17 @@ where
     }
 
     pub fn build(self) -> Result<Graph<D>> {
-        for output in self.outputs {
-            let node = self.nodes.get(output).expect("TODO");
-            for input in node.inputs() {}
-        }
+        let (_, operations) = traversal::compute_order(
+            self.nodes.as_slice(),
+            self.outputs.as_slice(),
+            self.device.allocator(),
+        )?;
+
+        Ok(Graph::new(
+            self.device,
+            self.nodes,
+            self.outputs,
+            operations,
+        ))
     }
 }

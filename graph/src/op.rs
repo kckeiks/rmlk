@@ -4,6 +4,9 @@ use std::str::FromStr;
 pub enum Op {
     NoOp,
     Add,
+    Mul,
+    MatMul,
+    Sub,
 }
 
 impl FromStr for Op {

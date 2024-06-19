@@ -1,9 +1,12 @@
 use crate::model::StringStringEntryProto;
 
 pub struct Tensor {
-    pub dims: Vec<i64>,
+    pub dims: Vec<usize>,
     pub data_type: Option<DataType>,
-    pub segment: Segment,
+    // For very large tensors, we may want to store them in chunks, in which
+    // case the following fields will specify the segment that is stored in
+    // the current TensorProto.
+    pub segment: Option<Segment>,
     // For float and complex64 values
     // Complex64 tensors are encoded as a single array of floats,
     // with the real components appearing in odd numbered positions,
@@ -37,10 +40,36 @@ pub struct Tensor {
     // - "length" (optional) - number of bytes containing data. Integer stored as string.
     // - "checksum" (optional) - SHA1 digest of file specified in under 'location' key.
     pub external_data: Vec<StringStringEntryProto>,
+    // Location of the data for this tensor. MUST be one of:
+    // - DEFAULT - data stored inside the protobuf message. Data is stored in raw_data (if set) otherwise in type-specified field.
+    // - EXTERNAL - data stored in an external location as described by external_data field.
+    // If value not set, data is stored in raw_data (if set) otherwise in type-specified field.
     pub data_location: DataLocation,
     pub double_data: Vec<f64>,
     pub uint64_data: Vec<u64>,
     pub metadata_props: Vec<StringStringEntryProto>,
+}
+
+impl Default for Tensor {
+    fn default() -> Self {
+        Self {
+            dims: vec![],
+            data_type: None,
+            segment: None,
+            float_data: vec![],
+            int32_data: vec![],
+            string_data: vec![],
+            int64_data: vec![],
+            name: None,
+            doc_string: None,
+            raw_data: None,
+            external_data: vec![],
+            data_location: DataLocation::Default,
+            double_data: vec![],
+            uint64_data: vec![],
+            metadata_props: vec![],
+        }
+    }
 }
 
 enum DataLocation {
@@ -48,6 +77,7 @@ enum DataLocation {
     External,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DataType {
     Undefined,
     Float,

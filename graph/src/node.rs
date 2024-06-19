@@ -1,9 +1,12 @@
 use crate::device::{Device, Tensor};
 use crate::op::Op;
+use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, NodeError>;
 
+#[derive(Debug)]
 pub enum NodeError {
+    ExecuteNoOpAttempt,
     Unknown,
 }
 
@@ -13,7 +16,7 @@ pub struct Node<D: Device> {
     /// The identifier of the operator for this tensor.
     op: Op,
     /// The tensor.
-    tensor: Option<D::Tensor>,
+    tensor: D::Tensor,
     // Order from left to right.
     // Input nodes where self is the op and output.
     inputs: Vec<usize, D::Allocator>,
@@ -29,7 +32,17 @@ where
     pub fn new(op: Op, device: D) -> Self {
         Self {
             op,
-            tensor: None,
+            tensor: device.tensor(),
+            inputs: Vec::new_in(device.allocator()),
+            outputs: Vec::new_in(device.allocator()),
+            device,
+        }
+    }
+
+    pub fn new_with_tensor(op: Op, device: D, tensor: D::Tensor) -> Self {
+        Self {
+            op,
+            tensor,
             inputs: Vec::new_in(device.allocator()),
             outputs: Vec::new_in(device.allocator()),
             device,
@@ -40,6 +53,10 @@ where
         &self.tensor
     }
 
+    pub fn set_tensor(&mut self, tensor: D::Tensor) {
+        self.tensor = tensor;
+    }
+
     pub fn op(&self) -> Op {
         self.op
     }
@@ -48,7 +65,7 @@ where
         self.inputs.as_slice()
     }
 
-    pub fn inputs_mut(&mut self) -> &mut Vec<Node<D>, D::Allocator> {
+    pub fn inputs_mut(&mut self) -> &mut Vec<usize, D::Allocator> {
         self.inputs.as_mut()
     }
 
@@ -64,11 +81,16 @@ where
         self.outputs.push(node_id);
     }
 
-    pub fn execute(&mut self, inputs: &[Node<D>]) -> Result<()> {
+    pub fn execute(
+        &mut self,
+        inputs: impl Iterator<Item = Arc<Node<D>, D::Allocator>>,
+    ) -> Result<()> {
+        if matches!(self.op, Op::NoOp) {
+            return Err(NodeError::ExecuteNoOpAttempt);
+        }
+
         self.tensor
-            .as_mut()
-            .ok_or(NodeError::Unknown)?
-            .forward(inputs)
+            .compute(self.op, inputs)
             .map_err(|_| NodeError::Unknown)
     }
 }
