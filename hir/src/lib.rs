@@ -5,6 +5,7 @@ mod node;
 mod op;
 mod tensor;
 mod types;
+mod onnx;
 
 pub use attributes::*;
 pub use graph::*;

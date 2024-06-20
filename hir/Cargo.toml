@@ -5,3 +5,4 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
+quick-protobuf = "0.8"
