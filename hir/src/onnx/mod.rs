@@ -1,2 +1,3 @@
-// Automatically generated mod.rs
-pub mod onnx;
+mod pb;
+
+pub use pb::onnx::*;

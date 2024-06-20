@@ -1,5 +1,7 @@
 use crate::attributes::Attribute;
+use crate::error::Error;
 use crate::model::StringStringEntryProto;
+use crate::onnx::NodeProto;
 
 pub struct Node {
     // Input nodes.
@@ -21,4 +23,40 @@ pub struct Node {
     pub doc_string: Option<String>,
     // Named metadata values; keys should be distinct.
     pub metadata_props: Vec<StringStringEntryProto>,
+}
+
+impl TryFrom<NodeProto<'_>> for Node {
+    type Error = Error;
+
+    fn try_from(value: NodeProto) -> Result<Self, Self::Error> {
+        let mut attribute = Vec::new();
+        for attr in value.attribute {
+            attribute.push(attr.try_into()?);
+        }
+
+        let mut metadata_props = Vec::new();
+        for props in value.metadata_props {
+            metadata_props.push(props.into());
+        }
+
+        Ok(Self {
+            input: value
+                .input
+                .into_iter()
+                .map(|input| input.to_string())
+                .collect(),
+            output: value
+                .output
+                .into_iter()
+                .map(|output| output.to_string())
+                .collect(),
+            name: value.name.map(|name| name.to_string()),
+            op_type: value.op_type.map(|op_type| op_type.to_string()),
+            domain: value.domain.map(|domain| domain.to_string()),
+            overload: value.overload.map(|overload| overload.to_string()),
+            attribute,
+            doc_string: value.doc_string.map(|doc| doc.to_string()),
+            metadata_props,
+        })
+    }
 }
