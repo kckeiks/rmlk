@@ -8,6 +8,7 @@ mod op;
 mod tensor;
 mod types;
 
+pub use onnx::ModelProto;
 pub use attributes::*;
 pub use graph::*;
 pub use model::*;
