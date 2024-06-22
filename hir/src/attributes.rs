@@ -57,12 +57,11 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     .to_vec(),
             ),
             onnx::mod_AttributeProto::AttributeType::TENSOR => AttributeType::Tensor(
-                value
+                Tensor::from_onnx_tensor(value
                     .t
                     .ok_or(Error::MissingField {
                         name: "Attribute::t".to_string(),
-                    })?
-                    .try_into()?,
+                    })?)?,
             ),
             onnx::mod_AttributeProto::AttributeType::GRAPH => AttributeType::Graph(
                 value
@@ -96,7 +95,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
             onnx::mod_AttributeProto::AttributeType::TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.tensors.into_iter() {
-                    tensors.push(tensor_proto.try_into()?);
+                    tensors.push(Tensor::from_onnx_tensor(tensor_proto)?);
                 }
                 AttributeType::Tensors(tensors)
             }

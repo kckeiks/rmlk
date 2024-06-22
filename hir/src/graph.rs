@@ -52,7 +52,7 @@ impl TryFrom<GraphProto<'_>> for Graph {
 
         let mut initializer = Vec::new();
         for tensor in value.initializer {
-            initializer.push(tensor.try_into()?);
+            initializer.push(Tensor::from_onnx_tensor(tensor)?);
         }
 
         let mut sparse_initializer = Vec::new();

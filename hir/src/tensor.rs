@@ -1,8 +1,12 @@
+use std::fs::File;
+use std::io::{Read, Seek};
+use std::os::unix::fs::FileExt;
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx;
 use crate::onnx::mod_TensorShapeProto::mod_Dimension::OneOfvalue;
 use crate::onnx::{TensorProto, TensorShapeProto};
+use crate::onnx::mod_TensorProto::DataLocation;
 
 pub struct Tensor {
     pub dims: Vec<usize>,
@@ -43,12 +47,12 @@ pub struct Tensor {
     //                         Offset values SHOULD be multiples 4096 (page size) to enable mmap support.
     // - "length" (optional) - number of bytes containing data. Integer stored as string.
     // - "checksum" (optional) - SHA1 digest of file specified in under 'location' key.
-    pub external_data: Vec<StringStringEntryProto>,
+    // pub external_data: Vec<StringStringEntryProto>,
     // Location of the data for this tensor. MUST be one of:
     // - DEFAULT - data stored inside the protobuf message. Data is stored in raw_data (if set) otherwise in type-specified field.
     // - EXTERNAL - data stored in an external location as described by external_data field.
     // If value not set, data is stored in raw_data (if set) otherwise in type-specified field.
-    pub data_location: Option<DataLocation>,
+    // pub data_location: Option<DataLocation>,
     pub double_data: Vec<f64>,
     pub uint64_data: Vec<u64>,
     pub metadata_props: Vec<StringStringEntryProto>,
@@ -67,8 +71,6 @@ impl Default for Tensor {
             name: None,
             doc_string: None,
             raw_data: None,
-            external_data: vec![],
-            data_location: Some(DataLocation::Default),
             double_data: vec![],
             uint64_data: vec![],
             metadata_props: vec![],
@@ -76,18 +78,69 @@ impl Default for Tensor {
     }
 }
 
-impl TryFrom<TensorProto<'_>> for Tensor {
-    type Error = Error;
+impl Tensor {
+    pub fn from_onnx_tensor(value: TensorProto) -> Result<Self, Error> {
+        let external_data = match value.data_location {
+            None | Some(DataLocation::DEFAULT) => {
+                None
+            }
+            Some(DataLocation::EXTERNAL) => {
+                let mut location = None;
+                let mut offset = None;
+                let mut length = None;
+                // Todo: Handle checksum.
+                let mut _checksum = None;
+                for entry in value.external_data {
+                    let key = entry.key.as_ref().ok_or(Error::MissingField { name: "Tensor::external_data::key".to_string() })?;
+                    match key.as_ref() {
+                        "location" if location.is_none() => {
+                            location = Some(entry.value.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?);
+                        }
+                        "offset" => {
+                            offset = Some(entry.value.ok_or(Error::InvalidValue { field: "offset".to_string(), value: "None".to_string() })?);
+                        }
+                        "length" => {
+                            length = Some(entry.value.ok_or(Error::InvalidValue { field: "length".to_string(), value: "None".to_string() })?);
+                        }
+                        "checksum" => {
+                            _checksum = Some(entry.value.ok_or(Error::InvalidValue { field: "checksum".to_string(), value: "None".to_string() })?);
+                        }
+                        entry => return Err(Error::UnknownEntry { name: entry.to_string() }),
+                    }
+                }
 
-    fn try_from(value: TensorProto) -> Result<Self, Self::Error> {
-        Ok(Self {
+                let location = location.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?;
+                let mut file = File::open(location.as_ref()).map_err(|_| Error::Unknown)?;
+                if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
+                    let offset_str = offset.unwrap();
+                    let length_str = length.unwrap();
+                    let offset = offset_str.parse().map_err(|_| Error::Unknown)?;
+                    let length = length_str.parse().map_err(|_| Error::Unknown)?;
+                    let mut buf = vec![0; length];
+                    file.read_at(&mut buf, offset).map_err(|_| Error::Unknown)?;
+                    Some(buf)
+                } else {
+                    let mut buf = Vec::new();
+                    file.read_to_end(&mut buf).map_err(|_| Error::Unknown)?;
+                    Some(buf)
+                }
+            }
+        };
+
+        let data_type: DataType = value
+            .data_type
+            .ok_or(Error::MissingField {
+                name: "Tensor::data_type".to_string(),
+            })?
+            .try_into()?;
+
+        if !data_type.is_supported() {
+            return Err(Error::NotSupported);
+        }
+
+        let mut res = Self {
             dims: value.dims.into_iter().map(|d| d as usize).collect(),
-            data_type: value
-                .data_type
-                .ok_or(Error::MissingField {
-                    name: "Tensor::data_type".to_string(),
-                })?
-                .try_into()?,
+            data_type,
             segment: None,
             float_data: value.float_data.to_vec(),
             int32_data: value.int32_data.to_vec(),
@@ -100,26 +153,84 @@ impl TryFrom<TensorProto<'_>> for Tensor {
             name: value.name.map(|name| name.to_string()),
             doc_string: value.doc_string.map(|doc| doc.to_string()),
             raw_data: value.raw_data.map(|data| data.to_vec()),
-            external_data: value.external_data.into_iter().map(From::from).collect(),
-            data_location: value.data_location.map(From::from),
             double_data: value.double_data.to_vec(),
             uint64_data: value.uint64_data,
             metadata_props: value.metadata_props.into_iter().map(From::from).collect(),
-        })
-    }
-}
+        };
 
-enum DataLocation {
-    Default,
-    External,
-}
-
-impl From<onnx::mod_TensorProto::DataLocation> for DataLocation {
-    fn from(value: onnx::mod_TensorProto::DataLocation) -> Self {
-        match value {
-            onnx::mod_TensorProto::DataLocation::DEFAULT => Self::Default,
-            onnx::mod_TensorProto::DataLocation::EXTERNAL => Self::External,
+        if let Some(data) = external_data {
+            match res.data_type {
+                DataType::Undefined => {
+                    return Err(Error::Invalid);
+                }
+                DataType::Int8 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Float => {
+                    res.float_data = u8_to_f32_vec(data.as_slice())?;
+                }
+                DataType::Double => {
+                    res.double_data = u8_to_f64_vec(data.as_slice())?;
+                }
+                DataType::Uint8 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Uint16 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Int16 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Int32 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Uint32 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Int64 => {
+                    res.int64_data = u8_to_i64_vec(data.as_slice())?;
+                }
+                DataType::Uint64 => {
+                    res.uint64_data = u8_to_u64_vec(data.as_slice())?;
+                }
+                DataType::String => {}
+                DataType::Bool => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Float16 => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Bfloat16 => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Complex64 => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Complex128 => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Float8E4M3FN => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Float8E4M3FNUZ => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Float8E5M2 => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Float8E5M2FNUZ => {
+                    return Err(Error::NotSupported);
+                }
+                DataType::Uint4 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+                DataType::Int4 => {
+                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
+                }
+            }
         }
+
+        Ok(res)
     }
 }
 
@@ -148,6 +259,82 @@ pub enum DataType {
     Float8E5M2FNUZ,
     Uint4,
     Int4,
+}
+
+impl DataType {
+    pub fn is_supported(&self) -> bool {
+        match self {
+            DataType::Undefined => {
+                false
+            }
+            DataType::Int8 => {
+                true
+            }
+            DataType::Float => {
+                true
+            }
+            DataType::Double => {
+                true
+            }
+            DataType::Uint8 => {
+                true
+            }
+            DataType::Uint16 => {
+                true
+            }
+            DataType::Int16 => {
+                true
+            }
+            DataType::Int32 => {
+                true
+            }
+            DataType::Uint32 => {
+                true
+            }
+            DataType::Int64 => {
+                true
+            }
+            DataType::Uint64 => {
+                true
+            }
+            DataType::String => {
+                true
+            }
+            DataType::Bool => {
+                true
+            }
+            DataType::Float16 => {
+                false
+            }
+            DataType::Bfloat16 => {
+                false
+            }
+            DataType::Complex64 => {
+                false
+            }
+            DataType::Complex128 => {
+                false
+            }
+            DataType::Float8E4M3FN => {
+                false
+            }
+            DataType::Float8E4M3FNUZ => {
+                false
+            }
+            DataType::Float8E5M2 => {
+                false
+            }
+            DataType::Float8E5M2FNUZ => {
+                false
+            }
+            DataType::Uint4 => {
+                true
+            }
+            DataType::Int4 => {
+                true
+            }
+        }
+    }
 }
 
 impl TryFrom<i32> for DataType {
@@ -245,8 +432,8 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
 
     fn try_from(value: onnx::SparseTensorProto) -> Result<Self, Self::Error> {
         Ok(SparseTensor {
-            values: value.values.map(|t| t.try_into()).transpose()?,
-            indices: value.indices.map(|t| t.try_into()).transpose()?,
+            values: value.values.map(|t| Tensor::from_onnx_tensor(t)).transpose()?,
+            indices: value.indices.map(|t| Tensor::from_onnx_tensor(t)).transpose()?,
             dims: value.dims,
         })
     }
@@ -314,4 +501,49 @@ impl TryFrom<TensorShapeProto<'_>> for TensorShape {
 
         Ok(Self { dim })
     }
+}
+
+fn u8_to_i32_vec(v: &[u8]) -> Result<Vec<i32>, Error> {
+    let mut res = Vec::with_capacity(v.len()/4);
+    for chunk in v.chunks_exact(4) {
+        res.push(i32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+    }
+
+    Ok(res)
+}
+
+fn u8_to_i64_vec(v: &[u8]) -> Result<Vec<i64>, Error> {
+    let mut res = Vec::with_capacity(v.len()/8);
+    for chunk in v.chunks_exact(8) {
+        res.push(i64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+    }
+
+    Ok(res)
+}
+
+fn u8_to_u64_vec(v: &[u8]) -> Result<Vec<u64>, Error> {
+    let mut res = Vec::with_capacity(v.len()/8);
+    for chunk in v.chunks_exact(8) {
+        res.push(u64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+    }
+
+    Ok(res)
+}
+
+fn u8_to_f32_vec(v: &[u8]) -> Result<Vec<f32>, Error> {
+    let mut res = Vec::with_capacity(v.len()/4);
+    for chunk in v.chunks_exact(4) {
+        res.push(f32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+    }
+
+    Ok(res)
+}
+
+fn u8_to_f64_vec(v: &[u8]) -> Result<Vec<f64>, Error> {
+    let mut res = Vec::with_capacity(v.len()/8);
+    for chunk in v.chunks_exact(8) {
+        res.push(f64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+    }
+
+    Ok(res)
 }

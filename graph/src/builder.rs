@@ -34,7 +34,7 @@ where
         }
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Arc<Node<D>>> {
+    pub fn get_node(&self, id: usize) -> Option<&Arc<Node<D>, D::Allocator>> {
         self.nodes.get(id)
     }
 

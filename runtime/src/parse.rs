@@ -39,12 +39,13 @@ pub fn parse_ir_graph(ir_graph: rmlk_hir::Graph) -> Result<()> {
             .ok_or(Error::Unknown)?
             .map_err(|_| Error::Unknown)?;
         let mut node = Node::new(op, device.clone());
-        let node_id = builder.add_node(node).expect("TODO");
 
         for name in ir_node.input.iter() {
             let input_node_id = builder.get_store_id_by_name(name).ok_or(Error::MissingInputNode)?;
             node.set_input(input_node_id);
         }
+
+        let node_id = builder.add_node(node).expect("TODO");
 
         for name in ir_node.output {
             builder.store_id_by_name(name, node_id);
@@ -81,11 +82,11 @@ mod test {
 
     #[test]
     fn test_load_model() {
-        let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx").expect("bad");
+        let model = fs::read("/Users/acadia/Repo/notebooks/resnet34/model.resnet34.with.external.data.onnx").expect("bad");
         let mut reader = BytesReader::from_bytes(&model);
         let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
 
-        println!("{:?}\n", model_proto.graph.as_ref().unwrap().input);
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().initializer);
         println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(0).unwrap());
         println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(1).unwrap());
         println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(2).unwrap());
