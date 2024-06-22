@@ -1,7 +1,7 @@
 use crate::device::{Device, DeviceError, Tensor};
 use crate::node::Node;
 use crate::{device, Op};
-use rmlk_hir::DataType;
+use rmlk_hir::{DataType, TensorShape};
 use std::alloc::Global;
 use std::sync::Arc;
 
@@ -15,16 +15,7 @@ impl Device for CpuDevice {
         Global
     }
 
-    fn tensor(&self) -> Self::Tensor {
-        CpuTensor {
-            dtype: DataType::Undefined,
-            stride: Vec::new(),
-            shape: Vec::new(),
-            data: Vec::new(),
-        }
-    }
-
-    fn tensor_from_hir(&self, input: rmlk_hir::Tensor) -> device::Result<Self::Tensor> {
+    fn tensor(&self, input: rmlk_hir::Tensor) -> device::Result<Self::Tensor> {
         let shape = input.dims;
         let mut stride = vec![0; shape.len()];
         stride[shape.len() - 1] = 1;
@@ -33,10 +24,25 @@ impl Device for CpuDevice {
         }
 
         Ok(CpuTensor {
-            dtype: input.data_type.unwrap_or(DataType::Undefined),
+            dtype: input.data_type,
             stride,
             shape,
             data: input.float_data,
+        })
+    }
+
+    fn tensor_from_value(&self, data_type: DataType, shape: Vec<usize, Self::Allocator>) -> device::Result<Self::Tensor> {
+        let mut stride = vec![0; shape.len()];
+        stride[shape.len() - 1] = 1;
+        for dim in (0..shape.len() - 1).rev() {
+            stride[dim] += stride[dim + 1] * shape[dim + 1];
+        }
+
+        Ok(CpuTensor {
+            dtype: data_type,
+            stride,
+            shape,
+            data: vec![],
         })
     }
 }
@@ -60,8 +66,8 @@ impl Tensor<CpuDevice> for CpuTensor {
 
         debug_assert!(inputs.next().is_none());
 
-        let tensor_a = a.tensor();
-        let tensor_b = b.tensor();
+        let tensor_a = a.tensor().ok_or(DeviceError::MissingTensorForOp)?;
+        let tensor_b = b.tensor().ok_or(DeviceError::MissingTensorForOp)?;
 
         if tensor_a.dtype != tensor_b.dtype {
             return Err(DeviceError::InvalidInputDataType);

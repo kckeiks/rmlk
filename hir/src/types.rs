@@ -1,29 +1,48 @@
 use crate::error::Error;
-use crate::onnx;
+use crate::{DataType, onnx};
 use crate::onnx::mod_TypeProto::OneOfvalue;
 use crate::onnx::TypeProto;
 use crate::tensor::TensorShape;
 
 pub struct Type {
-    value: Option<InnerType>,
-    // The type and optional shape of the element wrapped.
-    // This field MUST be present for this version of the IR.
-    // Possible values correspond to OptionalProto.DataType enum
-    denotation: Option<String>,
+    pub value: Option<InnerType>,
+    // An optional denotation can be used to denote the whole
+    // type with a standard semantic description as to what is
+    // stored inside. Refer to https://github.com/onnx/onnx/blob/main/docs/TypeDenotation.md#type-denotation-definition
+    // for pre-defined type denotations.
+    pub denotation: Option<String>,
+}
+
+impl Type {
+    pub fn get_tensor_info(&self) -> Option<(DataType, Vec<usize>)> {
+        match self.value.as_ref()? {
+            InnerType::Tensor {
+                elem_type,
+                shape
+            } => {
+                let mut dims = Vec::new();
+                for s in &shape.dim {
+                    dims.push(s.try_into().ok()?);
+                }
+                Some((DataType::try_from(*elem_type).ok()?, dims))
+            }
+            _ => None
+        }
+    }
 }
 
 enum InnerType {
     Map {
-        /// This field MUST have a valid TensorProto.DataType value
+        /// This field MUST have a valid TensorProto.DataType value.
         /// This field MUST be present for this version of the IR.
-        /// This field MUST refer to an integral type ([U]INT{8|16|32|64}) or STRING
+        /// This field MUST refer to an integral type ([U]INT{8|16|32|64}) or STRING.
         key: i32,
         /// This field MUST be present for this version of the IR.
         value: Box<Type>,
     },
     Tensor {
-        /// This field MUST NOT have the value of UNDEFINED
-        /// This field MUST have a valid TensorProto.DataType value
+        /// This field MUST NOT have the value of UNDEFINED.
+        /// This field MUST have a valid TensorProto.DataType value.
         /// This field MUST be present for this version of the IR.
         elem_type: i32,
         shape: TensorShape,
@@ -33,7 +52,7 @@ enum InnerType {
     Sequence { elem_type: Box<Type> },
     SparseTensor {
         /// This field MUST NOT have the value of UNDEFINED
-        /// This field MUST have a valid TensorProto.DataType value
+        /// This field MUST have a valid TensorProto.DataType value.
         /// This field MUST be present for this version of the IR.
         elem_type: i32,
         shape: TensorShape,

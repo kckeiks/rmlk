@@ -252,9 +252,14 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
     }
 }
 
-struct Dimension {
-    value: Option<DimensionValue>,
-    denotation: Option<String>,
+pub struct Dimension {
+    pub value: Option<DimensionValue>,
+    // Standard denotation can optionally be used to denote tensor
+    // dimensions with standard semantic descriptions to ensure
+    // that operations are applied to the correct axis of a tensor.
+    // Refer to https://github.com/onnx/onnx/blob/main/docs/DimensionDenotation.md#denotation-definition
+    // for pre-defined dimension denotations.
+    pub denotation: Option<String>,
 }
 
 impl TryFrom<onnx::mod_TensorShapeProto::Dimension<'_>> for Dimension {
@@ -280,7 +285,22 @@ enum DimensionValue {
 }
 
 pub struct TensorShape {
-    dim: Vec<Dimension>,
+    pub dim: Vec<Dimension>,
+}
+
+impl TryFrom<&Dimension> for usize {
+    type Error = Error;
+
+    fn try_from(value: &Dimension) -> Result<Self, Self::Error> {
+        match value.value.as_ref().ok_or(Error::MissingField { name: "Dimension::value".to_string() })? {
+            DimensionValue::Value(v) => {
+                usize::try_from(*v).map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
+            }
+            DimensionValue::String(v) => {
+                v.parse().map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
+            }
+        }
+    }
 }
 
 impl TryFrom<TensorShapeProto<'_>> for TensorShape {

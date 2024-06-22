@@ -7,6 +7,7 @@ pub type Result<T> = std::result::Result<T, NodeError>;
 #[derive(Debug)]
 pub enum NodeError {
     ExecuteNoOpAttempt,
+    MissingTensor,
     Unknown,
 }
 
@@ -16,7 +17,7 @@ pub struct Node<D: Device> {
     /// The identifier of the operator for this tensor.
     op: Op,
     /// The tensor.
-    tensor: D::Tensor,
+    tensor: Option<D::Tensor>,
     // Order from left to right.
     // Input nodes where self is the op and output.
     inputs: Vec<usize, D::Allocator>,
@@ -32,7 +33,7 @@ where
     pub fn new(op: Op, device: D) -> Self {
         Self {
             op,
-            tensor: device.tensor(),
+            tensor: None,
             inputs: Vec::new_in(device.allocator()),
             outputs: Vec::new_in(device.allocator()),
             device,
@@ -42,19 +43,19 @@ where
     pub fn new_with_tensor(op: Op, device: D, tensor: D::Tensor) -> Self {
         Self {
             op,
-            tensor,
+            tensor: Some(tensor),
             inputs: Vec::new_in(device.allocator()),
             outputs: Vec::new_in(device.allocator()),
             device,
         }
     }
 
-    pub fn tensor(&self) -> &D::Tensor {
-        &self.tensor
+    pub fn tensor(&self) -> Option<&D::Tensor> {
+        self.tensor.as_ref()
     }
 
     pub fn set_tensor(&mut self, tensor: D::Tensor) {
-        self.tensor = tensor;
+        self.tensor = Some(tensor);
     }
 
     pub fn op(&self) -> Op {
@@ -90,6 +91,8 @@ where
         }
 
         self.tensor
+            .as_mut()
+            .ok_or(NodeError::MissingTensor)?
             .compute(self.op, inputs)
             .map_err(|_| NodeError::Unknown)
     }

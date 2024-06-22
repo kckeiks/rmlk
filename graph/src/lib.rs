@@ -6,6 +6,7 @@ mod graph;
 mod node;
 mod op;
 mod traversal;
+mod info;
 
 pub use builder::GraphBuilder;
 pub use node::Node;

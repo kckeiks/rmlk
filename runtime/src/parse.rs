@@ -1,45 +1,96 @@
+use std::collections::HashMap;
 use log::warn;
-use rmlk_graph::device::CpuDevice;
+use rmlk_graph::device::{CpuDevice, Device, DeviceError};
 use rmlk_graph::{GraphBuilder, Node, Op};
+use rmlk_hir::DataType;
 
 type Result<T> = std::result::Result<T, Error>;
 
 pub enum Error {
+    Device(DeviceError),
+    MissingInputNode,
     Unknown,
 }
 
-pub fn parse_graph(hir_graph: rmlk_hir::Graph) -> Result<()> {
+pub fn parse_ir_graph(ir_graph: rmlk_hir::Graph) -> Result<()> {
     let device = CpuDevice;
     let mut builder = GraphBuilder::new(device.clone());
 
-    for hir_input in hir_graph.input {
-        let node = Node::new(Op::NoOp, device.clone());
+    for value_info in ir_graph.input {
+        let ty = value_info.ty.ok_or(Error::Unknown)?;
+
+        // Todo: Should we support other types such as maps, sparse tensors, etc.
+        let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown)?;
+        let tensor = device.tensor_from_value(elem_ty, shape).map_err(Error::Device)?;
+
+        let node = Node::new_with_tensor(Op::NoOp, device.clone(), tensor);
         let node_id = builder.add_input(node).expect("TODO");
-        if builder.store_id_by_name(hir_input.name, node_id).is_some() {
-            warn!("found two inputs with the same for id {id}");
+
+        if let Some(old_id) = builder.store_id_by_name(value_info.name, node_id) {
+            // Todo: Rename name.
+            warn!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
     }
 
-    for hir_output in hir_graph.output {
-        let node = Node::new(Op::NoOp, device.clone());
-        let node_id = builder.add_output(node).expect("TODO");
-        if let Some(name) = builder.store_id_by_name(hir_output.name, node_id) {
-            warn!("found two outputs with the same for id {id}");
-        }
-    }
-
-    for mut hir_node in hir_graph.node {
-        let op = hir_node.op_type.map(|op| op.parse::<Op>())??;
-        let node = Node::new(op, device.clone());
+    for mut ir_node in ir_graph.node {
+        let op = ir_node
+            .op_type
+            .map(|op| op.parse::<Op>())
+            .ok_or(Error::Unknown)?
+            .map_err(|_| Error::Unknown)?;
+        let mut node = Node::new(op, device.clone());
         let node_id = builder.add_node(node).expect("TODO");
-        let name = hir_node.name.take().unwrap_or(format!("node-{id}"));
 
-        if builder.store_id_by_name(name, node_id).is_some() {
-            return Err(Error::Unknown);
+        for name in ir_node.input.iter() {
+            let input_node_id = builder.get_store_id_by_name(name).ok_or(Error::MissingInputNode)?;
+            node.set_input(input_node_id);
+        }
+
+        for name in ir_node.output {
+            builder.store_id_by_name(name, node_id);
+        }
+    }
+
+    for value_info in ir_graph.output {
+        let ty = value_info.ty.ok_or(Error::Unknown)?;
+
+        // Todo: Should we support other types such as maps, sparse tensors, etc.
+        let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown)?;
+        let tensor = device.tensor_from_value(elem_ty, shape).map_err(Error::Device)?;
+
+        let node = Node::new_with_tensor(Op::NoOp, device.clone(), tensor);
+        let node_id = builder.add_output(node).expect("TODO");
+
+        if let Some(old_id) = builder.store_id_by_name(value_info.name, node_id) {
+            // Todo: Rename name.
+            warn!("found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
     }
 
     let graph = builder.build();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+    use std::io::Read;
+    use quick_protobuf::{BytesReader, MessageRead};
+    use rmlk_hir::ModelProto;
+
+    #[test]
+    fn test_load_model() {
+        let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx").expect("bad");
+        let mut reader = BytesReader::from_bytes(&model);
+        let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
+
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().input);
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(0).unwrap());
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(1).unwrap());
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(2).unwrap());
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.get(3).unwrap());
+        println!("{:?}\n", model_proto.graph.as_ref().unwrap().node.last().unwrap());
+        println!("{:?}", model_proto.graph.unwrap().output);
+    }
 }

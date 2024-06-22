@@ -34,6 +34,10 @@ where
         }
     }
 
+    pub fn get_node(&self, id: usize) -> Option<&Arc<Node<D>>> {
+        self.nodes.get(id)
+    }
+
     pub fn add_node(&mut self, node: Node<D>) -> Result<usize> {
         let id = self.nodes.len();
         self.nodes.push(Arc::new_in(node, self.device.allocator()));
@@ -50,6 +54,10 @@ where
         let id = self.add_node(node)?;
         self.outputs.push(id);
         Ok(id)
+    }
+
+    pub fn get_store_id_by_name(&mut self, name: &String) -> Option<usize> {
+        self.name_to_id.get(name).copied()
     }
 
     pub fn store_id_by_name(&mut self, name: String, id: usize) -> Option<usize> {
