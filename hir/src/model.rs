@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::graph::Graph;
 use crate::onnx;
 use crate::onnx::ModelProto;
 use crate::op::{Function, OperatorSetId};
 
+#[derive(Deserialize, Serialize)]
 pub enum Version {
     Ir2024 = 1,
 }
@@ -23,6 +25,7 @@ impl TryFrom<i64> for Version {
 /// associating its computation graph with metadata.
 ///
 /// The semantics of the model are described by the associated GraphProto's.
+#[derive(Deserialize, Serialize)]
 pub struct Model {
     /// The version of the IR this model targets.
     pub ir_version: Version,
@@ -116,7 +119,7 @@ impl TryFrom<ModelProto<'_>> for Model {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StringStringEntryProto {
     key: Option<String>,
     value: Option<String>,
@@ -131,6 +134,7 @@ impl From<onnx::StringStringEntryProto<'_>> for StringStringEntryProto {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct TensorAnnotation {
     tensor_name: Option<String>,
     quant_parameter_tensor_names: Vec<StringStringEntryProto>,

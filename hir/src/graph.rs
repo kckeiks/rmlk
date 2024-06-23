@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use crate::attributes::ValueInfo;
 use crate::error::Error;
 use crate::model::{StringStringEntryProto, TensorAnnotation};
@@ -11,6 +12,7 @@ use crate::tensor::{SparseTensor, Tensor};
 /// list of nodes that form a directed acyclic graph based on their inputs and outputs.
 /// This is the equivalent of the "network" or "graph" in many deep learning
 /// frameworks.
+#[derive(Deserialize, Serialize)]
 pub struct Graph {
     /// The nodes in the graph, sorted topologically.
     pub node: Vec<Node>,

@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
+bincode = "1.3.3"
 env_logger = "0.11"
 log = "0.4"
 rmlk-hir = { path = "../hir" }

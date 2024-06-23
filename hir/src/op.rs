@@ -5,7 +5,9 @@ use crate::model::StringStringEntryProto;
 use crate::node::Node;
 use crate::onnx::{FunctionProto, OperatorSetIdProto};
 use std::borrow::Cow;
+use serde::{Deserialize, Serialize};
 
+#[derive(Deserialize, Serialize)]
 pub struct OperatorSetId {
     domain: Option<String>,
     version: i64,
@@ -24,6 +26,7 @@ impl TryFrom<OperatorSetIdProto<'_>> for OperatorSetId {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct Function {
     name: Option<String>,
     inputs: Vec<String>,
@@ -108,6 +111,7 @@ impl TryFrom<FunctionProto<'_>> for Function {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 enum Attribute {
     String { value: Vec<String> },
     Object { value: Vec<attributes::Attribute> },

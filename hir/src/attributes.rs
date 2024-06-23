@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::graph::Graph;
 use crate::model::StringStringEntryProto;
@@ -11,6 +12,7 @@ use crate::types::Type;
 /// and tensor values, or repeated float, integer, string, graph, and tensor values.
 /// An AttributeProto MUST contain the name field, and *only one* of the
 ///s following content fields, effectively enforcing a C/C++ union equivalent.
+#[derive(Deserialize, Serialize)]
 pub struct Attribute {
     /// The name of the attribute.
     name: String,
@@ -136,6 +138,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 enum AttributeType {
     Float(f32),
     Int(i64),
@@ -156,7 +159,7 @@ enum AttributeType {
 
 /// Defines information on value, including the name, the type, and
 /// the shape of the value.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ValueInfo {
     /// This field MUST be present in this version of the IR.
     pub name: String,

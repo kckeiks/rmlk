@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::{DataType, DimensionValue, onnx};
 use crate::onnx::mod_TypeProto::OneOfvalue;
 use crate::onnx::TypeProto;
 use crate::tensor::TensorShape;
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Type {
     pub value: Option<TypeValue>,
     // An optional denotation can be used to denote the whole
@@ -45,7 +46,7 @@ impl Type {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 enum TypeValue {
     Map {
         /// This field MUST have a valid TensorProto.DataType value.

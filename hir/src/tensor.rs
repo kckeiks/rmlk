@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::os::unix::fs::FileExt;
+use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx;
@@ -8,6 +9,7 @@ use crate::onnx::mod_TensorShapeProto::mod_Dimension::OneOfvalue;
 use crate::onnx::{TensorProto, TensorShapeProto};
 use crate::onnx::mod_TensorProto::DataLocation;
 
+#[derive(Deserialize, Serialize)]
 pub struct Tensor {
     pub dims: Vec<usize>,
     pub data_type: DataType,
@@ -239,7 +241,7 @@ impl Tensor {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum DataType {
     Undefined,
     Float,
@@ -412,6 +414,7 @@ impl From<onnx::mod_TensorProto::DataType> for DataType {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 struct Segment {
     pub begin: Option<i64>,
     pub end: Option<i64>,
@@ -426,6 +429,7 @@ impl From<onnx::mod_TensorProto::Segment> for Segment {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct SparseTensor {
     values: Option<Tensor>,
     indices: Option<Tensor>,
@@ -444,7 +448,7 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Dimension {
     pub value: Option<DimensionValue>,
     // Standard denotation can optionally be used to denote tensor
@@ -472,13 +476,13 @@ impl TryFrom<onnx::mod_TensorShapeProto::Dimension<'_>> for Dimension {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum DimensionValue {
     Value(i64),
     String(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TensorShape {
     pub dim: Vec<Dimension>,
 }

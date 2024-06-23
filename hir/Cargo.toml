@@ -5,4 +5,5 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
+serde = {version = "1.0.188", features = ["derive"]}
 quick-protobuf = "0.8"
