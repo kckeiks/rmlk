@@ -156,6 +156,7 @@ enum AttributeType {
 
 /// Defines information on value, including the name, the type, and
 /// the shape of the value.
+#[derive(Debug)]
 pub struct ValueInfo {
     /// This field MUST be present in this version of the IR.
     pub name: String,

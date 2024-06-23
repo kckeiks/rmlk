@@ -1,11 +1,12 @@
 use crate::error::Error;
-use crate::{DataType, onnx};
+use crate::{DataType, DimensionValue, onnx};
 use crate::onnx::mod_TypeProto::OneOfvalue;
 use crate::onnx::TypeProto;
 use crate::tensor::TensorShape;
 
+#[derive(Debug)]
 pub struct Type {
-    pub value: Option<InnerType>,
+    pub value: Option<TypeValue>,
     // An optional denotation can be used to denote the whole
     // type with a standard semantic description as to what is
     // stored inside. Refer to https://github.com/onnx/onnx/blob/main/docs/TypeDenotation.md#type-denotation-definition
@@ -14,24 +15,38 @@ pub struct Type {
 }
 
 impl Type {
-    pub fn get_tensor_info(&self) -> Option<(DataType, Vec<usize>)> {
+    // Todo: Should we support other types such as maps, sparse tensors, etc.?
+    pub fn get_tensor_info(&self) -> Option<(DataType, Option<Vec<usize>>)> {
         match self.value.as_ref()? {
-            InnerType::Tensor {
+            TypeValue::Tensor {
                 elem_type,
                 shape
             } => {
                 let mut dims = Vec::new();
                 for s in &shape.dim {
-                    dims.push(s.try_into().ok()?);
+                    if let DimensionValue::Value(v) = s.value.as_ref().ok_or(Error::MissingField { name: "Dimension::value".to_string() }).ok()? {
+                        dims.push(usize::try_from(*v).map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() }).ok()?);
+                    } else {
+                        // Todo: For now let's abort creating a shape when it includes an
+                        // unknown dimension and let the graph infer the shape from the inputs.
+                        // It is not clear at the moment if we need to keep this around.
+                        return Some((DataType::try_from(*elem_type).ok().unwrap(), None))
+                    }
                 }
-                Some((DataType::try_from(*elem_type).ok()?, dims))
+
+                if dims.is_empty() {
+                    Some((DataType::try_from(*elem_type).ok().unwrap(), None))
+                } else {
+                    Some((DataType::try_from(*elem_type).ok().unwrap(), Some(dims)))
+                }
             }
             _ => None
         }
     }
 }
 
-enum InnerType {
+#[derive(Debug)]
+enum TypeValue {
     Map {
         /// This field MUST have a valid TensorProto.DataType value.
         /// This field MUST be present for this version of the IR.
@@ -90,7 +105,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                     });
                 }
 
-                Some(InnerType::Tensor {
+                Some(TypeValue::Tensor {
                     elem_type: tensor.elem_type.unwrap(),
                     shape: tensor.shape.unwrap().try_into()?,
                 })
@@ -99,7 +114,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                 let type_proto = seq.elem_type.ok_or(Error::MissingField {
                     name: "Type::value::Sequence::elem_type".to_string(),
                 })?;
-                Some(InnerType::Sequence {
+                Some(TypeValue::Sequence {
                     elem_type: Box::new((*type_proto).try_into()?),
                 })
             }
@@ -107,7 +122,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                 let type_proto = map.value_type.ok_or(Error::MissingField {
                     name: "Type::value::Map::value_type".to_string(),
                 })?;
-                Some(InnerType::Map {
+                Some(TypeValue::Map {
                     key: map.key_type.ok_or(Error::MissingField {
                         name: "Type::value::Map::key_type".to_string(),
                     })?,
@@ -118,7 +133,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                 let type_proto = optional.elem_type.ok_or(Error::MissingField {
                     name: "Type::value::Map::key_type".to_string(),
                 })?;
-                Some(InnerType::Optional {
+                Some(TypeValue::Optional {
                     elem_type: Box::new((*type_proto).try_into()?),
                 })
             }
@@ -143,7 +158,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                         name: "Type::value::Tensor::shape".to_string(),
                     });
                 }
-                Some(InnerType::SparseTensor {
+                Some(TypeValue::SparseTensor {
                     elem_type: sparse_tensor.elem_type.unwrap(),
                     shape: sparse_tensor.shape.unwrap().try_into()?,
                 })

@@ -12,10 +12,8 @@ impl TryFrom<i64> for Version {
     type Error = Error;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Ir2024),
-            _ => return Err(Error::Invalid),
-        }
+        // Todo: come back this.
+        Ok(Self::Ir2024)
     }
 }
 
@@ -27,7 +25,7 @@ impl TryFrom<i64> for Version {
 /// The semantics of the model are described by the associated GraphProto's.
 pub struct Model {
     /// The version of the IR this model targets.
-    ir_version: Version,
+    pub ir_version: Version,
     /// The OperatorSets this model relies on.
     /// All ModelProtos MUST have at least one entry that
     /// specifies which version of the RMLK OperatorSet is
@@ -36,30 +34,30 @@ pub struct Model {
     /// All nodes in the ModelProto's graph will bind against the operator
     /// with the same-domain/same-op_type operator with the HIGHEST version
     /// in the referenced operator sets.
-    opset_import: Vec<OperatorSetId>,
+    pub opset_import: Vec<OperatorSetId>,
     /// The name of the framework or tool used to generate this model.
     /// This field SHOULD be present to indicate which implementation/tool/framework
     /// emitted the model.
-    producer_name: Option<String>,
+    pub producer_name: Option<String>,
     /// The version of the framework or tool used to generate this model.
     /// This field SHOULD be present to indicate which implementation/tool/framework
     /// emitted the model.
-    producer_version: Option<String>,
+    pub producer_version: Option<String>,
     /// Domain name of the model.
     /// We use reverse domain names as name space indicators. For example:
     /// `com.facebook.fair` or `com.microsoft.cognitiveservices`
     ///
     /// Together with `model_version` and GraphProto.name, this forms the unique identity of
     /// the graph.
-    domain: Option<String>,
+    pub domain: Option<String>,
     /// The version of the graph encoded. See Version enum below.
-    model_version: Option<i64>,
+    pub model_version: Option<i64>,
     /// A human-readable documentation for this model. Markdown is allowed.
-    doc_string: Option<String>,
+    pub doc_string: Option<String>,
     /// The parameterized graph that is evaluated to execute the model.
-    graph: Option<Graph>,
+    pub graph: Option<Graph>,
     /// Named metadata values; keys should be distinct.
-    metadata_props: Vec<StringStringEntryProto>,
+    pub metadata_props: Vec<StringStringEntryProto>,
     /// A list of function protos local to the model.
     ///
     /// The (domain, name, overload) tuple must be unique across the function protos in this list.
@@ -76,7 +74,7 @@ pub struct Model {
     ///
     /// One FunctionProto can reference other FunctionProto in the model, however, recursive reference
     /// is not allowed.
-    functions: Vec<Function>,
+    pub functions: Vec<Function>,
 }
 
 impl TryFrom<ModelProto<'_>> for Model {
@@ -118,6 +116,7 @@ impl TryFrom<ModelProto<'_>> for Model {
     }
 }
 
+#[derive(Debug)]
 pub struct StringStringEntryProto {
     key: Option<String>,
     value: Option<String>,

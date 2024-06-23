@@ -31,7 +31,7 @@ impl Device for CpuDevice {
         })
     }
 
-    fn tensor_from_value(&self, data_type: DataType, shape: Vec<usize, Self::Allocator>) -> device::Result<Self::Tensor> {
+    fn tensor_from_dtype_with_shape(&self, data_type: DataType, shape: Vec<usize, Self::Allocator>) -> device::Result<Self::Tensor> {
         let mut stride = vec![0; shape.len()];
         stride[shape.len() - 1] = 1;
         for dim in (0..shape.len() - 1).rev() {
@@ -42,6 +42,15 @@ impl Device for CpuDevice {
             dtype: data_type,
             stride,
             shape,
+            data: vec![],
+        })
+    }
+
+    fn tensor_from_dtype(&self, data_type: DataType) -> device::Result<Self::Tensor> {
+        Ok(CpuTensor {
+            dtype: data_type,
+            stride: vec![],
+            shape: vec![],
             data: vec![],
         })
     }
@@ -151,6 +160,7 @@ impl Tensor<CpuDevice> for CpuTensor {
                     self.data.insert(i, a - b);
                 }
             }
+            _ => todo!(),
         }
 
         // Todo: Move.

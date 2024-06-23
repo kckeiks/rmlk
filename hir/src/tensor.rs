@@ -105,23 +105,28 @@ impl Tensor {
                         "checksum" => {
                             _checksum = Some(entry.value.ok_or(Error::InvalidValue { field: "checksum".to_string(), value: "None".to_string() })?);
                         }
-                        entry => return Err(Error::UnknownEntry { name: entry.to_string() }),
+                        entry => panic!("YO"),
                     }
                 }
 
                 let location = location.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?;
-                let mut file = File::open(location.as_ref()).map_err(|_| Error::Unknown)?;
+                let mut file = File::open(format!("/Users/acadia/Repo/Llama-2-7b-ONNX/FP32-Chat-Original/{}", location.as_ref())).map_err(|_| Error::Unknown).unwrap();
+
                 if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
+                    return Err(Error::Invalid);
+                }
+
+                if offset.is_some() && length.is_some() {
                     let offset_str = offset.unwrap();
                     let length_str = length.unwrap();
-                    let offset = offset_str.parse().map_err(|_| Error::Unknown)?;
-                    let length = length_str.parse().map_err(|_| Error::Unknown)?;
+                    let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
+                    let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
                     let mut buf = vec![0; length];
-                    file.read_at(&mut buf, offset).map_err(|_| Error::Unknown)?;
+                    file.read_at(&mut buf, offset).map_err(|_| Error::Unknown).unwrap();
                     Some(buf)
                 } else {
                     let mut buf = Vec::new();
-                    file.read_to_end(&mut buf).map_err(|_| Error::Unknown)?;
+                    file.read_to_end(&mut buf).map_err(|_| Error::Unknown).unwrap();
                     Some(buf)
                 }
             }
@@ -439,6 +444,7 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
     }
 }
 
+#[derive(Debug)]
 pub struct Dimension {
     pub value: Option<DimensionValue>,
     // Standard denotation can optionally be used to denote tensor
@@ -466,29 +472,31 @@ impl TryFrom<onnx::mod_TensorShapeProto::Dimension<'_>> for Dimension {
     }
 }
 
-enum DimensionValue {
+#[derive(Debug)]
+pub enum DimensionValue {
     Value(i64),
     String(String),
 }
 
+#[derive(Debug)]
 pub struct TensorShape {
     pub dim: Vec<Dimension>,
 }
 
-impl TryFrom<&Dimension> for usize {
-    type Error = Error;
-
-    fn try_from(value: &Dimension) -> Result<Self, Self::Error> {
-        match value.value.as_ref().ok_or(Error::MissingField { name: "Dimension::value".to_string() })? {
-            DimensionValue::Value(v) => {
-                usize::try_from(*v).map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
-            }
-            DimensionValue::String(v) => {
-                v.parse().map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
-            }
-        }
-    }
-}
+// impl TryFrom<&Dimension> for usize {
+//     type Error = Error;
+//
+//     fn try_from(value: &Dimension) -> Result<Self, Self::Error> {
+//         match value.value.as_ref().ok_or(Error::MissingField { name: "Dimension::value".to_string() })? {
+//             DimensionValue::Value(v) => {
+//                 usize::try_from(*v).map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
+//             }
+//             DimensionValue::String(v) => {
+//                 v.parse().map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
+//             }
+//         }
+//     }
+// }
 
 impl TryFrom<TensorShapeProto<'_>> for TensorShape {
     type Error = Error;
@@ -506,7 +514,7 @@ impl TryFrom<TensorShapeProto<'_>> for TensorShape {
 fn u8_to_i32_vec(v: &[u8]) -> Result<Vec<i32>, Error> {
     let mut res = Vec::with_capacity(v.len()/4);
     for chunk in v.chunks_exact(4) {
-        res.push(i32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+        res.push(i32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
     }
 
     Ok(res)
@@ -515,7 +523,7 @@ fn u8_to_i32_vec(v: &[u8]) -> Result<Vec<i32>, Error> {
 fn u8_to_i64_vec(v: &[u8]) -> Result<Vec<i64>, Error> {
     let mut res = Vec::with_capacity(v.len()/8);
     for chunk in v.chunks_exact(8) {
-        res.push(i64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+        res.push(i64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
     }
 
     Ok(res)
@@ -524,7 +532,7 @@ fn u8_to_i64_vec(v: &[u8]) -> Result<Vec<i64>, Error> {
 fn u8_to_u64_vec(v: &[u8]) -> Result<Vec<u64>, Error> {
     let mut res = Vec::with_capacity(v.len()/8);
     for chunk in v.chunks_exact(8) {
-        res.push(u64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+        res.push(u64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
     }
 
     Ok(res)
@@ -533,7 +541,7 @@ fn u8_to_u64_vec(v: &[u8]) -> Result<Vec<u64>, Error> {
 fn u8_to_f32_vec(v: &[u8]) -> Result<Vec<f32>, Error> {
     let mut res = Vec::with_capacity(v.len()/4);
     for chunk in v.chunks_exact(4) {
-        res.push(f32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+        res.push(f32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
     }
 
     Ok(res)
@@ -542,7 +550,7 @@ fn u8_to_f32_vec(v: &[u8]) -> Result<Vec<f32>, Error> {
 fn u8_to_f64_vec(v: &[u8]) -> Result<Vec<f64>, Error> {
     let mut res = Vec::with_capacity(v.len()/8);
     for chunk in v.chunks_exact(8) {
-        res.push(f64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown)?));
+        res.push(f64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
     }
 
     Ok(res)

@@ -26,7 +26,8 @@ pub trait Device: Clone {
     type Allocator: Allocator + Clone;
     fn allocator(&self) -> Self::Allocator;
     fn tensor(&self, input: rmlk_hir::Tensor) -> Result<Self::Tensor>;
-    fn tensor_from_value(&self, data_type: DataType, shape: Vec<usize, Self::Allocator>) -> Result<Self::Tensor>;
+    fn tensor_from_dtype_with_shape(&self, data_type: DataType, shape: Vec<usize, Self::Allocator>) -> Result<Self::Tensor>;
+    fn tensor_from_dtype(&self, data_type: DataType) -> Result<Self::Tensor>;
 }
 
 pub trait Tensor<D: Device> {

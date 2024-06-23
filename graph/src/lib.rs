@@ -8,5 +8,6 @@ mod op;
 mod traversal;
 
 pub use builder::GraphBuilder;
+pub use graph::Graph;
 pub use node::Node;
 pub use op::Op;

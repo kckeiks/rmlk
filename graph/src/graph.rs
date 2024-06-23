@@ -40,6 +40,10 @@ where
         }
     }
 
+    pub fn nodes(&self) -> impl Iterator<Item = &Arc<Node<D>, D::Allocator>> + '_ {
+        self.nodes.iter()
+    }
+
     pub fn outputs(&self) -> impl Iterator<Item = usize> + '_ {
         self.outputs.iter().copied()
     }
