@@ -5,7 +5,9 @@ use std::fs;
 fn main() {
     // let model = fs::read("/Users/acadia/Repo/Llama-2-7b-ONNX/FP32-Chat/LlamaV2_7B_FT_float32.onnx")
     //     .expect("bad");
-    let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx")
+    // let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx")
+    //     .expect("bad");
+    let model = fs::read("/Users/acadia/Repo/notebooks/resnet34/model.resnet34.with.external.data.onnx")
         .expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();

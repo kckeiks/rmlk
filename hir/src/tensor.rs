@@ -112,7 +112,7 @@ impl Tensor {
                 }
 
                 let location = location.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?;
-                let mut file = File::open(format!("/Users/acadia/Repo/Llama-2-7b-ONNX/FP32-Chat-Original/{}", location.as_ref())).map_err(|_| Error::Unknown).unwrap();
+                let mut file = File::open(format!("/Users/acadia/Repo/notebooks/resnet34/{}", location.as_ref())).map_err(|_| Error::Unknown).unwrap();
 
                 if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
                     return Err(Error::Invalid);
