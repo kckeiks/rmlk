@@ -1,7 +1,7 @@
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 
-use crate::device::cuda::Result;
+use crate::provider::cuda::Result;
 
 pub fn gemm_config<T>(
     alpha: T,

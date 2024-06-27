@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, Criterion};
 use cudarc::driver::CudaDevice;
 use rmlk_tensor::device::cuda::cuda::Cuda;
-use rmlk_tensor::device::Device;
-use rmlk_tensor::dtype::DType;
+use rmlk_tensor::device::Provider;
+use rmlk_tensor::dtype::DataType;
 use rmlk_tensor::op::Op;
 use rmlk_tensor::tensor::Tensor;
 use std::alloc::Global;
@@ -26,15 +26,15 @@ fn add(shape: Vec<usize>) -> Vec<f32> {
         rhs_strides[i] += rhs_strides[i - 1] * shape[i - 1];
     }
 
-    let mut lhs_tensor = Tensor::new(DType::F32, shape.to_vec(), lhs_strides.to_vec());
-    let mut rhs_tensor = Tensor::new(DType::F32, shape.to_vec(), rhs_strides.to_vec());
-    let mut out_tensor = Tensor::new(DType::F32, shape.to_vec(), lhs_strides.to_vec());
+    let mut lhs_tensor = Tensor::new(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
+    let mut rhs_tensor = Tensor::new(DataType::F32, shape.to_vec(), rhs_strides.to_vec());
+    let mut out_tensor = Tensor::new(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
 
     let lhs_data = cuda.htod_f32(vec![1.0; elem_num]).unwrap();
     let rhs_data = cuda.htod_f32(vec![1.0; elem_num]).unwrap();
 
-    lhs_tensor.set_data(Arc::new(lhs_data));
-    rhs_tensor.set_data(Arc::new(rhs_data));
+    lhs_tensor.init(Arc::new(lhs_data));
+    rhs_tensor.init(Arc::new(rhs_data));
 
     cuda.forward(Op::Add, &lhs_tensor, &rhs_tensor, &mut out_tensor)
         .unwrap();

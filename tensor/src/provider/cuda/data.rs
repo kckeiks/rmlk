@@ -1,4 +1,4 @@
-use crate::device::cuda;
+use crate::provider::cuda;
 use cudarc::driver::CudaSlice;
 use half::f16;
 

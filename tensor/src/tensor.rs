@@ -1,22 +1,27 @@
-use crate::device::Device;
-use crate::dtype::DType;
-use std::sync::Arc;
+use crate::provider::Provider;
+use rmlk_hir::DataType;
+use std::alloc::Allocator;
 
 type Shape<A> = Vec<usize, A>;
 type Stride<A> = Vec<usize, A>;
 
-pub struct Tensor<S: Device> {
-    data: Option<Arc<S::Data>>,
-    dtype: DType,
-    shape: Shape<S::Cpu>,
-    stride: Stride<S::Cpu>,
+/// Tensor.
+///
+/// This is simply a wrapper that holds a pointer to memory
+/// on a device and other information about the tensor like shape,
+/// datatype and stride.
+pub struct Tensor<P: Provider> {
+    data: Option<P::Data>,
+    dtype: DataType,
+    shape: Shape<P::Allocator>,
+    stride: Stride<P::Allocator>,
 }
 
-impl<S> Tensor<S>
+impl<P> Tensor<P>
 where
-    S: Device,
+    P: Provider,
 {
-    pub fn new(dtype: DType, shape: Shape<S::Cpu>, stride: Stride<S::Cpu>) -> Self {
+    pub fn new(dtype: DataType, shape: Shape<P::Allocator>, stride: Stride<P::Allocator>) -> Self {
         Self {
             data: None,
             dtype,
@@ -25,11 +30,11 @@ where
         }
     }
 
-    pub fn new_with_data(
-        data: Arc<S::Data>,
-        dtype: DType,
-        shape: Shape<S::Cpu>,
-        stride: Stride<S::Cpu>,
+    pub fn new_init(
+        data: P::Data,
+        dtype: DataType,
+        shape: Shape<P::Allocator>,
+        stride: Stride<P::Allocator>,
     ) -> Self {
         Self {
             data: Some(data),
@@ -39,27 +44,35 @@ where
         }
     }
 
-    pub fn set_data(&mut self, data: Arc<S::Data>) -> Option<Arc<S::Data>> {
-        self.data.replace(data)
+    pub fn init(&mut self, data: P::Data) {
+        self.data = Some(data);
     }
 
-    pub fn data(&self) -> Option<&S::Data> {
-        self.data.as_ref().map(|data| data.as_ref())
+    fn is_init(&self) -> bool {
+        self.data.is_some()
     }
 
-    pub fn data_mut(&mut self) -> &mut S::Data {
-        Arc::make_mut(self.data.as_mut().unwrap())
+    pub fn data(&self) -> Option<&P::Data> {
+        self.data.as_ref()
     }
 
-    pub fn shape(&self) -> &Shape<S::Cpu> {
+    pub fn data_mut(&mut self) -> Option<&mut P::Data> {
+        self.data.as_mut()
+    }
+
+    pub fn shape(&self) -> &Shape<P::Allocator> {
         &self.shape
     }
 
-    pub fn stride(&self) -> &Stride<S::Cpu> {
+    pub fn reshape(&mut self, _: Shape<P::Allocator>) -> Result<(), ()> {
+        todo!()
+    }
+
+    pub fn stride(&self) -> &Stride<P::Allocator> {
         &self.stride
     }
 
-    pub fn dtype(&self) -> &DType {
+    pub fn dtype(&self) -> &DataType {
         &self.dtype
     }
 }
