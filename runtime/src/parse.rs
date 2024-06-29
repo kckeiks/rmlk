@@ -1,5 +1,5 @@
 use log::warn;
-use rmlk_graph::device::{CpuDevice, Device, DeviceError};
+use rmlk_graph::device::{CpuDevice, Provider, DeviceError};
 use rmlk_graph::{GraphBuilder, Node, Op};
 use rmlk_hir::{DataType, Graph};
 use std::collections::HashMap;

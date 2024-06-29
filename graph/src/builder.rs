@@ -1,4 +1,4 @@
-use crate::device::Device;
+use crate::device::Provider;
 use crate::graph::{Graph, GraphError};
 use crate::node::Node;
 use crate::traversal;
@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
-pub struct GraphBuilder<D: Device> {
+pub struct GraphBuilder<D: Provider> {
     /// The device.
     device: D,
     /// All the nodes in the graph.
@@ -22,7 +22,7 @@ pub struct GraphBuilder<D: Device> {
 
 impl<D> GraphBuilder<D>
 where
-    D: Device,
+    D: Provider,
 {
     pub fn new(device: D) -> Self {
         Self {

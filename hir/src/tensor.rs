@@ -243,9 +243,13 @@ impl Tensor {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum DataType {
-    Undefined,
+    // Todo: Fix.
+    // changing the order of these three might
+    // mess up some tests in the tensor crate.
+    Float16,
     Float,
     Double,
+    Undefined,
     Uint8,
     Int8,
     Uint16,
@@ -256,7 +260,6 @@ pub enum DataType {
     Uint64,
     String,
     Bool,
-    Float16,
     Bfloat16,
     Complex64,
     Complex128,

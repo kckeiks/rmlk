@@ -1,4 +1,4 @@
-use crate::device::Device;
+use crate::device::Provider;
 use crate::graph::{GraphError, Result};
 use crate::{Node, Op};
 use bit_set::BitSet;
@@ -20,7 +20,7 @@ pub struct GraphNode {
 
 // Todo: we should think about making the graph traversal deterministic here and anywhere else.
 // Depth-first search.
-pub fn compute_order<D: Device>(
+pub fn compute_order<D: Provider>(
     nodes: &[Arc<Node<D>, D::Allocator>],
     outputs: &[usize],
     alloc: D::Allocator,

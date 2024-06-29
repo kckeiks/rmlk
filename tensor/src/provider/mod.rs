@@ -3,6 +3,7 @@ use rmlk_hir::DataType;
 use std::alloc::Allocator;
 
 pub mod cuda;
+mod cpu;
 
 type Result<T> = std::result::Result<T, Error>;
 
