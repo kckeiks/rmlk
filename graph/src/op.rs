@@ -41,25 +41,25 @@ impl FromStr for Op {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let op = match s {
-            "Add" => Self::Add,  // Resnet.
+            "Add" => Self::Add, // Resnet.
             "Cast" => Self::Cast,
             "Concat" => Self::Concat,
-            "Conv" => Self::Conv,  // Resnet.
+            "Conv" => Self::Conv, // Resnet.
             "Constant" => Self::Const,
             "ConstantOfShape" => Self::ConstantOfShape,
             "Div" => Self::Div,
             "Equal" => Self::Equal,
             "Expand" => Self::Expand,
-            "Flatten" => Self::Flatten,  // Resnet.
+            "Flatten" => Self::Flatten, // Resnet.
             "Gather" => Self::Gather,
-            "Gemm" => Self::Gemm,  // Resnet.
-            "GlobalAveragePool" => Self::GlobalAveragePool,  // Resnet.
-            "MaxPool" => Self::MaxPool,  // Resnet.
-            "MatMul" => Self::MatMul, // Do not need for resnet.
-            "Mul" => Self::Mul, // Do not need for resnet.
+            "Gemm" => Self::Gemm,                           // Resnet.
+            "GlobalAveragePool" => Self::GlobalAveragePool, // Resnet.
+            "MaxPool" => Self::MaxPool,                     // Resnet.
+            "MatMul" => Self::MatMul,                       // Do not need for resnet.
+            "Mul" => Self::Mul,                             // Do not need for resnet.
             "Pow" => Self::Pow,
             "Range" => Self::Range,
-            "Relu" => Self::Relu,  // Resnet.
+            "Relu" => Self::Relu, // Resnet.
             "ReduceMean" => Self::ReduceMean,
             "Reshape" => Self::Reshape,
             "ScatterND" => Self::ScatterND,

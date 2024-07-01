@@ -1,6 +1,5 @@
+use crate::node::Node;
 use std::alloc::Allocator;
-use crate::device::Provider;
-use crate::node::{Node};
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
@@ -19,8 +18,8 @@ pub enum GraphError {
 pub struct Graph<A: Allocator> {
     initializers: Vec<rmlk_hir::Tensor, A>,
     inputs: Vec<usize, A>,
-    nodes: Vec<Node<A>, A>,
     outputs: Vec<usize, A>,
+    nodes: Vec<Node<A>, A>,
 }
 
 impl<A> Graph<A>
@@ -36,12 +35,12 @@ where
         Self {
             initializers,
             inputs,
-            nodes,
             outputs,
+            nodes,
         }
     }
 
-    pub fn nodes(&self) -> impl Iterator<Item = &Arc<Node<A>, A>> + '_ {
+    pub fn nodes(&self) -> impl Iterator<Item = &Node<A>> + '_ {
         self.nodes.iter()
     }
 
@@ -56,5 +55,8 @@ where
     pub fn get_node(&self, id: usize) -> Option<&Node<A>> {
         self.nodes.get(id)
     }
-}
 
+    pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_hir::Tensor> {
+        self.initializers.get(id)
+    }
+}

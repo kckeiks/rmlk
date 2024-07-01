@@ -1,56 +1,52 @@
-use crate::device::Provider;
 use crate::graph::{Graph, GraphError};
 use crate::node::Node;
 use crate::traversal;
+use std::alloc::Allocator;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
-pub struct GraphBuilder<D: Provider> {
-    /// The device.
-    device: D,
-    /// All the nodes in the graph.
-    nodes: Vec<Arc<Node<D>, D::Allocator>, D::Allocator>,
-    /// Inputs of the graph.
-    input: Vec<usize, D::Allocator>,
-    /// Outputs of the graph.
-    outputs: Vec<usize, D::Allocator>,
-    /// Name to node.
+pub struct GraphBuilder<A: Allocator> {
+    alloc: A,
+    nodes: Vec<Node<A>, A>,
+    initializers: Vec<rmlk_hir::Tensor, A>,
+    inputs: Vec<usize, A>,
+    outputs: Vec<usize, A>,
     name_to_id: HashMap<String, usize>,
 }
 
-impl<D> GraphBuilder<D>
+impl<A> GraphBuilder<A>
 where
-    D: Provider,
+    A: Allocator + Clone,
 {
-    pub fn new(device: D) -> Self {
+    pub fn new(alloc: A) -> Self {
         Self {
-            nodes: Vec::new_in(device.allocator()),
-            input: Vec::new_in(device.allocator()),
-            outputs: Vec::new_in(device.allocator()),
+            nodes: Vec::new_in(alloc.clone()),
+            initializers: Vec::new_in(alloc.clone()),
+            inputs: Vec::new_in(alloc.clone()),
+            outputs: Vec::new_in(alloc.clone()),
             name_to_id: HashMap::new(),
-            device,
+            alloc,
         }
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Arc<Node<D>, D::Allocator>> {
+    pub fn get_node(&self, id: usize) -> Option<&Node<A>> {
         self.nodes.get(id)
     }
 
-    pub fn add_node(&mut self, node: Node<D>) -> Result<usize> {
+    pub fn add_node(&mut self, node: Node<A>) -> Result<usize> {
         let id = self.nodes.len();
-        self.nodes.push(Arc::new_in(node, self.device.allocator()));
+        self.nodes.push(node);
         Ok(id)
     }
 
-    pub fn add_input(&mut self, node: Node<D>) -> Result<usize> {
+    pub fn add_input(&mut self, node: Node<A>) -> Result<usize> {
         let id = self.add_node(node)?;
-        self.input.push(id);
+        self.inputs.push(id);
         Ok(id)
     }
 
-    pub fn add_output(&mut self, node: Node<D>) -> Result<usize> {
+    pub fn add_output(&mut self, node: Node<A>) -> Result<usize> {
         let id = self.add_node(node)?;
         self.outputs.push(id);
         Ok(id)
@@ -64,18 +60,15 @@ where
         self.name_to_id.insert(name, id)
     }
 
-    pub fn build(self) -> Result<Graph<D>> {
-        let (_, operations) = traversal::compute_order(
-            self.nodes.as_slice(),
-            self.outputs.as_slice(),
-            self.device.allocator(),
-        )?;
+    pub fn build(self) -> Result<Graph<A>> {
+        let (_, plan) =
+            traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice(), self.alloc)?;
 
         Ok(Graph::new(
-            self.device,
+            self.initializers,
+            self.inputs,
             self.nodes,
             self.outputs,
-            operations,
         ))
     }
 }

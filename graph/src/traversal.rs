@@ -1,7 +1,7 @@
-use crate::device::Provider;
 use crate::graph::{GraphError, Result};
 use crate::{Node, Op};
 use bit_set::BitSet;
+use std::alloc::Allocator;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -20,11 +20,11 @@ pub struct GraphNode {
 
 // Todo: we should think about making the graph traversal deterministic here and anywhere else.
 // Depth-first search.
-pub fn compute_order<D: Provider>(
-    nodes: &[Arc<Node<D>, D::Allocator>],
+pub fn compute_order<A: Allocator + Clone>(
+    nodes: &[Node<A>],
     outputs: &[usize],
-    alloc: D::Allocator,
-) -> Result<(Vec<usize, D::Allocator>, Vec<usize, D::Allocator>)> {
+    alloc: A,
+) -> Result<(Vec<usize, A>, Vec<usize, A>)> {
     // Sink nodes or nodes without dependencies.
     let mut sinks = Vec::new_in(alloc.clone());
     // Nodes that represent operations and thus have dependencies.

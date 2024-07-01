@@ -1,7 +1,5 @@
-use std::alloc::Allocator;
-use crate::device::{Provider, Tensor};
 use crate::op::Op;
-use std::sync::Arc;
+use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, NodeError>;
 
@@ -12,13 +10,23 @@ pub enum NodeError {
 }
 
 pub struct Node<A: Allocator> {
-    /// The identifier of the operator for this node.
+    /// The node's Provider.
+    ///
+    /// Each node is assigned to a single Provider.
+    provider: Option<u32>,
+    /// The node's Operation.
+    ///
+    /// If the op is NoOp, this node is an input and graph leaf.
     op: Op,
-    // Order from left to right.
-    // Input nodes where self is the op and output.
+    /// Inputs for this node.
+    ///
+    /// An ID may correspond to a node or
+    /// an initial tensor.
     inputs: Vec<usize, A>,
-    // Order from left to right.
-    // Output node where self is the input.
+    /// Outputs for this node.
+    ///
+    /// An ID may correspond to a node or
+    /// an initial tensor.
     outputs: Vec<usize, A>,
 }
 
@@ -33,6 +41,7 @@ where
     pub fn new(op: Op, inputs: Vec<usize, A>, outputs: Vec<usize, A>) -> Self {
         Self {
             op,
+            provider: None,
             inputs,
             outputs,
         }
@@ -58,4 +67,3 @@ where
         self.outputs.push(node_id);
     }
 }
-

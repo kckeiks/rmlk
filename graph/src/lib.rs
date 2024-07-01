@@ -1,7 +1,6 @@
 #![feature(allocator_api)]
 
 mod builder;
-pub mod device;
 mod graph;
 mod node;
 mod op;

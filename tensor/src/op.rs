@@ -4,11 +4,8 @@ pub enum Op {
     Mul,
 }
 
-
-
-
 pub struct OpKernelContext {
-    pub start_index: Vec<>,
+    pub start_index: (),
 }
 
 pub trait OpKernel {

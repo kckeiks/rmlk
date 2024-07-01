@@ -13,11 +13,11 @@ pub enum Error {
     Unknown,
 }
 
-pub fn parse_ir_graph(ir_graph: Graph) -> Result<rmlk_graph::Graph<CpuDevice>> {
+pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph<CpuDevice>> {
     let device = CpuDevice;
     let mut builder = GraphBuilder::new(device.clone());
 
-    for value_info in ir_graph.input {
+    for value_info in graph_schema.input {
         let ty = value_info.ty.ok_or(Error::Unknown).unwrap();
 
         let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown).unwrap();
@@ -38,7 +38,7 @@ pub fn parse_ir_graph(ir_graph: Graph) -> Result<rmlk_graph::Graph<CpuDevice>> {
         }
     }
 
-    for tensor in ir_graph.initializer {
+    for tensor in graph_schema.initializer {
         let elem_ty = tensor.data_type.try_into().unwrap();
         let name = tensor.name.ok_or(Error::MissingInputNode).unwrap();
         let tensor = device
@@ -54,7 +54,7 @@ pub fn parse_ir_graph(ir_graph: Graph) -> Result<rmlk_graph::Graph<CpuDevice>> {
         }
     }
 
-    for mut ir_node in ir_graph.node {
+    for mut ir_node in graph_schema.node {
         let op = ir_node
             .op_type
             .map(|op| op.parse::<Op>())
@@ -79,7 +79,7 @@ pub fn parse_ir_graph(ir_graph: Graph) -> Result<rmlk_graph::Graph<CpuDevice>> {
         }
     }
 
-    for value_info in ir_graph.output {
+    for value_info in graph_schema.output {
         let ty = value_info.ty.ok_or(Error::Unknown)?;
 
         // Todo: Should we support other types such as maps, sparse tensors, etc.
