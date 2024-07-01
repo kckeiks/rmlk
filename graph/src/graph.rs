@@ -1,6 +1,5 @@
 use crate::node::Node;
 use std::alloc::Allocator;
-use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 

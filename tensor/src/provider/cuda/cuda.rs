@@ -1,4 +1,3 @@
-use crate::op::Op;
 use crate::provider::cuda::data::Data;
 use crate::provider::cuda::kernels::{add, mul};
 use crate::provider::Result;
@@ -8,8 +7,8 @@ use cudarc::cublas::CudaBlas;
 use cudarc::cudnn;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
-use rmlk_hir::DataType;
-use std::alloc::{Allocator, Global};
+use rmlk_hir::{DataType, Op};
+use std::alloc::Allocator;
 use std::sync::Arc;
 
 pub struct Cuda<A> {
@@ -287,7 +286,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::op::Op;
     use crate::provider::cuda::cuda::Cuda;
     use crate::provider::Provider;
     use crate::tensor::Tensor;

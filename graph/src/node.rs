@@ -1,4 +1,4 @@
-use crate::op::Op;
+use rmlk_hir::Op;
 use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, NodeError>;

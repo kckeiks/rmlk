@@ -1,5 +1,5 @@
 use crate::graph::{GraphError, Result};
-use crate::{Node, Op};
+use crate::Node;
 use bit_set::BitSet;
 use std::alloc::Allocator;
 use std::ptr::NonNull;
