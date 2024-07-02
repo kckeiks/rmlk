@@ -1,5 +1,5 @@
 use crate::provider::Provider;
-use rmlk_hir::DataType;
+use rmlk_schema::DataType;
 
 type Shape<A> = Vec<usize, A>;
 type Stride<A> = Vec<usize, A>;

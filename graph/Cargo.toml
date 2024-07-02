@@ -6,5 +6,5 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
 bit-set = "0.5"
-rmlk-hir = { path = "../hir" }
+rmlk-schema = { path = "../schema" }
 log = "0.4.21"

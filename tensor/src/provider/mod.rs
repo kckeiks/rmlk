@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use rmlk_hir::DataType;
+use rmlk_schema::DataType;
 use std::alloc::Allocator;
 
 pub mod cuda;
@@ -16,7 +16,7 @@ pub trait Provider: Sized {
     type Data;
     type Allocator: Allocator + Clone;
     fn allocator(&self) -> Self::Allocator;
-    fn tensor(&self, input: rmlk_hir::Tensor) -> Result<Tensor<Self>>;
+    fn tensor(&self, input: rmlk_schema::Tensor) -> Result<Tensor<Self>>;
     fn tensor_from_dtype_with_shape(
         &self,
         data_type: DataType,

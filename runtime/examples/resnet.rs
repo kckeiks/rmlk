@@ -1,5 +1,8 @@
+#![feature(allocator_api)]
+
+use std::alloc::Global;
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_hir::{Model, ModelProto};
+use rmlk_schema::{Model, ModelProto};
 use std::fs;
 
 fn main() {
@@ -8,7 +11,7 @@ fn main() {
     // let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx")
     //     .expect("bad");
     let model =
-        fs::read("/Users/acadia/Repo/notebooks/resnet34/model.resnet34.with.external.data.onnx")
+        fs::read("/home/mmeier/Downloads/resnet34.onnx")
             .expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
@@ -31,11 +34,11 @@ fn main() {
     );
 
     let rmlk_model: Model = model_proto.try_into().unwrap();
-    let res = bincode::serialize(&rmlk_model).unwrap();
+    let _res = bincode::serialize(&rmlk_model).unwrap();
 
-    let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap()).unwrap();
+    let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap(), Global).unwrap();
     println!("Nodes {:?}", graph.nodes().count());
+    println!("Inputs {:?}", graph.inputs().count());
     println!("Outputs {:?}", graph.outputs().count());
-
-    println!("res {:?}", res.len());
+    println!("Initializers {:?}", graph.initializers().count());
 }

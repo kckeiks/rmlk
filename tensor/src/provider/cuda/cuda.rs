@@ -7,7 +7,7 @@ use cudarc::cublas::CudaBlas;
 use cudarc::cudnn;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
-use rmlk_hir::{DataType, Op};
+use rmlk_schema::{DataType, Op};
 use std::alloc::Allocator;
 use std::sync::Arc;
 
@@ -156,6 +156,7 @@ where
                 mul::MODULE_NAME,
                 mul::PTX_SRC,
             ),
+            _ => unimplemented!(),
         };
 
         if !self.device.has_func(module_name, fwd_fn_name) {
@@ -267,7 +268,7 @@ where
         self.alloc.clone()
     }
 
-    fn tensor(&self, input: rmlk_hir::Tensor) -> Result<Tensor<Self>> {
+    fn tensor(&self, input: rmlk_schema::Tensor) -> Result<Tensor<Self>> {
         todo!()
     }
 
@@ -291,7 +292,7 @@ mod test {
     use crate::tensor::Tensor;
     use cudarc::driver::CudaDevice;
     use half::f16;
-    use rmlk_hir::DataType;
+    use rmlk_schema::DataType;
     use std::alloc::Global;
     use std::sync::Arc;
 

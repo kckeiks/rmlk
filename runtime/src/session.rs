@@ -1,3 +1,4 @@
+use std::alloc::Allocator;
 use rmlk_graph::Graph;
 use std::sync::Arc;
 
@@ -6,7 +7,7 @@ use std::sync::Arc;
 // This contains session options.
 // Think of this as data for running sessions or for session that ran
 // vs SessionState that is local to the session.
-pub struct Session<A> {
+pub struct Session<A: Allocator> {
     alloc: A,
     state: SessionState<A>,
     // Options for sessionstate.
@@ -17,9 +18,12 @@ pub struct Session<A> {
 // REad-only state passed to each executor.
 // Could contain metrics as well.
 // This will be passed to executors as read only information about session
-struct SessionState<A> {
+struct SessionState<A: Allocator> {
     graph: Arc<Graph<A>>,
     plan: (),
 }
 
-impl<A> SessionState<A> {}
+impl<A> SessionState<A>
+where
+    A: Allocator
+{}

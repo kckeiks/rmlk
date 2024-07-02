@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, GraphError>;
 pub struct GraphBuilder<A: Allocator> {
     alloc: A,
     nodes: Vec<Node<A>, A>,
-    initializers: Vec<rmlk_hir::Tensor, A>,
+    initializers: Vec<rmlk_schema::Tensor, A>,
     inputs: Vec<usize, A>,
     outputs: Vec<usize, A>,
     /// Maps a node's name to its ID or its source's ID.
@@ -57,7 +57,7 @@ where
         Ok(id)
     }
 
-    pub fn add_initial_tensor(&mut self, tensor: rmlk_hir::Tensor) -> usize {
+    pub fn add_initial_tensor(&mut self, tensor: rmlk_schema::Tensor) -> usize {
         let id = self.initializers.len();
         self.initializers.push(tensor);
         id
@@ -67,7 +67,7 @@ where
         self.name_to_node_id.get(name).copied()
     }
 
-    pub fn add_node_id(&mut self, name: String, id: usize) -> Option<usize> {
+    pub fn insert_name_to_id(&mut self, name: String, id: usize) -> Option<usize> {
         self.name_to_node_id.insert(name, id)
     }
 

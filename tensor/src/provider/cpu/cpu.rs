@@ -1,7 +1,7 @@
 // use crate::device::{Provider, DeviceError, Tensor};
 // use crate::node::Node;
 // use crate::{device, Op};
-// use rmlk_hir::{DataType, TensorShape};
+// use rmlk_schema::{DataType, TensorShape};
 // use std::alloc::Global;
 // use std::sync::Arc;
 //
@@ -15,7 +15,7 @@
 //         Global
 //     }
 //
-//     fn tensor(&self, input: rmlk_hir::Tensor) -> device::Result<Self::Tensor> {
+//     fn tensor(&self, input: rmlk_schema::Tensor) -> device::Result<Self::Tensor> {
 //         let shape = input.dims;
 //         let mut stride = vec![0; shape.len()];
 //         stride[shape.len() - 1] = 1;

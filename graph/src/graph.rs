@@ -15,7 +15,7 @@ pub enum GraphError {
 }
 
 pub struct Graph<A: Allocator> {
-    initializers: Vec<rmlk_hir::Tensor, A>,
+    initializers: Vec<rmlk_schema::Tensor, A>,
     inputs: Vec<usize, A>,
     outputs: Vec<usize, A>,
     nodes: Vec<Node<A>, A>,
@@ -26,7 +26,7 @@ where
     A: Allocator + Clone,
 {
     pub(crate) fn new(
-        initializers: Vec<rmlk_hir::Tensor, A>,
+        initializers: Vec<rmlk_schema::Tensor, A>,
         inputs: Vec<usize, A>,
         nodes: Vec<Node<A>, A>,
         outputs: Vec<usize, A>,
@@ -51,11 +51,15 @@ where
         self.outputs.iter().copied()
     }
 
+    pub fn initializers(&self) -> impl Iterator<Item = &rmlk_schema::Tensor> + '_ {
+        self.initializers.iter()
+    }
+
     pub fn get_node(&self, id: usize) -> Option<&Node<A>> {
         self.nodes.get(id)
     }
 
-    pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_hir::Tensor> {
+    pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_schema::Tensor> {
         self.initializers.get(id)
     }
 }

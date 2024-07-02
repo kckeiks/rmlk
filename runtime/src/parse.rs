@@ -1,8 +1,8 @@
 use log::warn;
 use rmlk_graph::{Definition, GraphBuilder, Node};
-use rmlk_hir::{DataType, Graph, Op};
+use rmlk_schema::{DataType, Graph, Op};
 use rmlk_tensor::provider::{Error as ProviderError, Provider};
-use std::alloc::{Allocator, Global};
+use std::alloc::Allocator;
 use std::collections::HashMap;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -14,8 +14,10 @@ pub enum Error {
     Unknown,
 }
 
-pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::Graph<A>> {
-    let alloc = Global;
+pub fn parse_ir_graph<A: Allocator + Clone>(
+    graph_schema: Graph,
+    alloc: A,
+) -> Result<rmlk_graph::Graph<A>> {
     let mut builder = GraphBuilder::new(alloc.clone());
 
     for value_info in graph_schema.input {
@@ -23,18 +25,24 @@ pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::G
         // Todo: Should we support other types such as maps, sparse tensors, etc.
         let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown).unwrap();
 
+        // Todo: Add allocator API to schema.
+        let mut shape_ = Vec::new_in(alloc.clone());
+        if let Some(s) = shape {
+            shape_.extend(s);
+        }
+
         let node = Node::new(
             Op::NoOp,
             Vec::new_in(alloc.clone()),
             Vec::new_in(alloc.clone()),
             Definition {
-                shape: shape.unwrap_or(Vec::new_in(alloc.clone())),
+                shape: shape_,
                 dtype: elem_ty,
             },
         );
         let node_id = builder.add_input(node).expect("TODO");
 
-        if let Some(old_id) = builder.add_node_id(value_info.name, node_id) {
+        if let Some(old_id) = builder.insert_name_to_id(value_info.name, node_id) {
             // Todo: Rename name.
             warn!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
@@ -59,7 +67,7 @@ pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::G
         node.add_input(initial_id);
 
         let node_id = builder.add_node(node).expect("TODO");
-        if let Some(old_id) = builder.add_node_id(name, node_id) {
+        if let Some(old_id) = builder.insert_name_to_id(name, node_id) {
             // Todo: Rename name.
             warn!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
@@ -94,7 +102,7 @@ pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::G
         let node_id = builder.add_node(node).expect("TODO");
 
         for name in ir_node.output {
-            builder.add_node_id(name, node_id);
+            builder.insert_name_to_id(name, node_id);
         }
     }
 
@@ -103,18 +111,24 @@ pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::G
         // Todo: Should we support other types such as maps, sparse tensors, etc.
         let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown)?;
 
+        // Todo: Add allocator API to schema.
+        let mut shape_ = Vec::new_in(alloc.clone());
+        if let Some(s) = shape {
+            shape_.extend(s);
+        }
+
         let node = Node::new(
             Op::NoOp,
             Vec::new_in(alloc.clone()),
             Vec::new_in(alloc.clone()),
             Definition {
-                shape: shape.unwrap_or(Vec::new_in(alloc.clone())),
+                shape: shape_,
                 dtype: elem_ty,
             },
         );
         let node_id = builder.add_output(node).expect("TODO");
 
-        if let Some(old_id) = builder.add_node_id(value_info.name, node_id) {
+        if let Some(old_id) = builder.insert_name_to_id(value_info.name, node_id) {
             // Todo: Rename name.
             warn!("found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
@@ -126,7 +140,7 @@ pub fn parse_ir_graph<A: Allocator>(graph_schema: Graph) -> Result<rmlk_graph::G
 #[cfg(test)]
 mod test {
     use quick_protobuf::{BytesReader, MessageRead};
-    use rmlk_hir::ModelProto;
+    use rmlk_schema::ModelProto;
     use std::fs;
     use std::io::Read;
 

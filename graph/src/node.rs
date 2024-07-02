@@ -1,4 +1,4 @@
-use rmlk_hir::{DataType, Op};
+use rmlk_schema::{DataType, Op};
 use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, NodeError>;
@@ -73,7 +73,7 @@ where
 }
 
 /// The definition for this node's inputs and outputs.
-pub struct Definition<A> {
+pub struct Definition<A: Allocator> {
     pub shape: Vec<usize, A>,
     pub dtype: DataType,
 }
