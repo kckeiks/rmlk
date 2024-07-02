@@ -1,13 +1,13 @@
-use std::fs::File;
-use std::io::{Read, Seek};
-use std::os::unix::fs::FileExt;
-use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx;
+use crate::onnx::mod_TensorProto::DataLocation;
 use crate::onnx::mod_TensorShapeProto::mod_Dimension::OneOfvalue;
 use crate::onnx::{TensorProto, TensorShapeProto};
-use crate::onnx::mod_TensorProto::DataLocation;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Read;
+use std::os::unix::fs::FileExt;
 
 #[derive(Deserialize, Serialize)]
 pub struct Tensor {
@@ -83,9 +83,7 @@ impl Default for Tensor {
 impl Tensor {
     pub fn from_onnx_tensor(value: TensorProto) -> Result<Self, Error> {
         let external_data = match value.data_location {
-            None | Some(DataLocation::DEFAULT) => {
-                None
-            }
+            None | Some(DataLocation::DEFAULT) => None,
             Some(DataLocation::EXTERNAL) => {
                 let mut location = None;
                 let mut offset = None;
@@ -93,28 +91,51 @@ impl Tensor {
                 // Todo: Handle checksum.
                 let mut _checksum = None;
                 for entry in value.external_data {
-                    let key = entry.key.as_ref().ok_or(Error::MissingField { name: "Tensor::external_data::key".to_string() })?;
+                    let key = entry.key.as_ref().ok_or(Error::MissingField {
+                        name: "Tensor::external_data::key".to_string(),
+                    })?;
                     match key.as_ref() {
                         "location" if location.is_none() => {
-                            location = Some(entry.value.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?);
+                            location = Some(entry.value.ok_or(Error::InvalidValue {
+                                field: "location".to_string(),
+                                value: "None".to_string(),
+                            })?);
                         }
                         "offset" => {
-                            offset = Some(entry.value.ok_or(Error::InvalidValue { field: "offset".to_string(), value: "None".to_string() })?);
+                            offset = Some(entry.value.ok_or(Error::InvalidValue {
+                                field: "offset".to_string(),
+                                value: "None".to_string(),
+                            })?);
                         }
                         "length" => {
-                            length = Some(entry.value.ok_or(Error::InvalidValue { field: "length".to_string(), value: "None".to_string() })?);
+                            length = Some(entry.value.ok_or(Error::InvalidValue {
+                                field: "length".to_string(),
+                                value: "None".to_string(),
+                            })?);
                         }
                         "checksum" => {
-                            _checksum = Some(entry.value.ok_or(Error::InvalidValue { field: "checksum".to_string(), value: "None".to_string() })?);
+                            _checksum = Some(entry.value.ok_or(Error::InvalidValue {
+                                field: "checksum".to_string(),
+                                value: "None".to_string(),
+                            })?);
                         }
-                        entry => panic!("YO"),
+                        _ => todo!(),
                     }
                 }
 
-                let location = location.ok_or(Error::InvalidValue { field: "location".to_string(), value: "None".to_string() })?;
-                let mut file = File::open(format!("/Users/acadia/Repo/notebooks/resnet34/{}", location.as_ref())).map_err(|_| Error::Unknown).unwrap();
+                let location = location.ok_or(Error::InvalidValue {
+                    field: "location".to_string(),
+                    value: "None".to_string(),
+                })?;
+                let mut file = File::open(format!(
+                    "/Users/acadia/Repo/notebooks/resnet34/{}",
+                    location.as_ref()
+                ))
+                .map_err(|_| Error::Unknown)
+                .unwrap();
 
-                if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
+                if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some())
+                {
                     return Err(Error::Invalid);
                 }
 
@@ -124,11 +145,15 @@ impl Tensor {
                     let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
                     let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
                     let mut buf = vec![0; length];
-                    file.read_at(&mut buf, offset).map_err(|_| Error::Unknown).unwrap();
+                    file.read_at(&mut buf, offset)
+                        .map_err(|_| Error::Unknown)
+                        .unwrap();
                     Some(buf)
                 } else {
                     let mut buf = Vec::new();
-                    file.read_to_end(&mut buf).map_err(|_| Error::Unknown).unwrap();
+                    file.read_to_end(&mut buf)
+                        .map_err(|_| Error::Unknown)
+                        .unwrap();
                     Some(buf)
                 }
             }
@@ -274,75 +299,29 @@ pub enum DataType {
 impl DataType {
     pub fn is_supported(&self) -> bool {
         match self {
-            DataType::Undefined => {
-                false
-            }
-            DataType::Int8 => {
-                true
-            }
-            DataType::Float => {
-                true
-            }
-            DataType::Double => {
-                true
-            }
-            DataType::Uint8 => {
-                true
-            }
-            DataType::Uint16 => {
-                true
-            }
-            DataType::Int16 => {
-                true
-            }
-            DataType::Int32 => {
-                true
-            }
-            DataType::Uint32 => {
-                true
-            }
-            DataType::Int64 => {
-                true
-            }
-            DataType::Uint64 => {
-                true
-            }
-            DataType::String => {
-                true
-            }
-            DataType::Bool => {
-                true
-            }
-            DataType::Float16 => {
-                false
-            }
-            DataType::Bfloat16 => {
-                false
-            }
-            DataType::Complex64 => {
-                false
-            }
-            DataType::Complex128 => {
-                false
-            }
-            DataType::Float8E4M3FN => {
-                false
-            }
-            DataType::Float8E4M3FNUZ => {
-                false
-            }
-            DataType::Float8E5M2 => {
-                false
-            }
-            DataType::Float8E5M2FNUZ => {
-                false
-            }
-            DataType::Uint4 => {
-                true
-            }
-            DataType::Int4 => {
-                true
-            }
+            DataType::Undefined => false,
+            DataType::Int8 => true,
+            DataType::Float => true,
+            DataType::Double => true,
+            DataType::Uint8 => true,
+            DataType::Uint16 => true,
+            DataType::Int16 => true,
+            DataType::Int32 => true,
+            DataType::Uint32 => true,
+            DataType::Int64 => true,
+            DataType::Uint64 => true,
+            DataType::String => true,
+            DataType::Bool => true,
+            DataType::Float16 => false,
+            DataType::Bfloat16 => false,
+            DataType::Complex64 => false,
+            DataType::Complex128 => false,
+            DataType::Float8E4M3FN => false,
+            DataType::Float8E4M3FNUZ => false,
+            DataType::Float8E5M2 => false,
+            DataType::Float8E5M2FNUZ => false,
+            DataType::Uint4 => true,
+            DataType::Int4 => true,
         }
     }
 }
@@ -418,7 +397,7 @@ impl From<onnx::mod_TensorProto::DataType> for DataType {
 }
 
 #[derive(Deserialize, Serialize)]
-struct Segment {
+pub struct Segment {
     pub begin: Option<i64>,
     pub end: Option<i64>,
 }
@@ -444,8 +423,14 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
 
     fn try_from(value: onnx::SparseTensorProto) -> Result<Self, Self::Error> {
         Ok(SparseTensor {
-            values: value.values.map(|t| Tensor::from_onnx_tensor(t)).transpose()?,
-            indices: value.indices.map(|t| Tensor::from_onnx_tensor(t)).transpose()?,
+            values: value
+                .values
+                .map(|t| Tensor::from_onnx_tensor(t))
+                .transpose()?,
+            indices: value
+                .indices
+                .map(|t| Tensor::from_onnx_tensor(t))
+                .transpose()?,
             dims: value.dims,
         })
     }
@@ -519,45 +504,55 @@ impl TryFrom<TensorShapeProto<'_>> for TensorShape {
 }
 
 fn u8_to_i32_vec(v: &[u8]) -> Result<Vec<i32>, Error> {
-    let mut res = Vec::with_capacity(v.len()/4);
+    let mut res = Vec::with_capacity(v.len() / 4);
     for chunk in v.chunks_exact(4) {
-        res.push(i32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
+        res.push(i32::from_le_bytes(
+            chunk.try_into().map_err(|_| Error::Unknown).unwrap(),
+        ));
     }
 
     Ok(res)
 }
 
 fn u8_to_i64_vec(v: &[u8]) -> Result<Vec<i64>, Error> {
-    let mut res = Vec::with_capacity(v.len()/8);
+    let mut res = Vec::with_capacity(v.len() / 8);
     for chunk in v.chunks_exact(8) {
-        res.push(i64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
+        res.push(i64::from_le_bytes(
+            chunk.try_into().map_err(|_| Error::Unknown).unwrap(),
+        ));
     }
 
     Ok(res)
 }
 
 fn u8_to_u64_vec(v: &[u8]) -> Result<Vec<u64>, Error> {
-    let mut res = Vec::with_capacity(v.len()/8);
+    let mut res = Vec::with_capacity(v.len() / 8);
     for chunk in v.chunks_exact(8) {
-        res.push(u64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
+        res.push(u64::from_le_bytes(
+            chunk.try_into().map_err(|_| Error::Unknown).unwrap(),
+        ));
     }
 
     Ok(res)
 }
 
 fn u8_to_f32_vec(v: &[u8]) -> Result<Vec<f32>, Error> {
-    let mut res = Vec::with_capacity(v.len()/4);
+    let mut res = Vec::with_capacity(v.len() / 4);
     for chunk in v.chunks_exact(4) {
-        res.push(f32::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
+        res.push(f32::from_le_bytes(
+            chunk.try_into().map_err(|_| Error::Unknown).unwrap(),
+        ));
     }
 
     Ok(res)
 }
 
 fn u8_to_f64_vec(v: &[u8]) -> Result<Vec<f64>, Error> {
-    let mut res = Vec::with_capacity(v.len()/8);
+    let mut res = Vec::with_capacity(v.len() / 8);
     for chunk in v.chunks_exact(8) {
-        res.push(f64::from_le_bytes(chunk.try_into().map_err(|_| Error::Unknown).unwrap()));
+        res.push(f64::from_le_bytes(
+            chunk.try_into().map_err(|_| Error::Unknown).unwrap(),
+        ));
     }
 
     Ok(res)

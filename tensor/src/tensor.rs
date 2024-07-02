@@ -1,9 +1,6 @@
 use crate::provider::Provider;
 use rmlk_ir::DataType;
 
-type Shape<A> = Vec<usize, A>;
-type Stride<A> = Vec<usize, A>;
-
 /// Tensor.
 ///
 /// This is simply a wrapper that holds a pointer to memory
@@ -12,15 +9,15 @@ type Stride<A> = Vec<usize, A>;
 pub struct Tensor<P: Provider> {
     data: Option<P::Data>,
     dtype: DataType,
-    shape: Shape<P::Allocator>,
-    stride: Stride<P::Allocator>,
+    shape: Vec<usize>,
+    stride: Vec<usize>,
 }
 
 impl<P> Tensor<P>
 where
     P: Provider,
 {
-    pub fn new(dtype: DataType, shape: Shape<P::Allocator>, stride: Stride<P::Allocator>) -> Self {
+    pub fn new(dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: None,
             dtype,
@@ -29,12 +26,7 @@ where
         }
     }
 
-    pub fn new_init(
-        data: P::Data,
-        dtype: DataType,
-        shape: Shape<P::Allocator>,
-        stride: Stride<P::Allocator>,
-    ) -> Self {
+    pub fn new_init(data: P::Data, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: Some(data),
             dtype,
@@ -59,15 +51,15 @@ where
         self.data.as_mut()
     }
 
-    pub fn shape(&self) -> &Shape<P::Allocator> {
+    pub fn shape(&self) -> &Vec<usize> {
         &self.shape
     }
 
-    pub fn reshape(&mut self, _: Shape<P::Allocator>) -> Result<(), ()> {
+    pub fn reshape(&mut self, _: Vec<usize>) -> Result<(), ()> {
         todo!()
     }
 
-    pub fn stride(&self) -> &Stride<P::Allocator> {
+    pub fn stride(&self) -> &Vec<usize> {
         &self.stride
     }
 

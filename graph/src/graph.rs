@@ -1,5 +1,4 @@
 use crate::node::Node;
-use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
@@ -14,22 +13,19 @@ pub enum GraphError {
     ComputationFailed,
 }
 
-pub struct Graph<A: Allocator> {
-    initializers: Vec<rmlk_ir::Tensor, A>,
-    inputs: Vec<usize, A>,
-    outputs: Vec<usize, A>,
-    nodes: Vec<Node<A>, A>,
+pub struct Graph {
+    initializers: Vec<rmlk_ir::Tensor>,
+    inputs: Vec<usize>,
+    outputs: Vec<usize>,
+    nodes: Vec<Node>,
 }
 
-impl<A> Graph<A>
-where
-    A: Allocator + Clone,
-{
+impl Graph {
     pub(crate) fn new(
-        initializers: Vec<rmlk_ir::Tensor, A>,
-        inputs: Vec<usize, A>,
-        nodes: Vec<Node<A>, A>,
-        outputs: Vec<usize, A>,
+        initializers: Vec<rmlk_ir::Tensor>,
+        inputs: Vec<usize>,
+        nodes: Vec<Node>,
+        outputs: Vec<usize>,
     ) -> Self {
         Self {
             initializers,
@@ -39,7 +35,7 @@ where
         }
     }
 
-    pub fn nodes(&self) -> impl Iterator<Item = &Node<A>> + '_ {
+    pub fn nodes(&self) -> impl Iterator<Item = &Node> + '_ {
         self.nodes.iter()
     }
 
@@ -55,7 +51,7 @@ where
         self.initializers.iter()
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Node<A>> {
+    pub fn get_node(&self, id: usize) -> Option<&Node> {
         self.nodes.get(id)
     }
 

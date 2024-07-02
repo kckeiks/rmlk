@@ -17,8 +17,8 @@ pub enum Error {
 pub fn parse_ir_graph<A: Allocator + Clone>(
     graph_schema: Graph,
     alloc: A,
-) -> Result<rmlk_graph::Graph<A>> {
-    let mut builder = GraphBuilder::new(alloc.clone());
+) -> Result<rmlk_graph::Graph> {
+    let mut builder = GraphBuilder::new();
 
     for value_info in graph_schema.input {
         let ty = value_info.ty.ok_or(Error::Unknown).unwrap();
@@ -26,15 +26,15 @@ pub fn parse_ir_graph<A: Allocator + Clone>(
         let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown).unwrap();
 
         // Todo: Add allocator API to schema.
-        let mut shape_ = Vec::new_in(alloc.clone());
+        let mut shape_ = Vec::new();
         if let Some(s) = shape {
             shape_.extend(s);
         }
 
         let node = Node::new(
             Op::NoOp,
-            Vec::new_in(alloc.clone()),
-            Vec::new_in(alloc.clone()),
+            Vec::new(),
+            Vec::new(),
             Definition {
                 shape: shape_,
                 dtype: elem_ty,
@@ -54,10 +54,10 @@ pub fn parse_ir_graph<A: Allocator + Clone>(
 
         let mut node = Node::new(
             Op::Const,
-            Vec::new_in(alloc.clone()),
-            Vec::new_in(alloc.clone()),
+            Vec::new(),
+            Vec::new(),
             Definition {
-                shape: Vec::new_in(alloc.clone()),
+                shape: Vec::new(),
                 dtype: elem_ty,
             },
         );
@@ -83,10 +83,10 @@ pub fn parse_ir_graph<A: Allocator + Clone>(
             .unwrap();
         let mut node = Node::new(
             op,
-            Vec::new_in(alloc.clone()),
-            Vec::new_in(alloc.clone()),
+            Vec::new(),
+            Vec::new(),
             Definition {
-                shape: Vec::new_in(alloc.clone()),
+                shape: Vec::new(),
                 dtype: DataType::Undefined,
             },
         );
@@ -112,15 +112,15 @@ pub fn parse_ir_graph<A: Allocator + Clone>(
         let (elem_ty, shape) = ty.get_tensor_info().ok_or(Error::Unknown)?;
 
         // Todo: Add allocator API to schema.
-        let mut shape_ = Vec::new_in(alloc.clone());
+        let mut shape_ = Vec::new();
         if let Some(s) = shape {
             shape_.extend(s);
         }
 
         let node = Node::new(
             Op::NoOp,
-            Vec::new_in(alloc.clone()),
-            Vec::new_in(alloc.clone()),
+            Vec::new(),
+            Vec::new(),
             Definition {
                 shape: shape_,
                 dtype: elem_ty,

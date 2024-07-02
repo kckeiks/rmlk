@@ -86,7 +86,6 @@ impl FromStr for Op {
     }
 }
 
-
 #[derive(Deserialize, Serialize)]
 pub struct OperatorSetId {
     domain: Option<String>,

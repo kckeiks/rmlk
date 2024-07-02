@@ -1,18 +1,16 @@
 use crate::graph::{Graph, GraphError};
 use crate::node::Node;
 use crate::traversal;
-use std::alloc::Allocator;
 use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
 // Todo: Maybe use `hashbrown` map for these maps.
-pub struct GraphBuilder<A: Allocator> {
-    alloc: A,
-    nodes: Vec<Node<A>, A>,
-    initializers: Vec<rmlk_ir::Tensor, A>,
-    inputs: Vec<usize, A>,
-    outputs: Vec<usize, A>,
+pub struct GraphBuilder {
+    nodes: Vec<Node>,
+    initializers: Vec<rmlk_ir::Tensor>,
+    inputs: Vec<usize>,
+    outputs: Vec<usize>,
     /// Maps a node's name to its ID or its source's ID.
     ///
     /// This is used to map the name of a node to its ID
@@ -20,38 +18,34 @@ pub struct GraphBuilder<A: Allocator> {
     name_to_node_id: HashMap<String, usize>,
 }
 
-impl<A> GraphBuilder<A>
-where
-    A: Allocator + Clone,
-{
-    pub fn new(alloc: A) -> Self {
+impl GraphBuilder {
+    pub fn new() -> Self {
         Self {
-            nodes: Vec::new_in(alloc.clone()),
-            initializers: Vec::new_in(alloc.clone()),
-            inputs: Vec::new_in(alloc.clone()),
-            outputs: Vec::new_in(alloc.clone()),
+            nodes: Vec::new(),
+            initializers: Vec::new(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
             name_to_node_id: HashMap::new(),
-            alloc,
         }
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Node<A>> {
+    pub fn get_node(&self, id: usize) -> Option<&Node> {
         self.nodes.get(id)
     }
 
-    pub fn add_node(&mut self, node: Node<A>) -> Result<usize> {
+    pub fn add_node(&mut self, node: Node) -> Result<usize> {
         let id = self.nodes.len();
         self.nodes.push(node);
         Ok(id)
     }
 
-    pub fn  add_input(&mut self, node: Node<A>) -> Result<usize> {
+    pub fn add_input(&mut self, node: Node) -> Result<usize> {
         let id = self.add_node(node)?;
         self.inputs.push(id);
         Ok(id)
     }
 
-    pub fn add_output(&mut self, node: Node<A>) -> Result<usize> {
+    pub fn add_output(&mut self, node: Node) -> Result<usize> {
         let id = self.add_node(node)?;
         self.outputs.push(id);
         Ok(id)
@@ -71,9 +65,8 @@ where
         self.name_to_node_id.insert(name, id)
     }
 
-    pub fn build(self) -> Result<Graph<A>> {
-        let (_, plan) =
-            traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice(), self.alloc)?;
+    pub fn build(self) -> Result<Graph> {
+        let (_, _plan) = traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice())?;
 
         Ok(Graph::new(
             self.initializers,

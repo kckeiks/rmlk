@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
 use crate::attributes::Attribute;
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub struct Node {

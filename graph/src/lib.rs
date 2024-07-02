@@ -1,5 +1,3 @@
-#![feature(allocator_api)]
-
 mod builder;
 mod graph;
 mod node;

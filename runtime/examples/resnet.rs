@@ -1,8 +1,8 @@
 #![feature(allocator_api)]
 
-use std::alloc::Global;
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_ir::{Model, ModelProto};
+use std::alloc::Global;
 use std::fs;
 
 fn main() {
@@ -10,9 +10,7 @@ fn main() {
     //     .expect("bad");
     // let model = fs::read("/Users/acadia/Repo/notebooks/resnet34.onnx")
     //     .expect("bad");
-    let model =
-        fs::read("/home/mmeier/Downloads/resnet34.onnx")
-            .expect("bad");
+    let model = fs::read("/home/mmeier/Downloads/resnet34.onnx").expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
 

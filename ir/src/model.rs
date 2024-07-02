@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::graph::Graph;
 use crate::onnx;
 use crate::onnx::ModelProto;
 use crate::op::{Function, OperatorSetId};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub enum Version {
@@ -13,7 +13,7 @@ pub enum Version {
 impl TryFrom<i64> for Version {
     type Error = Error;
 
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
+    fn try_from(_value: i64) -> Result<Self, Self::Error> {
         // Todo: come back this.
         Ok(Self::Ir2024)
     }

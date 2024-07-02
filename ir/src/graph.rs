@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::attributes::ValueInfo;
 use crate::error::Error;
 use crate::model::{StringStringEntryProto, TensorAnnotation};
 use crate::node::Node;
 use crate::onnx::GraphProto;
 use crate::tensor::{SparseTensor, Tensor};
+use serde::{Deserialize, Serialize};
 
 /// Graphs
 ///

@@ -1,30 +1,25 @@
+use crate::provider::cuda;
 use crate::provider::cuda::data::Data;
 use crate::provider::cuda::kernels::{add, mul};
-use crate::provider::Result;
-use crate::provider::{cuda, Error, Provider};
+use crate::provider::error::Error;
+use crate::provider::{Provider, Result};
 use crate::tensor::Tensor;
 use cudarc::cublas::CudaBlas;
 use cudarc::cudnn;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
 use rmlk_ir::{DataType, Op};
-use std::alloc::Allocator;
 use std::sync::Arc;
 
-pub struct Cuda<A> {
+pub struct Cuda {
     device: Arc<CudaDevice>,
     cudnn: Arc<cudarc::cudnn::Cudnn>,
-    alloc: A,
 }
 
-impl<A> Clone for Cuda<A>
-where
-    A: Allocator + Clone,
-{
+impl Clone for Cuda {
     fn clone(&self) -> Self {
         Self {
             device: self.device.clone(),
-            alloc: self.alloc.clone(),
             // Todo: We should be careful here.
             // Two threads cannot use a handle simultaneously,
             // See https://docs.nvidia.com/deeplearning/cudnn/latest/developer/misc.html?highlight=thread%20safety#thread-safety.
@@ -33,15 +28,11 @@ where
     }
 }
 
-impl<A> Cuda<A>
-where
-    A: Allocator + Clone,
-{
-    pub fn new(device: Arc<CudaDevice>, alloc: A) -> Self {
+impl Cuda {
+    pub fn new(device: Arc<CudaDevice>) -> Self {
         // Todo: Handle the unwrap.
         Self {
             cudnn: cudnn::Cudnn::new(device.clone()).unwrap(),
-            alloc,
             device,
         }
     }
@@ -185,8 +176,7 @@ where
         let func = self.kernel(op, *lhs.dtype())?;
 
         // Todo: should we directly initialize this in the device?
-        let mut info: Vec<usize, A> =
-            Vec::with_capacity_in(3 * lhs.shape().len(), self.alloc.clone());
+        let mut info: Vec<usize> = Vec::with_capacity(3 * lhs.shape().len());
         info.extend(lhs.shape());
         info.extend(lhs.stride());
         info.extend(rhs.stride());
@@ -256,31 +246,18 @@ where
     }
 }
 
-impl<A> Provider for Cuda<A>
-where
-    A: Allocator + Clone,
-{
+impl Provider for Cuda {
     type Data = Data;
 
-    type Allocator = A;
-
-    fn allocator(&self) -> Self::Allocator {
-        self.alloc.clone()
-    }
-
-    fn tensor(&self, input: rmlk_ir::Tensor) -> Result<Tensor<Self>> {
+    fn allocate(&mut self, dtype: DataType, shape: Vec<usize>) -> Result<&mut Tensor<Self>> {
         todo!()
     }
 
-    fn tensor_from_dtype_with_shape(
-        &self,
-        data_type: DataType,
-        shape: Vec<usize, Self::Allocator>,
-    ) -> Result<Tensor<Self>> {
+    fn get_tensor(&self, dtype: DataType, id: usize) -> Result<&Tensor<Self>> {
         todo!()
     }
 
-    fn tensor_from_dtype(&self, data_type: DataType) -> Result<Tensor<Self>> {
+    fn get_tensor_mut(&mut self, dtype: DataType, id: usize) -> Result<&mut Tensor<Self>> {
         todo!()
     }
 }
@@ -288,18 +265,15 @@ where
 #[cfg(test)]
 mod test {
     use crate::provider::cuda::cuda::Cuda;
-    use crate::provider::Provider;
     use crate::tensor::Tensor;
     use cudarc::driver::CudaDevice;
     use half::f16;
-    use rmlk_ir::DataType;
-    use std::alloc::Global;
-    use std::sync::Arc;
+    use rmlk_ir::{DataType, Op};
 
     #[test]
     fn test_add_f16() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device, Global);
+        let cuda = Cuda::new(device);
 
         let shape = [4, 1, 1, 1];
 
@@ -355,7 +329,7 @@ mod test {
     #[test]
     fn test_add_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device, Global);
+        let cuda = Cuda::new(device);
 
         let shape = [4, 1, 1, 1];
 
@@ -389,7 +363,7 @@ mod test {
     #[test]
     fn test_mul_f16() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device, Global);
+        let cuda = Cuda::new(device);
 
         let shape = [3, 4, 5];
         let elem_num = shape.iter().product::<usize>();
@@ -425,7 +399,7 @@ mod test {
     #[test]
     fn test_matmul_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device, Global);
+        let cuda = Cuda::new(device);
 
         let shape = [1, 2, 2];
 

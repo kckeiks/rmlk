@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::graph::Graph;
 use crate::model::StringStringEntryProto;
 use crate::onnx::{self, AttributeProto, ValueInfoProto};
 use crate::tensor::{SparseTensor, Tensor};
 use crate::types::Type;
+use serde::{Deserialize, Serialize};
 
 /// Attributes
 ///
@@ -59,11 +59,9 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     .to_vec(),
             ),
             onnx::mod_AttributeProto::AttributeType::TENSOR => AttributeType::Tensor(
-                Tensor::from_onnx_tensor(value
-                    .t
-                    .ok_or(Error::MissingField {
-                        name: "Attribute::t".to_string(),
-                    })?)?,
+                Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
+                    name: "Attribute::t".to_string(),
+                })?)?,
             ),
             onnx::mod_AttributeProto::AttributeType::GRAPH => AttributeType::Graph(
                 value

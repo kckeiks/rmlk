@@ -1,5 +1,4 @@
 use rmlk_ir::{DataType, Op};
-use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, NodeError>;
 
@@ -9,7 +8,7 @@ pub enum NodeError {
     Unknown,
 }
 
-pub struct Node<A: Allocator> {
+pub struct Node {
     /// The node's Provider.
     ///
     /// Each node is assigned to a single Provider.
@@ -22,26 +21,18 @@ pub struct Node<A: Allocator> {
     ///
     /// An ID may correspond to a node or
     /// an initial tensor.
-    inputs: Vec<usize, A>,
+    inputs: Vec<usize>,
     /// Outputs for this node.
     ///
     /// An ID may correspond to a node or
     /// an initial tensor.
-    outputs: Vec<usize, A>,
+    outputs: Vec<usize>,
     /// The node's definition.
-    definition: Definition<A>,
+    definition: Definition,
 }
 
-impl<A> Node<A>
-where
-    A: Allocator + Clone,
-{
-    pub fn new(
-        op: Op,
-        inputs: Vec<usize, A>,
-        outputs: Vec<usize, A>,
-        definition: Definition<A>,
-    ) -> Self {
+impl Node {
+    pub fn new(op: Op, inputs: Vec<usize>, outputs: Vec<usize>, definition: Definition) -> Self {
         Self {
             op,
             provider: None,
@@ -73,7 +64,7 @@ where
 }
 
 /// The definition for this node's inputs and outputs.
-pub struct Definition<A: Allocator> {
-    pub shape: Vec<usize, A>,
+pub struct Definition {
+    pub shape: Vec<usize>,
     pub dtype: DataType,
 }
