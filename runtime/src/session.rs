@@ -1,6 +1,5 @@
-use std::sync::Arc;
 use rmlk_graph::Graph;
-
+use std::sync::Arc;
 
 // API: public. loads model from file or memory.
 // An inference session.
@@ -13,8 +12,6 @@ pub struct Session<A> {
     // Options for sessionstate.
 }
 
-
-
 // API: private. Does not offer services for users to load/save model.
 // Does Session map to a graph?
 // REad-only state passed to each executor.
@@ -25,5 +22,4 @@ struct SessionState<A> {
     plan: (),
 }
 
-impl<A> SessionState<A> {
-}
+impl<A> SessionState<A> {}

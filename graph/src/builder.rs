@@ -6,13 +6,18 @@ use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
+// Todo: Maybe use `hashbrown` map for these maps.
 pub struct GraphBuilder<A: Allocator> {
     alloc: A,
     nodes: Vec<Node<A>, A>,
     initializers: Vec<rmlk_hir::Tensor, A>,
     inputs: Vec<usize, A>,
     outputs: Vec<usize, A>,
-    name_to_id: HashMap<String, usize>,
+    /// Maps a node's name to its ID or its source's ID.
+    ///
+    /// This is used to map the name of a node to its ID
+    /// or an output to its source node.
+    name_to_node_id: HashMap<String, usize>,
 }
 
 impl<A> GraphBuilder<A>
@@ -25,7 +30,7 @@ where
             initializers: Vec::new_in(alloc.clone()),
             inputs: Vec::new_in(alloc.clone()),
             outputs: Vec::new_in(alloc.clone()),
-            name_to_id: HashMap::new(),
+            name_to_node_id: HashMap::new(),
             alloc,
         }
     }
@@ -40,7 +45,7 @@ where
         Ok(id)
     }
 
-    pub fn add_input(&mut self, node: Node<A>) -> Result<usize> {
+    pub fn  add_input(&mut self, node: Node<A>) -> Result<usize> {
         let id = self.add_node(node)?;
         self.inputs.push(id);
         Ok(id)
@@ -52,12 +57,18 @@ where
         Ok(id)
     }
 
-    pub fn get_store_id_by_name(&mut self, name: &String) -> Option<usize> {
-        self.name_to_id.get(name).copied()
+    pub fn add_initial_tensor(&mut self, tensor: rmlk_hir::Tensor) -> usize {
+        let id = self.initializers.len();
+        self.initializers.push(tensor);
+        id
     }
 
-    pub fn store_id_by_name(&mut self, name: String, id: usize) -> Option<usize> {
-        self.name_to_id.insert(name, id)
+    pub fn get_node_id(&self, name: &String) -> Option<usize> {
+        self.name_to_node_id.get(name).copied()
+    }
+
+    pub fn add_node_id(&mut self, name: String, id: usize) -> Option<usize> {
+        self.name_to_node_id.insert(name, id)
     }
 
     pub fn build(self) -> Result<Graph<A>> {

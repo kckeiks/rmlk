@@ -11,7 +11,7 @@ use crate::types::Type;
 /// A named attribute containing either singular float, integer, string, graph,
 /// and tensor values, or repeated float, integer, string, graph, and tensor values.
 /// An AttributeProto MUST contain the name field, and *only one* of the
-///s following content fields, effectively enforcing a C/C++ union equivalent.
+/// following content fields, effectively enforcing a C/C++ union equivalent.
 #[derive(Deserialize, Serialize)]
 pub struct Attribute {
     /// The name of the attribute.

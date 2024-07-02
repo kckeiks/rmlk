@@ -10,4 +10,5 @@ env_logger = "0.11"
 log = "0.4"
 rmlk-hir = { path = "../hir" }
 rmlk-graph = { path = "../graph" }
+rmlk-tensor = { path = "../tensor" }
 quick-protobuf = "0.8"
