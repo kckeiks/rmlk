@@ -7,7 +7,7 @@ use cudarc::cublas::CudaBlas;
 use cudarc::cudnn;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
-use rmlk_schema::{DataType, Op};
+use rmlk_ir::{DataType, Op};
 use std::alloc::Allocator;
 use std::sync::Arc;
 
@@ -268,7 +268,7 @@ where
         self.alloc.clone()
     }
 
-    fn tensor(&self, input: rmlk_schema::Tensor) -> Result<Tensor<Self>> {
+    fn tensor(&self, input: rmlk_ir::Tensor) -> Result<Tensor<Self>> {
         todo!()
     }
 
@@ -292,7 +292,7 @@ mod test {
     use crate::tensor::Tensor;
     use cudarc::driver::CudaDevice;
     use half::f16;
-    use rmlk_schema::DataType;
+    use rmlk_ir::DataType;
     use std::alloc::Global;
     use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-use rmlk_schema::{DataType, Op};
+use rmlk_ir::{DataType, Op};
 use std::alloc::Allocator;
 
 pub type Result<T> = std::result::Result<T, NodeError>;

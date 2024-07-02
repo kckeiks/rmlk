@@ -1,6 +1,6 @@
 use log::warn;
 use rmlk_graph::{Definition, GraphBuilder, Node};
-use rmlk_schema::{DataType, Graph, Op};
+use rmlk_ir::{DataType, Graph, Op};
 use rmlk_tensor::provider::{Error as ProviderError, Provider};
 use std::alloc::Allocator;
 use std::collections::HashMap;
@@ -140,7 +140,7 @@ pub fn parse_ir_graph<A: Allocator + Clone>(
 #[cfg(test)]
 mod test {
     use quick_protobuf::{BytesReader, MessageRead};
-    use rmlk_schema::ModelProto;
+    use rmlk_ir::ModelProto;
     use std::fs;
     use std::io::Read;
 

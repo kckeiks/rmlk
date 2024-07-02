@@ -2,7 +2,7 @@
 
 use std::alloc::Global;
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_schema::{Model, ModelProto};
+use rmlk_ir::{Model, ModelProto};
 use std::fs;
 
 fn main() {
