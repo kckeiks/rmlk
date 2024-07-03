@@ -1,22 +1,22 @@
-use crate::provider::cuda;
-use crate::provider::cuda::data::Data;
-use crate::provider::cuda::kernels::{add, mul};
-use crate::provider::error::Error;
-use crate::provider::{Provider, Result};
+use crate::cuda;
+use crate::cuda::data::Data;
+use crate::cuda::kernels::{add, mul};
+use crate::error::Error;
+use crate::provider::Provider;
 use crate::tensor::Tensor;
+use crate::Result;
 use cudarc::cublas::CudaBlas;
 use cudarc::cudnn;
 use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
 use rmlk_ir::{DataType, Op};
 use std::sync::Arc;
-
-pub struct Cuda {
+pub struct CudaProvider {
     device: Arc<CudaDevice>,
     cudnn: Arc<cudarc::cudnn::Cudnn>,
 }
 
-impl Clone for Cuda {
+impl Clone for CudaProvider {
     fn clone(&self) -> Self {
         Self {
             device: self.device.clone(),
@@ -28,7 +28,7 @@ impl Clone for Cuda {
     }
 }
 
-impl Cuda {
+impl CudaProvider {
     pub fn new(device: Arc<CudaDevice>) -> Self {
         // Todo: Handle the unwrap.
         Self {
@@ -84,9 +84,9 @@ impl Cuda {
 
     pub fn matmul(
         &self,
-        lhs: &Tensor<Self>,
-        rhs: &Tensor<Self>,
-        out: &mut Tensor<Self>,
+        lhs: &Tensor<Data>,
+        rhs: &Tensor<Data>,
+        out: &mut Tensor<Data>,
     ) -> Result<()> {
         let lhs_shape = lhs.shape();
         let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
@@ -133,7 +133,7 @@ impl Cuda {
         Ok(())
     }
 
-    fn kernel(&self, op: Op, dtype: DataType) -> cuda::Result<CudaFunction> {
+    fn kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],
@@ -153,7 +153,7 @@ impl Cuda {
         if !self.device.has_func(module_name, fwd_fn_name) {
             self.device
                 .load_ptx(ptx_src.into(), module_name, fwd_fn_all)
-                .map_err(|_| ())?
+                .map_err(|_| Error::Unknown)?
         }
         Ok(self
             .device
@@ -164,10 +164,10 @@ impl Cuda {
     pub fn forward(
         &self,
         op: Op,
-        lhs: &Tensor<Self>,
-        rhs: &Tensor<Self>,
-        out: &mut Tensor<Self>,
-    ) -> cuda::Result<()> {
+        lhs: &Tensor<Data>,
+        rhs: &Tensor<Data>,
+        out: &mut Tensor<Data>,
+    ) -> Result<()> {
         // Todo: more assertions here.
         debug_assert!(lhs.shape() == rhs.shape());
 
@@ -183,7 +183,7 @@ impl Cuda {
         let info = self
             .device
             .htod_copy(info.as_slice().to_vec())
-            .map_err(|_| ())?;
+            .map_err(|_| Error::Unknown)?;
 
         let elem_count: usize = lhs.shape().iter().product();
 
@@ -196,8 +196,8 @@ impl Cuda {
         };
 
         if matches!(lhs.dtype(), &DataType::Float16) {
-            let lhs_data = lhs.data().ok_or(())?.f16()?;
-            let rhs_data = rhs.data().ok_or(())?.f16()?;
+            let lhs_data = lhs.data().ok_or(Error::Executor)?.f16()?;
+            let rhs_data = rhs.data().ok_or(Error::Executor)?.f16()?;
             let mut out_slice = unsafe { self.device.alloc::<f16>(elem_count).unwrap() };
 
             let params = (
@@ -208,11 +208,11 @@ impl Cuda {
                 rhs_data,
                 &mut out_slice,
             );
-            unsafe { func.launch(config, params).map_err(|_| ())? };
+            unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
             let _ = out.init(Data::F16(out_slice));
         } else if matches!(lhs.dtype(), &DataType::Float) {
-            let lhs_data = lhs.data().ok_or(())?.f32()?;
-            let rhs_data = rhs.data().ok_or(())?.f32()?;
+            let lhs_data = lhs.data().ok_or(Error::Executor)?.f32()?;
+            let rhs_data = rhs.data().ok_or(Error::Executor)?.f32()?;
             let mut out_slice = unsafe { self.device.alloc::<f32>(elem_count).unwrap() };
 
             let params = (
@@ -223,11 +223,11 @@ impl Cuda {
                 rhs_data,
                 &mut out_slice,
             );
-            unsafe { func.launch(config, params).map_err(|_| ())? };
+            unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
             let _ = out.init(Data::F32(out_slice));
         } else if matches!(lhs.dtype(), &DataType::Double) {
-            let lhs_data = rhs.data().ok_or(())?.f64()?;
-            let rhs_data = lhs.data().ok_or(())?.f64()?;
+            let lhs_data = rhs.data().ok_or(Error::Executor)?.f64()?;
+            let rhs_data = lhs.data().ok_or(Error::Executor)?.f64()?;
             let mut out_slice = unsafe { self.device.alloc::<f64>(elem_count).unwrap() };
 
             let params = (
@@ -238,7 +238,7 @@ impl Cuda {
                 rhs_data,
                 &mut out_slice,
             );
-            unsafe { func.launch(config, params).map_err(|_| ())? };
+            unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
             let _ = out.init(Data::F64(out_slice));
         }
 
@@ -246,25 +246,18 @@ impl Cuda {
     }
 }
 
-impl Provider for Cuda {
+impl Provider for CudaProvider {
     type Data = Data;
+    type Device = Arc<CudaDevice>;
 
-    fn allocate(&mut self, dtype: DataType, shape: Vec<usize>) -> Result<&mut Tensor<Self>> {
-        todo!()
-    }
-
-    fn get_tensor(&self, dtype: DataType, id: usize) -> Result<&Tensor<Self>> {
-        todo!()
-    }
-
-    fn get_tensor_mut(&mut self, dtype: DataType, id: usize) -> Result<&mut Tensor<Self>> {
-        todo!()
+    fn device(&self) -> Self::Device {
+        self.device.clone()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::provider::cuda::cuda::Cuda;
+    use crate::cuda::provider::CudaProvider;
     use crate::tensor::Tensor;
     use cudarc::driver::CudaDevice;
     use half::f16;
@@ -273,7 +266,7 @@ mod test {
     #[test]
     fn test_add_f16() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device);
+        let cuda = CudaProvider::new(device);
 
         let shape = [4, 1, 1, 1];
 
@@ -329,7 +322,7 @@ mod test {
     #[test]
     fn test_add_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device);
+        let cuda = CudaProvider::new(device);
 
         let shape = [4, 1, 1, 1];
 
@@ -363,7 +356,7 @@ mod test {
     #[test]
     fn test_mul_f16() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device);
+        let cuda = CudaProvider::new(device);
 
         let shape = [3, 4, 5];
         let elem_num = shape.iter().product::<usize>();
@@ -399,7 +392,7 @@ mod test {
     #[test]
     fn test_matmul_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let cuda = Cuda::new(device);
+        let cuda = CudaProvider::new(device);
 
         let shape = [1, 2, 2];
 

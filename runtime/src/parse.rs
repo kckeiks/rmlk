@@ -1,7 +1,7 @@
 use log::warn;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{DataType, Graph, Op};
-use rmlk_tensor::provider::{Error as ProviderError, Provider};
+use rmlk_tensor::{Error as ProviderError, Provider};
 use std::alloc::Allocator;
 use std::collections::HashMap;
 

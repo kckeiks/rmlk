@@ -1,4 +1,3 @@
-use crate::provider::Provider;
 use rmlk_ir::DataType;
 
 /// Tensor.
@@ -6,17 +5,14 @@ use rmlk_ir::DataType;
 /// This is simply a wrapper that holds a pointer to memory
 /// on a device and other information about the tensor like shape,
 /// datatype and stride.
-pub struct Tensor<P: Provider> {
-    data: Option<P::Data>,
+pub struct Tensor<D> {
+    data: Option<D>,
     dtype: DataType,
     shape: Vec<usize>,
     stride: Vec<usize>,
 }
 
-impl<P> Tensor<P>
-where
-    P: Provider,
-{
+impl<D> Tensor<D> {
     pub fn new(dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: None,
@@ -26,7 +22,7 @@ where
         }
     }
 
-    pub fn new_init(data: P::Data, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
+    pub fn new_init(data: D, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: Some(data),
             dtype,
@@ -35,7 +31,7 @@ where
         }
     }
 
-    pub fn init(&mut self, data: P::Data) {
+    pub fn init(&mut self, data: D) {
         self.data = Some(data);
     }
 
@@ -43,11 +39,11 @@ where
         self.data.is_some()
     }
 
-    pub fn data(&self) -> Option<&P::Data> {
+    pub fn data(&self) -> Option<&D> {
         self.data.as_ref()
     }
 
-    pub fn data_mut(&mut self) -> Option<&mut P::Data> {
+    pub fn data_mut(&mut self) -> Option<&mut D> {
         self.data.as_mut()
     }
 

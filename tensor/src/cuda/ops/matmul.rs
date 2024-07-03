@@ -1,7 +1,7 @@
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 
-use crate::provider::cuda::Result;
+use crate::{Error, Result};
 
 pub fn gemm_config<T>(
     alpha: T,
@@ -21,7 +21,7 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, k)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(()),
+        _ => return Err(Error::Unknown),
     };
 
     let lhs_stride = lhs_layout.1;
@@ -33,7 +33,7 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, m)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(()),
+        _ => return Err(Error::Unknown),
     };
 
     let gemm = GemmConfig {
@@ -93,5 +93,5 @@ pub unsafe fn gemm_stride_batched_f32(
         sys::cublasComputeType_t::CUBLAS_COMPUTE_32F,
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
-    .map_err(|_| ())
+    .map_err(|_| Error::Unknown)
 }
