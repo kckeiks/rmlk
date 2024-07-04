@@ -21,13 +21,17 @@ pub struct ExecutionState<T> {
 }
 
 impl<T> ExecutionState<T> {
-    pub fn new(graph: Arc<Graph>) -> ExecutionState<T> {
+    pub fn new(
+        graph: Arc<Graph>,
+        tensors: Vec<Tensor<T>>,
+        offsets: Vec<usize>,
+    ) -> ExecutionState<T> {
         Self {
-            tensors: Vec::new(),
-            offsets: Vec::new(),
+            tensors,
+            offsets,
+            graph,
             // Todo: compute from graph.
             min_value: 0,
-            graph,
         }
     }
 

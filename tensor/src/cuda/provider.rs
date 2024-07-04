@@ -282,9 +282,9 @@ mod test {
             rhs_strides[i] += rhs_strides[i - 1] * shape[i - 1];
         }
 
-        let mut lhs_tensor = Tensor::new(DataType::Float16, shape.to_vec(), lhs_strides.to_vec());
-        let mut out_tensor = Tensor::new(DataType::Float16, shape.to_vec(), lhs_strides.to_vec());
-        let mut rhs_tensor = Tensor::new(DataType::Float16, shape.to_vec(), rhs_strides.to_vec());
+        let mut lhs_tensor = Tensor::new(DataType::Float16, shape.to_vec());
+        let mut out_tensor = Tensor::new(DataType::Float16, shape.to_vec());
+        let mut rhs_tensor = Tensor::new(DataType::Float16, shape.to_vec());
 
         let lhs_data = cuda
             .htod_f16(vec![
@@ -338,9 +338,9 @@ mod test {
             rhs_strides[i] += rhs_strides[i - 1] * shape[i - 1];
         }
 
-        let mut lhs_tensor = Tensor::new(DataType::Float, shape.to_vec(), lhs_strides.to_vec());
-        let mut rhs_tensor = Tensor::new(DataType::Float, shape.to_vec(), rhs_strides.to_vec());
-        let mut out_tensor = Tensor::new(DataType::Float, shape.to_vec(), lhs_strides.to_vec());
+        let mut lhs_tensor = Tensor::new(DataType::Float, shape.to_vec());
+        let mut rhs_tensor = Tensor::new(DataType::Float, shape.to_vec());
+        let mut out_tensor = Tensor::new(DataType::Float, shape.to_vec());
 
         let lhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();
         let rhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();
@@ -374,9 +374,9 @@ mod test {
             rhs_strides[i] += rhs_strides[i - 1] * shape[i - 1];
         }
 
-        let mut lhs_tensor = Tensor::new(DataType::Float16, shape.to_vec(), lhs_strides.clone());
-        let mut rhs_tensor = Tensor::new(DataType::Float16, shape.to_vec(), rhs_strides);
-        let mut out_tensor = Tensor::new(DataType::Float16, shape.to_vec(), lhs_strides);
+        let mut lhs_tensor = Tensor::new(DataType::Float16, shape.to_vec());
+        let mut rhs_tensor = Tensor::new(DataType::Float16, shape.to_vec());
+        let mut out_tensor = Tensor::new(DataType::Float16, shape.to_vec());
 
         let lhs_data = cuda.htod_f16(vec![f16::from_f32(2.0); elem_num]).unwrap();
         let rhs_data = cuda.htod_f16(vec![f16::from_f32(3.0); elem_num]).unwrap();
@@ -408,9 +408,9 @@ mod test {
             rhs_strides[i] += rhs_strides[i + 1] * shape[i + 1];
         }
 
-        let mut lhs_tensor = Tensor::new(DataType::Float, shape.to_vec(), lhs_strides.to_vec());
-        let mut rhs_tensor = Tensor::new(DataType::Float, shape.to_vec(), rhs_strides.to_vec());
-        let mut out_tensor = Tensor::new(DataType::Float, shape.to_vec(), lhs_strides.to_vec());
+        let mut lhs_tensor = Tensor::new(DataType::Float, shape.to_vec());
+        let mut rhs_tensor = Tensor::new(DataType::Float, shape.to_vec());
+        let mut out_tensor = Tensor::new(DataType::Float, shape.to_vec());
 
         let lhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();
         let rhs_data = cuda.htod_f32(vec![1f32, 2f32, 3f32, 4f32]).unwrap();

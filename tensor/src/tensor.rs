@@ -13,7 +13,14 @@ pub struct Tensor<D> {
 }
 
 impl<D> Tensor<D> {
-    pub fn new(dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
+    pub fn new(dtype: DataType, shape: Vec<usize>) -> Self {
+        let dims = shape.len();
+        let mut stride = vec![0usize; dims];
+        stride[dims - 1] = 1;
+        for i in (0..dims - 1).rev() {
+            stride[i] += stride[i + 1] * shape[i + 1];
+        }
+
         Self {
             data: None,
             dtype,

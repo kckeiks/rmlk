@@ -32,12 +32,12 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(op: Op, inputs: Vec<usize>, outputs: Vec<usize>, definition: Definition) -> Self {
+    pub fn new(op: Op, definition: Definition) -> Self {
         Self {
             op,
             provider: None,
-            inputs,
-            outputs,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
             definition,
         }
     }
@@ -67,4 +67,13 @@ impl Node {
 pub struct Definition {
     pub shape: Vec<usize>,
     pub dtype: DataType,
+}
+
+impl Default for Definition {
+    fn default() -> Self {
+        Self {
+            shape: Vec::new(),
+            dtype: DataType::Undefined,
+        }
+    }
 }
