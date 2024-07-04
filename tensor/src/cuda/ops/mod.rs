@@ -1,2 +1,2 @@
-mod gemm;
-pub mod matmul;
+pub mod add;
+pub mod gemm;

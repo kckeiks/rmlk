@@ -1,7 +1,8 @@
-/// The provider allocates and manages device memory.
+use crate::kernel::Kernel;
+use rmlk_ir::Op;
+
 pub trait Provider: Clone + Sized {
-    type Data;
-    type Device;
-    /// Allocates a tensor.
-    fn device(&self) -> Self::Device;
+    type Kernel: Kernel;
+
+    fn kernel(&self, op: Op) -> Self::Kernel;
 }

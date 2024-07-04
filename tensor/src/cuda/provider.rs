@@ -1,5 +1,6 @@
 use crate::cuda;
 use crate::cuda::data::Data;
+use crate::cuda::kernel::CudaKernel;
 use crate::cuda::kernels::{add, mul};
 use crate::error::Error;
 use crate::provider::Provider;
@@ -11,6 +12,7 @@ use cudarc::driver::{CudaDevice, CudaFunction, LaunchAsync, LaunchConfig};
 use half::f16;
 use rmlk_ir::{DataType, Op};
 use std::sync::Arc;
+
 pub struct CudaProvider {
     device: Arc<CudaDevice>,
     cudnn: Arc<cudarc::cudnn::Cudnn>,
@@ -103,7 +105,7 @@ impl CudaProvider {
             DataType::Float => {
                 let lhs_stride = lhs.stride();
                 let rhs_stride = rhs.stride();
-                let config = cuda::ops::matmul::gemm_config::<f32>(
+                let config = cuda::ops::gemm::gemm_config::<f32>(
                     1.0,
                     0.0,
                     (b, m, n, k),
@@ -114,7 +116,7 @@ impl CudaProvider {
                 let mut out_slice = unsafe { self.device.alloc::<f32>(b * m * n).unwrap() };
                 let cublas = CudaBlas::new(self.device.clone()).unwrap();
                 unsafe {
-                    cuda::ops::matmul::gemm_stride_batched_f32(
+                    cuda::ops::gemm::gemm_stride_batched_f32(
                         &cublas,
                         config,
                         &rhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
@@ -133,7 +135,7 @@ impl CudaProvider {
         Ok(())
     }
 
-    fn kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
+    pub fn kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],
@@ -247,11 +249,10 @@ impl CudaProvider {
 }
 
 impl Provider for CudaProvider {
-    type Data = Data;
-    type Device = Arc<CudaDevice>;
+    type Kernel = CudaKernel;
 
-    fn device(&self) -> Self::Device {
-        self.device.clone()
+    fn kernel(&self, op: Op) -> Self::Kernel {
+        CudaKernel::new(op, self.device.clone())
     }
 }
 
