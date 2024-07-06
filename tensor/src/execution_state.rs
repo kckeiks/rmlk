@@ -16,8 +16,8 @@ pub struct ExecutionState<T> {
     /// Offset from where the node's inputs & outputs region begins in `tensors`.
     offsets: Vec<usize>,
     /// Minimum index value for all the nodes in the graph for this context.
-    min_value: usize,
-    graph: Arc<Graph>,
+    _min_value: usize,
+    _graph: Arc<Graph>,
 }
 
 impl<T> ExecutionState<T> {
@@ -29,14 +29,14 @@ impl<T> ExecutionState<T> {
         Self {
             tensors,
             offsets,
-            graph,
+            _graph: graph,
             // Todo: compute from graph.
-            min_value: 0,
+            _min_value: 0,
         }
     }
 
     pub fn get_node(&self, id: usize) -> Option<&Node> {
-        self.graph.get_node(id)
+        self._graph.get_node(id)
     }
 
     pub fn get_input_count(&self, node_id: usize) -> Option<usize> {

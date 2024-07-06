@@ -1,4 +1,4 @@
-use crate::cuda::data::Data;
+use crate::cuda::data::CudaData;
 use crate::cuda::kernels::{add, mul};
 use crate::cuda::ops;
 use crate::kernel::Context;
@@ -48,7 +48,7 @@ impl CudaKernel {
 }
 
 impl Kernel for CudaKernel {
-    type Data = Data;
+    type Data = CudaData;
 
     fn compute(&self, ctx: &mut Context<Self::Data>) -> Result<()> {
         match self.op {
@@ -74,7 +74,7 @@ impl Kernel for CudaKernel {
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::Data;
+    use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
     use crate::execution_state::ExecutionState;
     use crate::kernel::{Context, Kernel};
@@ -90,7 +90,7 @@ mod test {
         op: Op,
         shape_a: Vec<usize>,
         shape_b: Vec<usize>,
-    ) -> (Arc<Graph>, ExecutionState<Data>) {
+    ) -> (Arc<Graph>, ExecutionState<CudaData>) {
         let mut builder = GraphBuilder::new();
 
         let node_a = Node::new(Op::NoOp, Definition::default());
@@ -109,7 +109,7 @@ mod test {
         let graph = Arc::new(builder.build().unwrap());
 
         let mut tensor_a = Tensor::new(DataType::Float16, shape_a.clone());
-        tensor_a.init(Data::F16(
+        tensor_a.init(CudaData::F16(
             device
                 .htod_copy(vec![
                     f16::from_f32(1.0),
@@ -120,7 +120,7 @@ mod test {
                 .unwrap(),
         ));
         let mut tensor_b = Tensor::new(DataType::Float16, shape_b);
-        tensor_b.init(Data::F16(
+        tensor_b.init(CudaData::F16(
             device
                 .htod_copy(vec![
                     f16::from_f32(1.0),
@@ -144,7 +144,7 @@ mod test {
         let device = CudaDevice::new(0).unwrap();
 
         let shape = vec![4, 1, 1, 1];
-        let (graph, state) =
+        let (_, state) =
             build_binary_op_graph_and_state(device.clone(), Op::Add, shape.clone(), shape);
         let mut context = Context::new(state, 2).unwrap();
 

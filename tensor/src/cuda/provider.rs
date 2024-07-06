@@ -1,5 +1,5 @@
 use crate::cuda;
-use crate::cuda::data::Data;
+use crate::cuda::data::CudaData;
 use crate::cuda::kernel::CudaKernel;
 use crate::cuda::kernels::{add, mul};
 use crate::error::Error;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 pub struct CudaProvider {
     device: Arc<CudaDevice>,
-    cudnn: Arc<cudarc::cudnn::Cudnn>,
+    _cudnn: Arc<cudnn::Cudnn>,
 }
 
 impl Clone for CudaProvider {
@@ -25,53 +25,46 @@ impl Clone for CudaProvider {
             // Todo: We should be careful here.
             // Two threads cannot use a handle simultaneously,
             // See https://docs.nvidia.com/deeplearning/cudnn/latest/developer/misc.html?highlight=thread%20safety#thread-safety.
-            cudnn: self.cudnn.clone(),
+            _cudnn: self._cudnn.clone(),
         }
     }
 }
 
 impl CudaProvider {
+    #[cfg(test)]
     pub fn new(device: Arc<CudaDevice>) -> Self {
         // Todo: Handle the unwrap.
         Self {
-            cudnn: cudnn::Cudnn::new(device.clone()).unwrap(),
+            _cudnn: cudnn::Cudnn::new(device.clone()).unwrap(),
             device,
         }
     }
 
-    fn htod_f16(&self, data: Vec<f16>) -> Result<Data> {
+    #[cfg(test)]
+    fn htod_f16(&self, data: Vec<f16>) -> Result<CudaData> {
         self.device
             .htod_copy(data)
-            .map(Data::F16)
+            .map(CudaData::F16)
             .map_err(|_| Error::Unknown)
     }
 
-    fn htod_f32(&self, data: Vec<f32>) -> Result<Data> {
+    #[cfg(test)]
+    fn htod_f32(&self, data: Vec<f32>) -> Result<CudaData> {
         self.device
             .htod_copy(data)
-            .map(Data::F32)
+            .map(CudaData::F32)
             .map_err(|_| Error::Unknown)
     }
 
-    fn htod_f64(&self, data: Vec<f64>) -> Result<Data> {
-        self.device
-            .htod_copy(data)
-            .map(Data::F64)
-            .map_err(|_| Error::Unknown)
-    }
-
-    fn dtoh_f16(&self, data: &Data) -> Result<Vec<f16>> {
+    #[cfg(test)]
+    fn dtoh_f16(&self, data: &CudaData) -> Result<Vec<f16>> {
         let data = data.f16().map_err(|_| Error::Unknown)?;
         self.device.dtoh_sync_copy(data).map_err(|_| Error::Unknown)
     }
 
-    fn dtoh_f32(&self, data: &Data) -> Result<Vec<f32>> {
+    #[cfg(test)]
+    fn dtoh_f32(&self, data: &CudaData) -> Result<Vec<f32>> {
         let data = data.f32().map_err(|_| Error::Unknown)?;
-        self.device.dtoh_sync_copy(data).map_err(|_| Error::Unknown)
-    }
-
-    fn dtoh_f64(&self, data: &Data) -> Result<Vec<f64>> {
-        let data = data.f64().map_err(|_| Error::Unknown)?;
         self.device.dtoh_sync_copy(data).map_err(|_| Error::Unknown)
     }
 
@@ -84,11 +77,11 @@ impl CudaProvider {
     //     Ok(())
     // }
 
-    pub fn matmul(
+    pub fn _matmul(
         &self,
-        lhs: &Tensor<Data>,
-        rhs: &Tensor<Data>,
-        out: &mut Tensor<Data>,
+        lhs: &Tensor<CudaData>,
+        rhs: &Tensor<CudaData>,
+        out: &mut Tensor<CudaData>,
     ) -> Result<()> {
         let lhs_shape = lhs.shape();
         let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
@@ -125,7 +118,7 @@ impl CudaProvider {
                     )
                     .unwrap();
                 };
-                let _ = out.init(Data::F32(out_slice));
+                let _ = out.init(CudaData::F32(out_slice));
             }
             DataType::Double => {
                 todo!()
@@ -135,7 +128,7 @@ impl CudaProvider {
         Ok(())
     }
 
-    pub fn kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
+    pub fn _kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],
@@ -163,19 +156,19 @@ impl CudaProvider {
             .expect("To have been loaded"))
     }
 
-    pub fn forward(
+    pub fn _forward(
         &self,
         op: Op,
-        lhs: &Tensor<Data>,
-        rhs: &Tensor<Data>,
-        out: &mut Tensor<Data>,
+        lhs: &Tensor<CudaData>,
+        rhs: &Tensor<CudaData>,
+        out: &mut Tensor<CudaData>,
     ) -> Result<()> {
         // Todo: more assertions here.
         debug_assert!(lhs.shape() == rhs.shape());
 
         // Todo: Validate that the tensors are valid for the operation.
 
-        let func = self.kernel(op, *lhs.dtype())?;
+        let func = self._kernel(op, *lhs.dtype())?;
 
         // Todo: should we directly initialize this in the device?
         let mut info: Vec<usize> = Vec::with_capacity(3 * lhs.shape().len());
@@ -211,7 +204,7 @@ impl CudaProvider {
                 &mut out_slice,
             );
             unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
-            let _ = out.init(Data::F16(out_slice));
+            let _ = out.init(CudaData::F16(out_slice));
         } else if matches!(lhs.dtype(), &DataType::Float) {
             let lhs_data = lhs.data().ok_or(Error::Executor)?.f32()?;
             let rhs_data = rhs.data().ok_or(Error::Executor)?.f32()?;
@@ -226,7 +219,7 @@ impl CudaProvider {
                 &mut out_slice,
             );
             unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
-            let _ = out.init(Data::F32(out_slice));
+            let _ = out.init(CudaData::F32(out_slice));
         } else if matches!(lhs.dtype(), &DataType::Double) {
             let lhs_data = rhs.data().ok_or(Error::Executor)?.f64()?;
             let rhs_data = lhs.data().ok_or(Error::Executor)?.f64()?;
@@ -241,7 +234,7 @@ impl CudaProvider {
                 &mut out_slice,
             );
             unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
-            let _ = out.init(Data::F64(out_slice));
+            let _ = out.init(CudaData::F64(out_slice));
         }
 
         Ok(())
@@ -306,7 +299,7 @@ mod test {
         lhs_tensor.init(lhs_data);
         rhs_tensor.init(rhs_data);
 
-        cuda.forward(Op::Add, &lhs_tensor, &rhs_tensor, &mut out_tensor)
+        cuda._forward(Op::Add, &lhs_tensor, &rhs_tensor, &mut out_tensor)
             .unwrap();
         let result = cuda.dtoh_f16(out_tensor.data().unwrap()).unwrap();
         assert_eq!(
@@ -348,7 +341,7 @@ mod test {
         lhs_tensor.init(lhs_data);
         rhs_tensor.init(rhs_data);
 
-        cuda.forward(Op::Add, &lhs_tensor, &rhs_tensor, &mut out_tensor)
+        cuda._forward(Op::Add, &lhs_tensor, &rhs_tensor, &mut out_tensor)
             .unwrap();
         let result = cuda.dtoh_f32(out_tensor.data().unwrap()).unwrap();
         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
@@ -384,7 +377,7 @@ mod test {
         lhs_tensor.init(lhs_data);
         rhs_tensor.init(rhs_data);
 
-        cuda.forward(Op::Mul, &lhs_tensor, &rhs_tensor, &mut out_tensor)
+        cuda._forward(Op::Mul, &lhs_tensor, &rhs_tensor, &mut out_tensor)
             .unwrap();
         let result = cuda.dtoh_f16(out_tensor.data().unwrap()).unwrap();
         assert_eq!(result, vec![f16::from_f32(6.0); elem_num])
@@ -418,7 +411,7 @@ mod test {
         lhs_tensor.init(lhs_data);
         rhs_tensor.init(rhs_data);
 
-        cuda.matmul(&lhs_tensor, &rhs_tensor, &mut out_tensor)
+        cuda._matmul(&lhs_tensor, &rhs_tensor, &mut out_tensor)
             .unwrap();
         let result = cuda.dtoh_f32(out_tensor.data().unwrap()).unwrap();
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])

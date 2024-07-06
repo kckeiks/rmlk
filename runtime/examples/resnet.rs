@@ -2,7 +2,6 @@
 
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_ir::{Model, ModelProto};
-use std::alloc::Global;
 use std::fs;
 
 fn main() {
@@ -34,7 +33,7 @@ fn main() {
     let rmlk_model: Model = model_proto.try_into().unwrap();
     let _res = bincode::serialize(&rmlk_model).unwrap();
 
-    let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap(), Global).unwrap();
+    let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap()).unwrap();
     println!("Nodes {:?}", graph.nodes().count());
     println!("Inputs {:?}", graph.inputs().count());
     println!("Outputs {:?}", graph.outputs().count());

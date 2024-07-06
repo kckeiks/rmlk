@@ -1,4 +1,4 @@
-use crate::cuda::data::Data;
+use crate::cuda::data::CudaData;
 use crate::kernel::Context;
 use crate::Error;
 use crate::Result;
@@ -7,7 +7,7 @@ use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
-pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>) -> Result<()> {
+pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
     let lhs = ctx.get_input(0)?;
     let rhs = ctx.get_input(1)?;
 
@@ -52,7 +52,7 @@ pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>) -> Result<()> {
             };
 
             let out = ctx.get_output_mut(0)?;
-            let _ = out.init(Data::F32(out_slice));
+            let _ = out.init(CudaData::F32(out_slice));
         }
         DataType::Double => {
             todo!()

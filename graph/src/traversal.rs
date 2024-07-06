@@ -1,21 +1,6 @@
 use crate::graph::{GraphError, Result};
 use crate::Node;
 use bit_set::BitSet;
-use std::ptr::NonNull;
-use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
-
-pub struct GraphNode {
-    id: usize,
-    /// Counts how many different subtrees need this node as a dependency.
-    deps: AtomicUsize,
-    /// Output source node.
-    src: usize,
-    /// Inputs into these nodes.
-    inputs: Vec<NonNull<GraphNode>>,
-    /// Outputs into these nodes.
-    outputs: Vec<NonNull<GraphNode>>,
-}
 
 // Todo: we should think about making the graph traversal deterministic here and anywhere else.
 // Depth-first search.

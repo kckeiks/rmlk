@@ -42,7 +42,7 @@ impl<D> Tensor<D> {
         self.data = Some(data);
     }
 
-    fn is_init(&self) -> bool {
+    pub fn is_init(&self) -> bool {
         self.data.is_some()
     }
 

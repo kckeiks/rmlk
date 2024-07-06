@@ -1,4 +1,4 @@
-use crate::cuda::data::Data;
+use crate::cuda::data::CudaData;
 use crate::kernel::Context;
 use crate::Error;
 use crate::Result;
@@ -7,7 +7,11 @@ use half::f16;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
-pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>, func: CudaFunction) -> Result<()> {
+pub fn compute(
+    ctx: &mut Context<CudaData>,
+    device: Arc<CudaDevice>,
+    func: CudaFunction,
+) -> Result<()> {
     let lhs = ctx.get_input(0)?;
     let rhs = ctx.get_input(1)?;
 
@@ -52,7 +56,7 @@ pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>, func: CudaFunct
         );
         unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
         let out = ctx.get_output_mut(0)?;
-        let _ = out.init(Data::F16(out_slice));
+        let _ = out.init(CudaData::F16(out_slice));
     } else if matches!(lhs.dtype(), &DataType::Float) {
         let lhs_data = lhs.data().ok_or(Error::Executor)?.f32()?;
         let rhs_data = rhs.data().ok_or(Error::Executor)?.f32()?;
@@ -69,7 +73,7 @@ pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>, func: CudaFunct
         );
         unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
         let out = ctx.get_output_mut(0)?;
-        let _ = out.init(Data::F32(out_slice));
+        let _ = out.init(CudaData::F32(out_slice));
     } else if matches!(lhs.dtype(), &DataType::Double) {
         let lhs_data = rhs.data().ok_or(Error::Executor)?.f64()?;
         let rhs_data = lhs.data().ok_or(Error::Executor)?.f64()?;
@@ -86,7 +90,7 @@ pub fn compute(ctx: &mut Context<Data>, device: Arc<CudaDevice>, func: CudaFunct
         );
         unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
         let out = ctx.get_output_mut(0)?;
-        let _ = out.init(Data::F64(out_slice));
+        let _ = out.init(CudaData::F64(out_slice));
     }
 
     Ok(())

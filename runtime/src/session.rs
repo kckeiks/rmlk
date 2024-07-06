@@ -1,23 +1,22 @@
-use rmlk_graph::Graph;
-use std::alloc::Allocator;
-use std::sync::Arc;
-
-// API: public. loads model from file or memory.
-// An inference session.
-// This contains session options.
-// Think of this as data for running sessions or for session that ran
-// vs SessionState that is local to the session.
-pub struct Session {
-    state: SessionState,
-    // Options for sessionstate.
-}
-
-// API: private. Does not offer services for users to load/save model.
-// Does Session map to a graph?
-// REad-only state passed to each executor.
-// Could contain metrics as well.
-// This will be passed to executors as read only information about session
-struct SessionState {
-    graph: Arc<Graph>,
-    plan: (),
-}
+// use rmlk_graph::Graph;
+// use std::sync::Arc;
+//
+// // API: public. loads model from file or memory.
+// // An inference session.
+// // This contains session options.
+// // Think of this as data for running sessions or for session that ran
+// // vs SessionState that is local to the session.
+// pub struct Session {
+//     state: SessionState,
+//     // Options for sessionstate.
+// }
+//
+// // API: private. Does not offer services for users to load/save model.
+// // Does Session map to a graph?
+// // REad-only state passed to each executor.
+// // Could contain metrics as well.
+// // This will be passed to executors as read only information about session
+// struct SessionState {
+//     graph: Arc<Graph>,
+//     plan: (),
+// }

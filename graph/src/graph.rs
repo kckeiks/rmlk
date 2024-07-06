@@ -40,7 +40,7 @@ impl Graph {
     }
 
     pub fn inputs(&self) -> impl Iterator<Item = usize> + '_ {
-        self.outputs.iter().copied()
+        self.inputs.iter().copied()
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = usize> + '_ {
