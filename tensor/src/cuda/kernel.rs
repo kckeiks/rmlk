@@ -64,7 +64,9 @@ impl Kernel for CudaKernel {
                 let func = self.kernel(*dtype)?;
                 ops::add::compute(ctx, self.device.clone(), func)?;
             }
-            Op::Conv => {}
+            Op::Conv => {
+                ops::conv::compute(ctx, self.device.clone())?;
+            }
             _ => todo!(),
         }
 

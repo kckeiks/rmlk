@@ -1,3 +1,5 @@
+extern crate core;
+
 mod cuda;
 mod error;
 mod execution_state;

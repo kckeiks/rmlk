@@ -5,4 +5,6 @@ pub enum Error {
     Overflow,
     MissingTensor,
     MissingNodeInGraph,
+    CudnnInternal,
+    AllocationFailed,
 }
