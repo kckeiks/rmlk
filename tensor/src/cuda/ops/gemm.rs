@@ -4,6 +4,7 @@ use crate::Error;
 use crate::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
+use half::f16;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -21,7 +22,35 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
     match *lhs.dtype() {
         DataType::Float16 => {
-            todo!()
+            let lhs_stride = lhs.stride();
+            let rhs_stride = rhs.stride();
+            let config = gemm_config::<f16>(
+                f16::from_f32(1.0),
+                f16::from_f32(0.0),
+                (b, m, n, k),
+                (lhs_shape, lhs_stride),
+                (rhs_shape, rhs_stride),
+            )
+            .unwrap();
+
+            // let out = ctx.allocate(DataType::Float, vec![b, m, n])?;
+            let mut out_slice = unsafe { device.alloc::<f16>(b * m * n).unwrap() };
+
+            let cublas = CudaBlas::new(device).unwrap();
+
+            unsafe {
+                gemm_stride_batched_f16(
+                    &cublas,
+                    config,
+                    &rhs.data().ok_or(()).unwrap().f16().unwrap().slice(..),
+                    &lhs.data().ok_or(()).unwrap().f16().unwrap().slice(..),
+                    &mut out_slice,
+                )
+                .unwrap();
+            };
+
+            let out = ctx.get_output_mut(0)?;
+            let _ = out.init(CudaData::F16(out_slice));
         }
         DataType::Float => {
             let lhs_stride = lhs.stride();
@@ -150,6 +179,44 @@ pub unsafe fn gemm_stride_batched_f32(
         config.stride_c,
         config.batch_size,
         sys::cublasComputeType_t::CUBLAS_COMPUTE_32F,
+        sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+    )
+    .map_err(|_| Error::Unknown)
+}
+
+pub unsafe fn gemm_stride_batched_f16(
+    cublas: &CudaBlas,
+    config: StridedBatchedConfig<f16>,
+    a: &CudaView<f16>,
+    b: &CudaView<f16>,
+    c: &mut CudaSlice<f16>,
+) -> Result<()> {
+    let alpha = &config.gemm.alpha as *const f16 as *const _;
+    let beta = &config.gemm.beta as *const f16 as *const _;
+
+    cudarc::cublas::result::gemm_strided_batched_ex(
+        *cublas.handle(),
+        config.gemm.transa,
+        config.gemm.transb,
+        config.gemm.m,
+        config.gemm.n,
+        config.gemm.k,
+        alpha,
+        *a.device_ptr() as *const _,
+        sys::cudaDataType_t::CUDA_R_16F,
+        config.gemm.lda,
+        config.stride_a,
+        *b.device_ptr() as *const _,
+        sys::cudaDataType_t::CUDA_R_16F,
+        config.gemm.ldb,
+        config.stride_b,
+        beta,
+        *c.device_ptr_mut() as *mut _,
+        sys::cudaDataType_t::CUDA_R_16F,
+        config.gemm.ldc,
+        config.stride_c,
+        config.batch_size,
+        sys::cublasComputeType_t::CUBLAS_COMPUTE_16F,
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
     .map_err(|_| Error::Unknown)

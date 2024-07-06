@@ -256,11 +256,87 @@ mod test {
     }
 
     #[test]
+    fn test_gemm_f16() {
+        let device = CudaDevice::new(0).unwrap();
+
+        let shape = vec![1, 2, 2];
+        let dtype = DataType::Float16;
+        let op = Op::Gemm;
+
+        let node_a = TestNode {
+            shape: shape.clone(),
+            dtype,
+            data: Some(CudaData::F16(
+                device
+                    .htod_copy(vec![
+                        f16::from_f32(1.0),
+                        f16::from_f32(2.0),
+                        f16::from_f32(3.0),
+                        f16::from_f32(4.0),
+                    ])
+                    .unwrap(),
+            )),
+        };
+        let node_b = TestNode {
+            shape: shape.clone(),
+            dtype,
+            data: Some(CudaData::F16(
+                device
+                    .htod_copy(vec![
+                        f16::from_f32(1.0),
+                        f16::from_f32(2.0),
+                        f16::from_f32(3.0),
+                        f16::from_f32(4.0),
+                    ])
+                    .unwrap(),
+            )),
+        };
+
+        let node_c = TestNode {
+            shape,
+            dtype,
+            data: None,
+        };
+
+        let params = TestParams {
+            inputs: vec![node_a, node_b],
+            outputs: vec![node_c],
+            op,
+        };
+
+        let (_, state) = build_graph_and_state(params);
+        let mut context = Context::new(state, 2).unwrap();
+
+        let cuda_kernel = CudaKernel::new(op, device.clone());
+        cuda_kernel.compute(&mut context).unwrap();
+
+        let out_data = context
+            .get_output(0)
+            .unwrap()
+            .data()
+            .unwrap()
+            .f16()
+            .unwrap();
+        let result = device.dtoh_sync_copy(out_data).unwrap();
+
+        assert_eq!(
+            result,
+            vec![
+                f16::from_f32(7.0),
+                f16::from_f32(10.0),
+                f16::from_f32(15.0),
+                f16::from_f32(22.0)
+            ]
+        )
+    }
+
+    #[test]
     fn test_gemm_f32() {
         let device = CudaDevice::new(0).unwrap();
 
         let shape = vec![1, 2, 2];
         let dtype = DataType::Float;
+        let op = Op::Gemm;
 
         let node_a = TestNode {
             shape: shape.clone(),
@@ -286,13 +362,13 @@ mod test {
         let params = TestParams {
             inputs: vec![node_a, node_b],
             outputs: vec![node_c],
-            op: Op::Add,
+            op,
         };
 
         let (_, state) = build_graph_and_state(params);
         let mut context = Context::new(state, 2).unwrap();
 
-        let cuda_kernel = CudaKernel::new(Op::Gemm, device.clone());
+        let cuda_kernel = CudaKernel::new(op, device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context
