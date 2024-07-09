@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::Read;
 use std::os::unix::fs::FileExt;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Tensor {
     pub dims: Vec<usize>,
     pub data_type: DataType,
@@ -396,7 +396,7 @@ impl From<onnx::mod_TensorProto::DataType> for DataType {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Segment {
     pub begin: Option<i64>,
     pub end: Option<i64>,
@@ -411,7 +411,7 @@ impl From<onnx::mod_TensorProto::Segment> for Segment {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct SparseTensor {
     values: Option<Tensor>,
     indices: Option<Tensor>,

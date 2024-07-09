@@ -4,7 +4,7 @@ use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Node {
     // Input nodes.
     pub input: Vec<String>,

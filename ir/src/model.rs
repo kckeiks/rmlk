@@ -134,7 +134,7 @@ impl From<onnx::StringStringEntryProto<'_>> for StringStringEntryProto {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TensorAnnotation {
     tensor_name: Option<String>,
     quant_parameter_tensor_names: Vec<StringStringEntryProto>,

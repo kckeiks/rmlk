@@ -1,10 +1,11 @@
 use crate::cuda::data::CudaData;
-use crate::Result;
+use crate::kernel::ConvAttributes;
 use crate::{Context, Error};
+use crate::{OpKernelAttributes, Result};
 use cudarc::cudnn;
 use cudarc::cudnn::ConvForward;
 use cudarc::driver::CudaDevice;
-use rmlk_ir::DataType;
+use rmlk_ir::{AttributeType, DataType};
 use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -33,10 +34,18 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         .try_into()
         .unwrap();
 
+    // Todo: Fix how we get attributes as we can do better.
+    let attr = ctx
+        .get_attributes()
+        .map(|attr| ConvAttributes::try_from(attr))
+        .transpose()?
+        .unwrap_or_default();
+    let pads = attr.pads.unwrap_or(Box::new([0, 0, 0, 0]));
+
     // Todo: Handle groups, dilation and stride.
     // https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
-    let height = ((shape[2] - filter_shape[2] + 2 * 1) / 1) + 1;
-    let width = ((shape[3] - filter_shape[3] + 2 * 1) / 1) + 1;
+    let height = ((shape[2] - filter_shape[2] + 2 * pads[2]) / 1) + 1;
+    let width = ((shape[3] - filter_shape[3] + 2 * pads[3]) / 1) + 1;
 
     let out_shape = [shape[0], filter_shape[1], height, width];
     let out_size = out_shape.iter().product::<i32>();

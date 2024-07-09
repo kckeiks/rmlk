@@ -12,19 +12,35 @@ use serde::{Deserialize, Serialize};
 /// and tensor values, or repeated float, integer, string, graph, and tensor values.
 /// An AttributeProto MUST contain the name field, and *only one* of the
 /// following content fields, effectively enforcing a C/C++ union equivalent.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Attribute {
     /// The name of the attribute.
-    name: String,
+    pub name: String,
     /// If ref_attr_name is not empty, ref_attr_name is the attribute name in parent function.
     /// In this case, this AttributeProto does not contain data, and it's a reference of attribute
     /// in parent scope.
     /// NOTE: This should ONLY be used in function (sub-graph). It's invalid to be used in main graph.
-    ref_attr_name: Option<String>,
+    pub ref_attr_name: Option<String>,
     /// A human-readable documentation for this attribute. Markdown is allowed.
-    doc_string: Option<String>,
+    pub doc_string: Option<String>,
     /// The type of the attribute.
-    ty: AttributeType,
+    pub ty: AttributeType,
+}
+
+impl Attribute {
+    pub fn ints(&self) -> Option<&[i32]> {
+        match &self.ty {
+            AttributeType::Ints(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn int(&self) -> Option<i32> {
+        match &self.ty {
+            AttributeType::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
 }
 
 impl TryFrom<AttributeProto<'_>> for Attribute {
@@ -45,10 +61,11 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     name: "Attribute::f".to_string(),
                 })?)
             }
+            // Todo: Address casting.
             onnx::mod_AttributeProto::AttributeType::INT => {
                 AttributeType::Int(value.i.ok_or(Error::MissingField {
                     name: "Attribute::i".to_string(),
-                })?)
+                })? as i32)
             }
             onnx::mod_AttributeProto::AttributeType::STRING => AttributeType::String(
                 value
@@ -88,7 +105,10 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     .try_into()?,
             ),
             onnx::mod_AttributeProto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
-            onnx::mod_AttributeProto::AttributeType::INTS => AttributeType::Ints(value.ints),
+            // Todo: Address casting.
+            onnx::mod_AttributeProto::AttributeType::INTS => {
+                AttributeType::Ints(value.ints.iter().map(|num| *num as i32).collect())
+            }
             onnx::mod_AttributeProto::AttributeType::STRINGS => {
                 AttributeType::Strings(value.strings.into_iter().map(|s| s.to_vec()).collect())
             }
@@ -136,10 +156,10 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-enum AttributeType {
+#[derive(Debug, Deserialize, Serialize)]
+pub enum AttributeType {
     Float(f32),
-    Int(i64),
+    Int(i32),
     String(Vec<u8>),
     Tensor(Tensor),
     Graph(Graph),
@@ -147,7 +167,7 @@ enum AttributeType {
     Type(Type),
     Floats(Vec<f32>),
     Doubles(Vec<f64>),
-    Ints(Vec<i64>),
+    Ints(Vec<i32>),
     Strings(Vec<Vec<u8>>),
     Tensors(Vec<Tensor>),
     Graphs(Vec<Graph>),

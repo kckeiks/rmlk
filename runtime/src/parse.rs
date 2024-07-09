@@ -67,11 +67,16 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
     for ir_node in graph_schema.node {
         let op = ir_node
             .op_type
+            .as_ref()
             .map(|op| op.parse::<Op>())
             .ok_or(Error::Unknown)
             .unwrap()
             .map_err(|_| Error::Unknown)
             .unwrap();
+        // if matches!(op, Op::Conv) {
+        //     println!("{ir_node:?}");
+        // }
+
         let mut node = Node::new(
             op,
             Definition {
@@ -79,6 +84,14 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
                 dtype: DataType::Undefined,
             },
         );
+
+        // Add attributes.
+        for attr in ir_node.attribute {
+            // Todo: Let's avoid the copy.
+            // Maybe we can define some type of object that we agree to never drop
+            // and then we can leak the string.
+            node.add_attr(attr.name.clone().into_boxed_str(), attr);
+        }
 
         for name in ir_node.input.iter() {
             let input_node_id = builder.get_node_id(name).ok_or_else(|| {

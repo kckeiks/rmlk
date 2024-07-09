@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// list of nodes that form a directed acyclic graph based on their inputs and outputs.
 /// This is the equivalent of the "network" or "graph" in many deep learning
 /// frameworks.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Graph {
     /// The nodes in the graph, sorted topologically.
     pub node: Vec<Node>,

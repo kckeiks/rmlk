@@ -1,4 +1,5 @@
-use rmlk_ir::{DataType, Op};
+use rmlk_ir::{Attribute, DataType, Op};
+use std::collections::HashMap;
 
 pub struct Node {
     /// The node's Provider.
@@ -21,6 +22,8 @@ pub struct Node {
     outputs: Vec<usize>,
     /// The node's definition.
     _definition: Definition,
+    /// Attributes.
+    attributes: HashMap<Box<str>, Attribute>,
 }
 
 impl Node {
@@ -31,6 +34,7 @@ impl Node {
             inputs: Vec::new(),
             outputs: Vec::new(),
             _definition: definition,
+            attributes: HashMap::new(),
         }
     }
 
@@ -52,6 +56,14 @@ impl Node {
 
     pub fn add_output(&mut self, node_id: usize) {
         self.outputs.push(node_id);
+    }
+
+    pub fn attrs(&self) -> &HashMap<Box<str>, Attribute> {
+        &self.attributes
+    }
+
+    pub fn add_attr(&mut self, name: Box<str>, attr: Attribute) {
+        self.attributes.insert(name, attr);
     }
 }
 
