@@ -384,4 +384,64 @@ mod test {
 
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }
+
+    #[test]
+    fn test_conv_f32() {
+        let device = CudaDevice::new(0).unwrap();
+        let shape = vec![1, 1, 5, 5];
+        let dtype = DataType::Float;
+
+        let node_a = TestNode {
+            shape: shape.clone(),
+            dtype,
+            data: Some(CudaData::F32(
+                device
+                    .htod_copy(vec![
+                        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0,
+                        14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                    ])
+                    .unwrap(),
+            )),
+        };
+        let node_b = TestNode {
+            shape: vec![1, 1, 3, 3],
+            dtype,
+            data: Some(CudaData::F32(device.htod_copy(vec![1.0; 9]).unwrap())),
+        };
+
+        let node_c = TestNode {
+            shape,
+            dtype,
+            data: None,
+        };
+
+        let params = TestParams {
+            inputs: vec![node_a, node_b],
+            outputs: vec![node_c],
+            op: Op::Conv,
+        };
+
+        let (_, state) = build_graph_and_state(params);
+        let mut context = Context::new(state, 2).unwrap();
+
+        let cuda_kernel = CudaKernel::new(Op::Conv, device.clone());
+        cuda_kernel.compute(&mut context).unwrap();
+
+        let out_data = context
+            .get_output(0)
+            .unwrap()
+            .data()
+            .unwrap()
+            .f32()
+            .unwrap();
+        let result = device.dtoh_sync_copy(out_data).unwrap();
+
+        assert_eq!(
+            result,
+            vec![
+                12.0, 21.0, 27.0, 33.0, 24.0, 33.0, 54.0, 63.0, 72.0, 51.0, 63.0, 99.0, 108.0,
+                117.0, 81.0, 93.0, 144.0, 153.0, 162.0, 111.0, 72.0, 111.0, 117.0, 123.0, 84.0,
+            ]
+        )
+    }
 }
