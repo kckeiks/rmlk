@@ -104,9 +104,11 @@ impl TryFrom<&HashMap<Box<str>, Attribute>> for ConvAttributes {
                     .into_boxed_slice(),
             );
         }
+
         if let Some(attr) = value.get("group") {
             attrs.group = Some(attr.int().ok_or(Error::InvalidAttributeFormat)?);
         }
+
         if let Some(attr) = value.get("kernel_shape") {
             attrs.kernel_shape = Some(
                 attr.ints()
@@ -115,6 +117,7 @@ impl TryFrom<&HashMap<Box<str>, Attribute>> for ConvAttributes {
                     .into_boxed_slice(),
             );
         }
+
         if let Some(attr) = value.get("pads") {
             attrs.pads = Some(
                 attr.ints()
@@ -123,6 +126,7 @@ impl TryFrom<&HashMap<Box<str>, Attribute>> for ConvAttributes {
                     .into_boxed_slice(),
             );
         }
+
         if let Some(attr) = value.get("strides") {
             attrs.strides = Some(
                 attr.ints()

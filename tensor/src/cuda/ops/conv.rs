@@ -2,6 +2,7 @@ use crate::cuda::data::CudaData;
 use crate::kernel::ConvAttributes;
 use crate::{Context, Error};
 use crate::{OpKernelAttributes, Result};
+use core::slice::SlicePattern;
 use cudarc::cudnn;
 use cudarc::cudnn::ConvForward;
 use cudarc::driver::CudaDevice;
@@ -10,23 +11,17 @@ use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
     let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
-    let input = ctx.get_input(0)?;
-    let filter = ctx.get_input(1)?;
+    // Input data tensor.
+    let x = ctx.get_input(0)?;
+    // Weight tensor.
+    let w = ctx.get_input(1)?;
 
-    if input.shape().len() > 4 || filter.shape().len() > 4 {
+    // Todo: Handle conv1 and conv3.
+    if x.shape().len() > 4 || w.shape().len() > 4 {
         return Err(Error::InvalidInputDimensions);
     }
 
-    // Todo: validate shape.
-    let shape: [i32; 4] = input
-        .shape()
-        .iter()
-        .map(|dim| *dim as i32)
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    // Todo: validate shape.
-    let filter_shape: [i32; 4] = filter
+    let x_shape: [i32; 4] = x
         .shape()
         .iter()
         .map(|dim| *dim as i32)
@@ -34,46 +29,77 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         .try_into()
         .unwrap();
 
-    // Todo: Fix how we get attributes as we can do better.
     let attr = ctx
         .get_attributes()
         .map(|attr| ConvAttributes::try_from(attr))
         .transpose()?
         .unwrap_or_default();
-    let pads = attr.pads.unwrap_or(Box::new([0, 0, 0, 0]));
 
-    // Todo: Handle groups, dilation and stride.
+    // Todo: Research this.
+    // Onnx spec says a pad value will be included for each spatial axis but the
+    // cudnn only accepts padding for the "height" and "weight".
+    // We end up with some unused padding.
+    let pads: [i32; 2] = match attr.pads {
+        Some(pads) if pads.len() >= 2 => {
+            pads[..2]
+                .as_slice()
+                .try_into()
+                .map_err(|_| Error::UnsupportedShape)?
+        },
+        _ => [0; 2],
+    };
+    let strides: [i32; 2] = attr
+        .strides
+        .unwrap_or_else(|| Box::new([1, 1]))
+        .try_into()
+        .map_err(|_| Error::UnsupportedShape)?;
+    let dilations: [i32; 2] = attr
+        .dilations
+        .unwrap_or_else(|| Box::new([1, 1]))
+        .try_into()
+        .map_err(|_| Error::UnsupportedShape)?;
+    let w_shape: [i32; 4] = if let Some(shape) = attr.kernel_shape {
+        shape.as_ref().try_into().unwrap()
+    } else {
+        w.shape()
+            .iter()
+            .map(|dim| *dim as i32)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
+    };
+
+    // Todo: Dont forget group.
+
     // https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
-    let height = ((shape[2] - filter_shape[2] + 2 * pads[2]) / 1) + 1;
-    let width = ((shape[3] - filter_shape[3] + 2 * pads[3]) / 1) + 1;
+    let height =
+        ((x_shape[2] + 2 * pads[0] - dilations[0] * (w_shape[2] - 1) - 1) / strides[0]) + 1;
+    let width = ((x_shape[3] + 2 * pads[1] - dilations[1] * (w_shape[3] - 1) - 1) / strides[1]) + 1;
 
-    let out_shape = [shape[0], filter_shape[1], height, width];
+    let out_shape = [x_shape[0], w_shape[1], height, width];
     let out_size = out_shape.iter().product::<i32>();
-    println!("{out_shape:?}, {out_size}");
-    // Todo: validate that input and filter shape are compatible. Follow the spec.
 
-    match *input.dtype() {
+    match *x.dtype() {
         DataType::Float => {
             // Todo: handle this data and move it to device.
-            let input_slice = input.data().unwrap().f32()?;
+            let input_slice = x.data().unwrap().f32()?;
             let input_desc = cudnn
-                .create_4d_tensor::<f32>(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, shape)
+                .create_4d_tensor::<f32>(
+                    cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+                    x_shape,
+                )
                 .map_err(|_| Error::CudnnInternal)?;
 
-            let filter_slice = filter.data().unwrap().f32()?;
+            let filter_slice = w.data().unwrap().f32()?;
             let filter_desc = cudnn
-                .create_4d_filter(
-                    cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-                    filter_shape,
-                )
+                .create_4d_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, w_shape)
                 .map_err(|_| Error::CudnnInternal)?;
 
             let conv = cudnn
                 .create_conv2d::<f32>(
-                    // Todo: Get this from IR.
-                    [1; 2],
-                    [1; 2],
-                    [1; 2],
+                    pads,
+                    strides,
+                    dilations,
                     cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 )
                 .map_err(|_| Error::CudnnInternal)?;

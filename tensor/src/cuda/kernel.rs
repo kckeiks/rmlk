@@ -1,8 +1,8 @@
 use crate::cuda::data::CudaData;
 use crate::cuda::kernels::{add, mul};
 use crate::cuda::ops;
-use crate::kernel::Context;
 use crate::kernel::Kernel;
+use crate::kernel::{Context, ConvAttributes};
 use crate::{Error, Result};
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::{DataType, Op};
@@ -479,7 +479,7 @@ mod test {
         let params = TestParams {
             inputs: vec![node_a, node_b],
             outputs: vec![node_c],
-            attributes: attributes,
+            attributes,
             op: Op::Conv,
         };
 

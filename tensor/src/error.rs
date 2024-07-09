@@ -11,4 +11,5 @@ pub enum Error {
     CudnnInternal,
     AllocationFailed,
     MissingAttributes,
+    UnsupportedShape,
 }
