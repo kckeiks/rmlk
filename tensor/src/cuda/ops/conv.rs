@@ -75,35 +75,46 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
             .unwrap()
     };
 
-    // https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
+    // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
     let height =
         ((x_shape[2] + 2 * pads[0] - dilations[0] * (w_shape[2] - 1) - 1) / strides[0]) + 1;
     let width = ((x_shape[3] + 2 * pads[1] - dilations[1] * (w_shape[3] - 1) - 1) / strides[1]) + 1;
 
+    let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
     let out_shape = [x_shape[0], w_shape[1], height, width];
     let out_size = out_shape.iter().product::<i32>();
+
+    // Todo: We can precompute the shape when we first load the model
+    // to avoid allocations.
+    // Todo: Need utils to compute output shape and strides.
+    let dims = out_shape.len();
+    let mut out_stride = vec![0; dims];
+    out_stride[dims - 1] = 1;
+    for i in (0..(dims - 1)).rev() {
+        out_stride[i] += out_stride[i + 1] * out_shape[i + 1];
+    }
 
     match *x.dtype() {
         DataType::Float => {
             // Todo: handle this data and move it to device.
             let input_slice = x.data().unwrap().f32()?;
             let input_desc = cudnn
-                .create_4d_tensor::<f32>(
-                    cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-                    x_shape,
+                .create_nd_tensor::<f32>(
+                    &x_shape,
+                    &x_stride
                 )
                 .map_err(|_| Error::CudnnInternal)?;
 
             let filter_slice = w.data().unwrap().f32()?;
             let filter_desc = cudnn
-                .create_4d_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, w_shape)
+                .create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, &w_shape)
                 .map_err(|_| Error::CudnnInternal)?;
 
             let mut conv = cudnn
-                .create_conv2d::<f32>(
-                    pads,
-                    strides,
-                    dilations,
+                .create_convnd::<f32>(
+                    &pads,
+                    &strides,
+                    &dilations,
                     cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 )
                 .map_err(|_| Error::CudnnInternal)?;
@@ -112,9 +123,9 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                 .map_err(|_| Error::Unknown)?;
 
             let out_desc = cudnn
-                .create_4d_tensor::<f32>(
-                    cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-                    out_shape,
+                .create_nd_tensor::<f32>(
+                    &out_shape,
+                    &out_stride,
                 )
                 .map_err(|_| Error::CudnnInternal)?;
             let mut out_slice = device
