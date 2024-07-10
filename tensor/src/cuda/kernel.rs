@@ -419,13 +419,16 @@ mod test {
             ty: AttributeType::Ints(conv_attrs.pads.unwrap().to_vec()),
         });
 
-        result.push(Attribute {
-            name: "kernel_shape".to_string(),
+        if conv_attrs.kernel_shape.is_some() {
+            result.push(Attribute {
+                name: "kernel_shape".to_string(),
 
-            ref_attr_name: None,
-            doc_string: None,
-            ty: AttributeType::Ints(conv_attrs.kernel_shape.unwrap().to_vec()),
-        });
+                ref_attr_name: None,
+                doc_string: None,
+                ty: AttributeType::Ints(conv_attrs.kernel_shape.unwrap().to_vec()),
+            });
+        }
+
 
         result.push(Attribute {
             name: "strides".to_string(),
@@ -471,7 +474,7 @@ mod test {
         let attributes = create_conv_attributes(ConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
-            kernel_shape: Some(Box::new([3, 3])),
+            kernel_shape: None,
             pads: Some(Box::new([1, 1, 1, 1])),
             strides: Some(Box::new([1, 1])),
         });

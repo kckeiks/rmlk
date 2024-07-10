@@ -2,7 +2,6 @@ use crate::cuda::data::CudaData;
 use crate::kernel::ConvAttributes;
 use crate::{Context, Error};
 use crate::{OpKernelAttributes, Result};
-use core::slice::SlicePattern;
 use cudarc::cudnn;
 use cudarc::cudnn::ConvForward;
 use cudarc::driver::CudaDevice;
@@ -40,26 +39,33 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     // cudnn only accepts padding for the "height" and "weight".
     // We end up with some unused padding.
     let pads: [i32; 2] = match attr.pads {
-        Some(pads) if pads.len() >= 2 => {
-            pads[..2]
-                .as_slice()
-                .try_into()
-                .map_err(|_| Error::UnsupportedShape)?
-        },
+        Some(pads) if pads.len() >= 2 => pads[..2]
+            .as_ref()
+            .try_into()
+            .map_err(|_| Error::UnsupportedShape)?,
         _ => [0; 2],
     };
-    let strides: [i32; 2] = attr
-        .strides
-        .unwrap_or_else(|| Box::new([1, 1]))
-        .try_into()
-        .map_err(|_| Error::UnsupportedShape)?;
-    let dilations: [i32; 2] = attr
-        .dilations
-        .unwrap_or_else(|| Box::new([1, 1]))
-        .try_into()
-        .map_err(|_| Error::UnsupportedShape)?;
+    let strides: [i32; 2] = match attr.strides {
+        Some(strides) => {
+            strides
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::UnsupportedShape)?
+        }
+        _ => [1; 2],
+    };
+    let dilations: [i32; 2] = match attr.dilations {
+        Some(dilations) => {
+            dilations
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::UnsupportedShape)?
+        }
+        _ => [1; 2],
+    };
+    let group = attr.group.unwrap_or(1);
     let w_shape: [i32; 4] = if let Some(shape) = attr.kernel_shape {
-        shape.as_ref().try_into().unwrap()
+        [x_shape[0], x_shape[1] / group, shape[0], shape[1]]
     } else {
         w.shape()
             .iter()
@@ -68,8 +74,6 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
             .try_into()
             .unwrap()
     };
-
-    // Todo: Dont forget group.
 
     // https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
     let height =
@@ -95,7 +99,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                 .create_4d_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, w_shape)
                 .map_err(|_| Error::CudnnInternal)?;
 
-            let conv = cudnn
+            let mut conv = cudnn
                 .create_conv2d::<f32>(
                     pads,
                     strides,
@@ -104,7 +108,9 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                 )
                 .map_err(|_| Error::CudnnInternal)?;
 
-            // Todo: Calculate the length of the output.
+            conv.set_group_count(group)
+                .map_err(|_| Error::Unknown)?;
+
             let out_desc = cudnn
                 .create_4d_tensor::<f32>(
                     cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
