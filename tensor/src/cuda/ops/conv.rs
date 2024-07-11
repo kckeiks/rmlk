@@ -1,11 +1,12 @@
 use crate::cuda::data::CudaData;
 use crate::kernel::ConvAttributes;
+use crate::Result;
 use crate::{Context, Error};
-use crate::{OpKernelAttributes, Result};
 use cudarc::cudnn;
 use cudarc::cudnn::ConvForward;
 use cudarc::driver::CudaDevice;
-use rmlk_ir::{AttributeType, DataType};
+use log::debug;
+use rmlk_ir::DataType;
 use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -15,9 +16,16 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     // Weight tensor.
     let w = ctx.get_input(1)?;
 
-    // Todo: Handle conv1 and conv3.
-    if x.shape().len() > 4 || w.shape().len() > 4 {
-        return Err(Error::InvalidInputDimensions);
+    // Todo: the input may not have a shape.
+    // When the shape is missing, it means the input can have any shape.
+    // The shape of the input can be inferred by the caller of this function.
+    // This may not be a problem if we stick to the invariant that
+    // every input must have a shape and we must set the shape of the output
+    // if it doesn't exist.
+    if (x.shape().len() != 4 && x.shape().len() != 5)
+        || (w.shape().len() != 4 && w.shape().len() != 5)
+    {
+        return Err(Error::InvalidTensorDimensions);
     }
 
     let x_shape: [i32; 4] = x
@@ -26,83 +34,84 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         .map(|dim| *dim as i32)
         .collect::<Vec<_>>()
         .try_into()
+        // Unwrap is safe because we validated the dimensions.
         .unwrap();
-
-    let attr = ctx
-        .get_attributes()
-        .map(|attr| ConvAttributes::try_from(attr))
-        .transpose()?
-        .unwrap_or_default();
-
-    // Todo: Research this.
-    // Onnx spec says a pad value will be included for each spatial axis but the
-    // cudnn only accepts padding for the "height" and "weight".
-    // We end up with some unused padding.
-    let pads: [i32; 2] = match attr.pads {
-        Some(pads) if pads.len() >= 2 => pads[..2]
-            .as_ref()
-            .try_into()
-            .map_err(|_| Error::UnsupportedShape)?,
-        _ => [0; 2],
-    };
-    let strides: [i32; 2] = match attr.strides {
-        Some(strides) => {
-            strides
-                .as_ref()
-                .try_into()
-                .map_err(|_| Error::UnsupportedShape)?
-        }
-        _ => [1; 2],
-    };
-    let dilations: [i32; 2] = match attr.dilations {
-        Some(dilations) => {
-            dilations
-                .as_ref()
-                .try_into()
-                .map_err(|_| Error::UnsupportedShape)?
-        }
-        _ => [1; 2],
-    };
-    let group = attr.group.unwrap_or(1);
-    let w_shape: [i32; 4] = if let Some(shape) = attr.kernel_shape {
-        [x_shape[0], x_shape[1] / group, shape[0], shape[1]]
-    } else {
-        w.shape()
-            .iter()
-            .map(|dim| *dim as i32)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
-    };
-
-    // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
-    let height =
-        ((x_shape[2] + 2 * pads[0] - dilations[0] * (w_shape[2] - 1) - 1) / strides[0]) + 1;
-    let width = ((x_shape[3] + 2 * pads[1] - dilations[1] * (w_shape[3] - 1) - 1) / strides[1]) + 1;
-
     let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-    let out_shape = [x_shape[0], w_shape[1], height, width];
+
+    let filter_dims = match x.shape().len() {
+        4 => 2,
+        5 => 3,
+        _ => unreachable!("we already checked the dimensions of x for the supported dimensions"),
+    };
+
+    let attrs = ConvAttributes::new(
+        ctx.get_attributes().ok_or(Error::MissingNodeInGraph)?,
+        filter_dims,
+    )?;
+
+    let w_shape = match attrs.kernel_shape(&x_shape) {
+        None => {
+            w.shape()
+                .iter()
+                .map(|dim| *dim as i32)
+                // Todo: use a scratch buffer to avoid an allocation.
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        }
+        Some(shape) => shape,
+    };
+    let out_shape = attrs.calculate_output_shape(&x_shape, &w_shape);
     let out_size = out_shape.iter().product::<i32>();
 
-    // Todo: We can precompute the shape when we first load the model
-    // to avoid allocations.
-    // Todo: Need utils to compute output shape and strides.
-    let dims = out_shape.len();
-    let mut out_stride = vec![0; dims];
-    out_stride[dims - 1] = 1;
-    for i in (0..(dims - 1)).rev() {
-        out_stride[i] += out_stride[i + 1] * out_shape[i + 1];
+    // Todo: Do we validate that our calculated output shape matches
+    // the output's shape, if any exists?
+    // For now, we validate and ignore that shape may not be present.
+    let out = ctx.get_output(0)?;
+    if out.shape().len() != out_shape.len() {
+        return Err(Error::CudnnInternal);
     }
+
+    // Todo: if there is no shape, simply set it.
+    // Although, we probably need some other type of way
+    // to flag tensors when they could have any shape.
+    if out
+        .shape()
+        .iter()
+        .zip(out_shape.iter())
+        .map(|(a, b)| (*a, *b as usize))
+        .find(|(a, b)| a != b)
+        .is_some()
+    {
+        return Err(Error::OutputShapeMismatch);
+    }
+
+    let out_stride = out
+        .stride()
+        .iter()
+        .map(|v| *v as i32)
+        .collect::<Box<[i32]>>();
+
+    debug!(
+        "x_shape={x_shape:?}, \
+        w_shape={w_shape:?}, \
+        filter_dims={filter_dims:?}, \
+        group={:?}, \
+        pads={:?}, \
+        strides={:?}, \
+        dilations={:?}",
+        attrs.group(),
+        attrs.pads(),
+        attrs.strides(),
+        attrs.dilations()
+    );
 
     match *x.dtype() {
         DataType::Float => {
             // Todo: handle this data and move it to device.
             let input_slice = x.data().unwrap().f32()?;
             let input_desc = cudnn
-                .create_nd_tensor::<f32>(
-                    &x_shape,
-                    &x_stride
-                )
+                .create_nd_tensor::<f32>(&x_shape, &x_stride)
                 .map_err(|_| Error::CudnnInternal)?;
 
             let filter_slice = w.data().unwrap().f32()?;
@@ -112,21 +121,18 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
             let mut conv = cudnn
                 .create_convnd::<f32>(
-                    &pads,
-                    &strides,
-                    &dilations,
+                    attrs.pads(),
+                    attrs.strides(),
+                    attrs.dilations(),
                     cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 )
                 .map_err(|_| Error::CudnnInternal)?;
 
-            conv.set_group_count(group)
+            conv.set_group_count(attrs.group())
                 .map_err(|_| Error::Unknown)?;
 
             let out_desc = cudnn
-                .create_nd_tensor::<f32>(
-                    &out_shape,
-                    &out_stride,
-                )
+                .create_nd_tensor::<f32>(&out_shape, &out_stride)
                 .map_err(|_| Error::CudnnInternal)?;
             let mut out_slice = device
                 .alloc_zeros::<f32>(out_size as usize)
@@ -139,10 +145,10 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                     y: &out_desc,
                 };
 
-                // Pick algorithm
+                // Pick algorithm.
                 let algo = op.pick_algorithm().map_err(|_| Error::CudnnInternal)?;
 
-                // Get workspace size
+                // Get workspace size.
                 let workspace_size = op
                     .get_workspace_size(algo.clone())
                     .map_err(|_| Error::CudnnInternal)?;
@@ -150,7 +156,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                     .alloc_zeros::<u8>(workspace_size)
                     .map_err(|_| Error::AllocationFailed)?;
 
-                // Launch conv operation
+                // Launch the operation.
                 unsafe {
                     op.launch(
                         algo,

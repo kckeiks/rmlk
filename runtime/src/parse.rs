@@ -48,6 +48,7 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
         let mut node = Node::new(
             Op::Const,
             Definition {
+                // Todo: we need to read the dimensions.
                 shape: Vec::new(),
                 dtype: elem_ty,
             },

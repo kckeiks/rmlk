@@ -1,7 +1,7 @@
 #[derive(Debug)]
 pub enum Error {
     Unknown,
-    InvalidInputDimensions,
+    InvalidTensorDimensions,
     InvalidAttribute,
     InvalidAttributeFormat,
     Executor,
@@ -12,4 +12,5 @@ pub enum Error {
     AllocationFailed,
     MissingAttributes,
     UnsupportedShape,
+    OutputShapeMismatch,
 }

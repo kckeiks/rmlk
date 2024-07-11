@@ -1,8 +1,8 @@
 use crate::cuda::data::CudaData;
 use crate::cuda::kernels::{add, mul};
 use crate::cuda::ops;
+use crate::kernel::Context;
 use crate::kernel::Kernel;
-use crate::kernel::{Context, ConvAttributes};
 use crate::{Error, Result};
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::{DataType, Op};
@@ -79,7 +79,7 @@ mod test {
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
     use crate::execution_state::ExecutionState;
-    use crate::kernel::{Context, ConvAttributes, Kernel};
+    use crate::kernel::{Context, Kernel};
     use crate::tensor::Tensor;
     use cudarc::driver::CudaDevice;
     use half::f16;
@@ -394,7 +394,15 @@ mod test {
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }
 
-    fn create_conv_attributes(conv_attrs: ConvAttributes) -> Vec<Attribute> {
+    pub struct TestConvAttributes {
+        pub dilations: Option<Box<[i32]>>,
+        pub group: Option<i32>,
+        pub kernel_shape: Option<Box<[i32]>>,
+        pub pads: Option<Box<[i32]>>,
+        pub strides: Option<Box<[i32]>>,
+    }
+
+    fn create_conv_attributes(conv_attrs: TestConvAttributes) -> Vec<Attribute> {
         let mut result = Vec::new();
         result.push(Attribute {
             name: "dilations".to_string(),
@@ -405,7 +413,6 @@ mod test {
 
         result.push(Attribute {
             name: "group".to_string(),
-
             ref_attr_name: None,
             doc_string: None,
             ty: AttributeType::Int(conv_attrs.group.unwrap()),
@@ -413,7 +420,6 @@ mod test {
 
         result.push(Attribute {
             name: "pads".to_string(),
-
             ref_attr_name: None,
             doc_string: None,
             ty: AttributeType::Ints(conv_attrs.pads.unwrap().to_vec()),
@@ -422,17 +428,14 @@ mod test {
         if conv_attrs.kernel_shape.is_some() {
             result.push(Attribute {
                 name: "kernel_shape".to_string(),
-
                 ref_attr_name: None,
                 doc_string: None,
                 ty: AttributeType::Ints(conv_attrs.kernel_shape.unwrap().to_vec()),
             });
         }
 
-
         result.push(Attribute {
             name: "strides".to_string(),
-
             ref_attr_name: None,
             doc_string: None,
             ty: AttributeType::Ints(conv_attrs.strides.unwrap().to_vec()),
@@ -471,7 +474,7 @@ mod test {
             data: None,
         };
 
-        let attributes = create_conv_attributes(ConvAttributes {
+        let attributes = create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
             kernel_shape: None,

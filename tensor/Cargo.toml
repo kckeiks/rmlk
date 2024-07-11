@@ -10,6 +10,7 @@ rmlk-cuda = { path = "../cuda" }
 rmlk-ir = { path = "../ir" }
 rmlk-graph = { path = "../graph" }
 half = "2.4"
+log = "0.4.21"
 
 [dev-dependencies]
 criterion = { workspace = true }
