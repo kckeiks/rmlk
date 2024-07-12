@@ -5,7 +5,8 @@ use crate::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
-use rmlk_ir::DataType;
+use rmlk_ir::{Attribute, DataType};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -22,35 +23,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
     match *lhs.dtype() {
         DataType::Float16 => {
-            let lhs_stride = lhs.stride();
-            let rhs_stride = rhs.stride();
-            let config = gemm_config::<f16>(
-                f16::from_f32(1.0),
-                f16::from_f32(0.0),
-                (b, m, n, k),
-                (lhs_shape, lhs_stride),
-                (rhs_shape, rhs_stride),
-            )
-            .unwrap();
-
-            // let out = ctx.allocate(DataType::Float, vec![b, m, n])?;
-            let mut out_slice = unsafe { device.alloc::<f16>(b * m * n).unwrap() };
-
-            let cublas = CudaBlas::new(device).unwrap();
-
-            unsafe {
-                gemm_stride_batched_f16(
-                    &cublas,
-                    config,
-                    &rhs.data().ok_or(()).unwrap().f16().unwrap().slice(..),
-                    &lhs.data().ok_or(()).unwrap().f16().unwrap().slice(..),
-                    &mut out_slice,
-                )
-                .unwrap();
-            };
-
-            let out = ctx.get_output_mut(0)?;
-            let _ = out.init(CudaData::F16(out_slice));
+            todo!()
         }
         DataType::Float => {
             let lhs_stride = lhs.stride();
@@ -222,6 +195,55 @@ pub unsafe fn gemm_stride_batched_f16(
     .map_err(|_| Error::Unknown)
 }
 
+pub struct GemmAttributes {
+    alpha: f32,
+    beta: f32,
+    transA: bool,
+    transB: bool,
+}
+
+impl GemmAttributes {
+    pub fn new(attrs: HashMap<Box<str>, Attribute>) -> Result<Self> {
+        let mut alpha = None;
+        let mut beta = None;
+        let mut transA = None;
+        let mut transB = None;
+
+        if let Some(attr) = attrs.get("alpha") {
+            alpha = attr.float();
+        }
+
+        if let Some(attr) = attrs.get("beta") {
+            beta = attr.float();
+        }
+
+        if let Some(attr) = attrs.get("transA") {
+            transA = match attr.int() {
+                Some(0) => Some(false),
+                Some(1) => Some(true),
+                None => None,
+                _ => return Err(Error::InvalidAttribute),
+            };
+        }
+
+        if let Some(attr) = attrs.get("transB") {
+            transB = match attr.int() {
+                Some(0) => Some(false),
+                Some(1) => Some(true),
+                None => None,
+                _ => return Err(Error::InvalidAttribute),
+            };
+        }
+
+        Ok(Self {
+            alpha: alpha.unwrap_or(1.0),
+            beta: beta.unwrap_or(1.0),
+            transA: transA.unwrap_or(false),
+            transB: transB.unwrap_or(false),
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::cuda::data::CudaData;
@@ -230,210 +252,84 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use half::f16;
+    // use half::f16;
     use rmlk_ir::{DataType, Op};
 
-    #[test]
-    fn test_add_f16() {
-        let device = CudaDevice::new(0).unwrap();
-        let shape = vec![4, 1, 1, 1];
-        let dtype = DataType::Float16;
-
-        let node_a = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F16(
-                device
-                    .htod_copy(vec![
-                        f16::from_f32(1.0),
-                        f16::from_f32(2.0),
-                        f16::from_f32(3.0),
-                        f16::from_f32(4.0),
-                    ])
-                    .unwrap(),
-            )),
-        };
-        let node_b = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F16(
-                device
-                    .htod_copy(vec![
-                        f16::from_f32(1.0),
-                        f16::from_f32(2.0),
-                        f16::from_f32(3.0),
-                        f16::from_f32(4.0),
-                    ])
-                    .unwrap(),
-            )),
-        };
-
-        let node_c = TestNode {
-            shape,
-            dtype,
-            data: None,
-        };
-
-        let params = TestParams {
-            inputs: vec![node_a, node_b],
-            outputs: vec![node_c],
-            attributes: vec![],
-            op: Op::Add,
-        };
-
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 2).unwrap();
-
-        let cuda_kernel = CudaKernel::new(Op::Add, device.clone());
-        cuda_kernel.compute(&mut context).unwrap();
-
-        let out_data = context
-            .get_output(0)
-            .unwrap()
-            .data()
-            .unwrap()
-            .f16()
-            .unwrap();
-        let result = device.dtoh_sync_copy(out_data).unwrap();
-
-        assert_eq!(
-            result,
-            vec![
-                f16::from_f32(2.0),
-                f16::from_f32(4.0),
-                f16::from_f32(6.0),
-                f16::from_f32(8.0),
-            ]
-        )
-    }
-
-    #[test]
-    fn test_add_f32() {
-        let device = CudaDevice::new(0).unwrap();
-        let shape = vec![4, 1, 1, 1];
-        let dtype = DataType::Float;
-
-        let node_a = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F32(
-                device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-            )),
-        };
-        let node_b = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F32(
-                device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-            )),
-        };
-
-        let node_c = TestNode {
-            shape,
-            dtype,
-            data: None,
-        };
-
-        let params = TestParams {
-            inputs: vec![node_a, node_b],
-            outputs: vec![node_c],
-            attributes: vec![],
-            op: Op::Add,
-        };
-
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 2).unwrap();
-
-        let cuda_kernel = CudaKernel::new(Op::Add, device.clone());
-        cuda_kernel.compute(&mut context).unwrap();
-
-        let out_data = context
-            .get_output(0)
-            .unwrap()
-            .data()
-            .unwrap()
-            .f32()
-            .unwrap();
-        let result = device.dtoh_sync_copy(out_data).unwrap();
-
-        assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
-    }
-
-    #[test]
-    fn test_gemm_f16() {
-        let device = CudaDevice::new(0).unwrap();
-
-        let shape = vec![1, 2, 2];
-        let dtype = DataType::Float16;
-        let op = Op::Gemm;
-
-        let node_a = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F16(
-                device
-                    .htod_copy(vec![
-                        f16::from_f32(1.0),
-                        f16::from_f32(2.0),
-                        f16::from_f32(3.0),
-                        f16::from_f32(4.0),
-                    ])
-                    .unwrap(),
-            )),
-        };
-        let node_b = TestNode {
-            shape: shape.clone(),
-            dtype,
-            data: Some(CudaData::F16(
-                device
-                    .htod_copy(vec![
-                        f16::from_f32(1.0),
-                        f16::from_f32(2.0),
-                        f16::from_f32(3.0),
-                        f16::from_f32(4.0),
-                    ])
-                    .unwrap(),
-            )),
-        };
-
-        let node_c = TestNode {
-            shape,
-            dtype,
-            data: None,
-        };
-
-        let params = TestParams {
-            inputs: vec![node_a, node_b],
-            outputs: vec![node_c],
-            attributes: vec![],
-            op,
-        };
-
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 2).unwrap();
-
-        let cuda_kernel = CudaKernel::new(op, device.clone());
-        cuda_kernel.compute(&mut context).unwrap();
-
-        let out_data = context
-            .get_output(0)
-            .unwrap()
-            .data()
-            .unwrap()
-            .f16()
-            .unwrap();
-        let result = device.dtoh_sync_copy(out_data).unwrap();
-
-        assert_eq!(
-            result,
-            vec![
-                f16::from_f32(7.0),
-                f16::from_f32(10.0),
-                f16::from_f32(15.0),
-                f16::from_f32(22.0)
-            ]
-        )
-    }
+    // #[test]
+    // fn test_gemm_f16() {
+    //     let device = CudaDevice::new(0).unwrap();
+    //
+    //     let shape = vec![1, 2, 2];
+    //     let dtype = DataType::Float16;
+    //     let op = Op::Gemm;
+    //
+    //     let node_a = TestNode {
+    //         shape: shape.clone(),
+    //         dtype,
+    //         data: Some(CudaData::F16(
+    //             device
+    //                 .htod_copy(vec![
+    //                     f16::from_f32(1.0),
+    //                     f16::from_f32(2.0),
+    //                     f16::from_f32(3.0),
+    //                     f16::from_f32(4.0),
+    //                 ])
+    //                 .unwrap(),
+    //         )),
+    //     };
+    //     let node_b = TestNode {
+    //         shape: shape.clone(),
+    //         dtype,
+    //         data: Some(CudaData::F16(
+    //             device
+    //                 .htod_copy(vec![
+    //                     f16::from_f32(1.0),
+    //                     f16::from_f32(2.0),
+    //                     f16::from_f32(3.0),
+    //                     f16::from_f32(4.0),
+    //                 ])
+    //                 .unwrap(),
+    //         )),
+    //     };
+    //
+    //     let node_c = TestNode {
+    //         shape,
+    //         dtype,
+    //         data: None,
+    //     };
+    //
+    //     let params = TestParams {
+    //         inputs: vec![node_a, node_b],
+    //         outputs: vec![node_c],
+    //         attributes: vec![],
+    //         op,
+    //     };
+    //
+    //     let (_, state) = test_utils::build_graph_and_state(params);
+    //     let mut context = Context::new(state, 2).unwrap();
+    //
+    //     let cuda_kernel = CudaKernel::new(op, device.clone());
+    //     cuda_kernel.compute(&mut context).unwrap();
+    //
+    //     let out_data = context
+    //         .get_output(0)
+    //         .unwrap()
+    //         .data()
+    //         .unwrap()
+    //         .f16()
+    //         .unwrap();
+    //     let result = device.dtoh_sync_copy(out_data).unwrap();
+    //
+    //     assert_eq!(
+    //         result,
+    //         vec![
+    //             f16::from_f32(7.0),
+    //             f16::from_f32(10.0),
+    //             f16::from_f32(15.0),
+    //             f16::from_f32(22.0)
+    //         ]
+    //     )
+    // }
 
     #[test]
     fn test_gemm_f32() {

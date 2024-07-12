@@ -35,6 +35,13 @@ impl Attribute {
         }
     }
 
+    pub fn float(&self) -> Option<f32> {
+        match &self.ty {
+            AttributeType::Float(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     pub fn int(&self) -> Option<i32> {
         match &self.ty {
             AttributeType::Int(value) => Some(*value),
