@@ -13,27 +13,66 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     let lhs = ctx.get_input(0)?;
     let rhs = ctx.get_input(1)?;
 
+    let attr = GemmAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
+
     let lhs_shape = lhs.shape();
     let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
-    let m = lhs_shape[lhs_shape.len() - 2];
-    let k = lhs_shape[lhs_shape.len() - 1];
+    let (m, k) = match attr.trans_a {
+        true => {
+            let m = lhs_shape[lhs_shape.len() - 1];
+            let k = lhs_shape[lhs_shape.len() - 2];
+            (m, k)
+        }
+        false => {
+            let m = lhs_shape[lhs_shape.len() - 2];
+            let k = lhs_shape[lhs_shape.len() - 1];
+            (m, k)
+        }
+    };
 
     let rhs_shape = rhs.shape();
-    let n = rhs_shape[rhs_shape.len() - 2];
+    let n = match attr.trans_b {
+        true => rhs_shape[rhs_shape.len() - 1],
+        false => rhs_shape[rhs_shape.len() - 2],
+    };
+
+    let lhs_stride = lhs.stride();
+    let lhs_dims = lhs_shape.len();
+    let (lhs_shape, lhs_stride) = match attr.trans_a {
+        true => (
+            [lhs_shape[lhs_dims - 1], lhs_shape[lhs_dims - 2]],
+            [lhs_stride[lhs_dims - 1], lhs_stride[lhs_dims - 2]],
+        ),
+        false => (
+            [lhs_shape[lhs_dims - 2], lhs_shape[lhs_dims - 1]],
+            [lhs_stride[lhs_dims - 2], lhs_stride[lhs_dims - 1]],
+        ),
+    };
+
+    let rhs_stride = rhs.stride();
+    let rhs_dims = rhs_shape.len();
+    let (rhs_shape, rhs_stride) = match attr.trans_b {
+        true => (
+            [rhs_shape[rhs_dims - 1], rhs_shape[rhs_dims - 2]],
+            [rhs_stride[rhs_dims - 1], rhs_stride[rhs_dims - 2]],
+        ),
+        false => (
+            [rhs_shape[rhs_dims - 2], rhs_shape[rhs_dims - 1]],
+            [rhs_stride[rhs_dims - 2], rhs_stride[rhs_dims - 1]],
+        ),
+    };
 
     match *lhs.dtype() {
         DataType::Float16 => {
             todo!()
         }
         DataType::Float => {
-            let lhs_stride = lhs.stride();
-            let rhs_stride = rhs.stride();
             let config = gemm_config::<f32>(
-                1.0,
-                0.0,
+                attr.alpha,
+                attr.beta,
                 (b, m, n, k),
-                (lhs_shape, lhs_stride),
-                (rhs_shape, rhs_stride),
+                (&lhs_shape, &lhs_stride),
+                (&rhs_shape, &rhs_stride),
             )
             .unwrap();
 
@@ -157,7 +196,7 @@ pub unsafe fn gemm_stride_batched_f32(
     .map_err(|_| Error::Unknown)
 }
 
-pub unsafe fn gemm_stride_batched_f16(
+pub unsafe fn _gemm_stride_batched_f16(
     cublas: &CudaBlas,
     config: StridedBatchedConfig<f16>,
     a: &CudaView<f16>,
@@ -198,16 +237,16 @@ pub unsafe fn gemm_stride_batched_f16(
 pub struct GemmAttributes {
     alpha: f32,
     beta: f32,
-    transA: bool,
-    transB: bool,
+    trans_a: bool,
+    trans_b: bool,
 }
 
 impl GemmAttributes {
-    pub fn new(attrs: HashMap<Box<str>, Attribute>) -> Result<Self> {
+    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> Result<Self> {
         let mut alpha = None;
         let mut beta = None;
-        let mut transA = None;
-        let mut transB = None;
+        let mut trans_a = None;
+        let mut trans_b = None;
 
         if let Some(attr) = attrs.get("alpha") {
             alpha = attr.float();
@@ -218,7 +257,7 @@ impl GemmAttributes {
         }
 
         if let Some(attr) = attrs.get("transA") {
-            transA = match attr.int() {
+            trans_a = match attr.int() {
                 Some(0) => Some(false),
                 Some(1) => Some(true),
                 None => None,
@@ -227,7 +266,7 @@ impl GemmAttributes {
         }
 
         if let Some(attr) = attrs.get("transB") {
-            transB = match attr.int() {
+            trans_b = match attr.int() {
                 Some(0) => Some(false),
                 Some(1) => Some(true),
                 None => None,
@@ -238,8 +277,8 @@ impl GemmAttributes {
         Ok(Self {
             alpha: alpha.unwrap_or(1.0),
             beta: beta.unwrap_or(1.0),
-            transA: transA.unwrap_or(false),
-            transB: transB.unwrap_or(false),
+            trans_a: trans_a.unwrap_or(false),
+            trans_b: trans_b.unwrap_or(false),
         })
     }
 }
