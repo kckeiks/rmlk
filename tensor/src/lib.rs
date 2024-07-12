@@ -6,7 +6,10 @@ mod execution_state;
 mod kernel;
 mod provider;
 mod tensor;
+#[cfg(test)]
+mod test_utils;
 
+pub use cuda::CudaProvider;
 pub use error::Error;
 pub use execution_state::ExecutionState;
 pub use kernel::{Context, Kernel};
