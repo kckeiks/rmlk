@@ -316,6 +316,7 @@ impl ConvAttributes {
             buf[1] = w_shape[1];
             buf[2] = height;
             buf[3] = width;
+
             buf
         } else if self.kernel_dims == 3 {
             // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html#torch.nn.Conv3d.
@@ -338,6 +339,7 @@ impl ConvAttributes {
             buf[2] = depth;
             buf[3] = height;
             buf[4] = width;
+
             buf
         } else {
             unreachable!("Constructor method validates that only 2d and 3d are supported");

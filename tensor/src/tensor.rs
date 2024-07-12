@@ -5,14 +5,14 @@ use rmlk_ir::DataType;
 /// This is simply a wrapper that holds a pointer to memory
 /// on a device and other information about the tensor like shape,
 /// datatype and stride.
-pub struct Tensor<D> {
-    data: Option<D>,
+pub struct Tensor<T> {
+    data: Option<T>,
     dtype: DataType,
     shape: Vec<usize>,
     stride: Vec<usize>,
 }
 
-impl<D> Tensor<D> {
+impl<T> Tensor<T> {
     pub fn new(dtype: DataType, shape: Vec<usize>) -> Self {
         let dims = shape.len();
         let mut stride = vec![0usize; dims];
@@ -29,7 +29,7 @@ impl<D> Tensor<D> {
         }
     }
 
-    pub fn new_init(data: D, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
+    pub fn new_init(data: T, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: Some(data),
             dtype,
@@ -38,7 +38,7 @@ impl<D> Tensor<D> {
         }
     }
 
-    pub fn init(&mut self, data: D) {
+    pub fn init(&mut self, data: T) {
         self.data = Some(data);
     }
 
@@ -46,11 +46,11 @@ impl<D> Tensor<D> {
         self.data.is_some()
     }
 
-    pub fn data(&self) -> Option<&D> {
+    pub fn data(&self) -> Option<&T> {
         self.data.as_ref()
     }
 
-    pub fn data_mut(&mut self) -> Option<&mut D> {
+    pub fn data_mut(&mut self) -> Option<&mut T> {
         self.data.as_mut()
     }
 
