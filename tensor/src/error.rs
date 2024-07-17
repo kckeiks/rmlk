@@ -13,4 +13,5 @@ pub enum Error {
     MissingAttributes,
     UnsupportedShape,
     OutputShapeMismatch,
+    ComputationError,
 }
