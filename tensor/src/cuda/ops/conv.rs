@@ -29,6 +29,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         return Err(Error::InvalidTensorDimensions);
     }
 
+    // Todo: Update this to box sliced.
     let x_shape: [i32; 4] = x
         .shape()
         .iter()

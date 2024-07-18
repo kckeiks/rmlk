@@ -12,6 +12,8 @@ pub enum Error {
     AllocationFailed,
     MissingAttributes,
     UnsupportedShape,
+    UnsupportedDataType,
+    UnsupportedAttribute,
     OutputShapeMismatch,
     ComputationError,
 }

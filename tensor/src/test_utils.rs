@@ -11,6 +11,15 @@ pub struct TestConvAttributes {
     pub strides: Option<Box<[i32]>>,
 }
 
+pub struct TestMaxPoolAttributes {
+    pub dilations: Option<Box<[i32]>>,
+    pub ceil_mode: Option<i32>,
+    pub kernel_shape: Option<Box<[i32]>>,
+    pub pads: Option<Box<[i32]>>,
+    pub strides: Option<Box<[i32]>>,
+    pub row_major_order: Option<i32>,
+}
+
 pub struct TestNode<T> {
     pub shape: Vec<usize>,
     pub dtype: DataType,
@@ -99,6 +108,64 @@ pub fn create_conv_attributes(conv_attrs: TestConvAttributes) -> Vec<Attribute> 
         ref_attr_name: None,
         doc_string: None,
         ty: AttributeType::Ints(conv_attrs.strides.unwrap().to_vec()),
+    });
+
+    result
+}
+
+pub fn create_max_pool_attributes(pool_attrs: TestMaxPoolAttributes) -> Vec<Attribute> {
+    let mut result = Vec::new();
+
+    if pool_attrs.dilations.is_some() {
+        result.push(Attribute {
+            name: "dilations".to_string(),
+            ref_attr_name: None,
+            doc_string: None,
+            ty: AttributeType::Ints(pool_attrs.dilations.unwrap().to_vec()),
+        });
+    }
+
+    if pool_attrs.ceil_mode.is_some() {
+        result.push(Attribute {
+            name: "ceil_mode".to_string(),
+            ref_attr_name: None,
+            doc_string: None,
+            ty: AttributeType::Int(pool_attrs.ceil_mode.unwrap()),
+        });
+    }
+
+    if pool_attrs.row_major_order.is_some() {
+        result.push(Attribute {
+            name: "row_major_order".to_string(),
+            ref_attr_name: None,
+            doc_string: None,
+            ty: AttributeType::Int(pool_attrs.row_major_order.unwrap()),
+        });
+    }
+
+    if pool_attrs.pads.is_some() {
+        result.push(Attribute {
+            name: "pads".to_string(),
+            ref_attr_name: None,
+            doc_string: None,
+            ty: AttributeType::Ints(pool_attrs.pads.unwrap().to_vec()),
+        });
+    }
+
+    if pool_attrs.kernel_shape.is_some() {
+        result.push(Attribute {
+            name: "kernel_shape".to_string(),
+            ref_attr_name: None,
+            doc_string: None,
+            ty: AttributeType::Ints(pool_attrs.kernel_shape.unwrap().to_vec()),
+        });
+    }
+
+    result.push(Attribute {
+        name: "strides".to_string(),
+        ref_attr_name: None,
+        doc_string: None,
+        ty: AttributeType::Ints(pool_attrs.strides.unwrap().to_vec()),
     });
 
     result

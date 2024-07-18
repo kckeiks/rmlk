@@ -67,6 +67,9 @@ impl Kernel for CudaKernel {
             Op::Conv => {
                 ops::conv::compute(ctx, self.device.clone())?;
             }
+            Op::MaxPool => {
+                ops::max_pool::compute(ctx, self.device.clone())?;
+            }
             _ => todo!(),
         }
 
