@@ -41,7 +41,7 @@ impl<T> ExecutionState<T> {
 
     pub fn get_input_count(&self, node_id: usize) -> Option<usize> {
         let node = self.get_node(node_id)?;
-        Some(node.inputs().iter().count())
+        Some(node.inputs().len())
     }
 
     pub fn get_tensor(&self, node_id: usize, offset: usize) -> Option<&Tensor<T>> {

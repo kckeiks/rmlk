@@ -16,4 +16,5 @@ pub enum Error {
     UnsupportedAttribute,
     OutputShapeMismatch,
     ComputationError,
+    NoTensorFound,
 }

@@ -66,7 +66,7 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
         graph.clone(),
         tensors,
         // Todo: Update.
-        vec![0, 0, 0],
+        vec![0, 0, 0, 0],
     );
     (graph, state)
 }

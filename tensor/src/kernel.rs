@@ -29,6 +29,10 @@ impl<T> Context<T> {
     }
 
     pub fn get_input(&self, index: usize) -> crate::Result<&Tensor<T>> {
+        if self.current_node + self.input_count <= self.current_node + index {
+            return Err(Error::NoTensorFound);
+        }
+
         self.execution_state
             .get_tensor(self.current_node, index)
             .ok_or(Error::MissingTensor)
