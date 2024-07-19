@@ -70,6 +70,9 @@ impl Kernel for CudaKernel {
             Op::MaxPool => {
                 ops::max_pool::compute(ctx, self.device.clone())?;
             }
+            Op::GlobalAveragePool => {
+                ops::global_average_pool::compute(ctx, self.device.clone())?;
+            }
             _ => todo!(),
         }
 
