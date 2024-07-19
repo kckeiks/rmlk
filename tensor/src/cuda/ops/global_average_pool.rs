@@ -60,7 +60,6 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
             let pooling = cudnn
                 .create_poolingnd::<f32>(
                     &kernel_shape,
-                    // Todo: Let's preprocess pads.
                     &pads,
                     &strides,
                     cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
@@ -123,11 +122,7 @@ mod test {
             dtype,
             data: Some(CudaData::F32(
                 device
-                    .htod_copy(vec![
-                        1.0, 2.0, 3.0,
-                        4.0, 5.0, 6.0,
-                        7.0, 8.0, 9.0,
-                    ])
+                    .htod_copy(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
                     .unwrap(),
             )),
         };
