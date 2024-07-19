@@ -10,7 +10,7 @@ use rmlk_ir::{Attribute, DataType};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub fn compute_v2(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
+pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
     let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
     // Input data tensor.
     let x = ctx.get_input(0)?;
@@ -126,6 +126,9 @@ pub fn compute_v2(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Resul
                 .create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, &w_shape)
                 .map_err(|_| Error::CudnnInternal)?;
 
+            // Check for optional bias input.
+            // If it exists, for performance, we compute it in one single cudnn function call.
+            // Todo: handle fused activation function operations.
             match ctx.get_input(2).ok() {
                 None => {
                     // Todo: handle this data and move it to device.
