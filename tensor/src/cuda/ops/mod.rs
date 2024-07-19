@@ -1,4 +1,4 @@
-mod activation;
+pub mod activation;
 pub mod add;
 pub mod conv;
 pub mod gemm;

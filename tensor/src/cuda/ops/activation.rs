@@ -44,6 +44,9 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
             op.launch((1.0, 0.0), x_data, &mut y_data)
                 .map_err(|_| Error::CudnnInternal)?;
+
+            let out = ctx.get_output_mut(0)?;
+            out.init(CudaData::F32(y_data));
         }
         _ => {
             todo!()
@@ -51,4 +54,60 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cuda::data::CudaData;
+    use crate::cuda::kernel::CudaKernel;
+    use crate::kernel::{Context, Kernel};
+    use crate::test_utils;
+    use crate::test_utils::{TestNode, TestParams};
+    use cudarc::driver::CudaDevice;
+    use rmlk_ir::{DataType, Op};
+
+    #[test]
+    fn test_relu_f32() {
+        let device = CudaDevice::new(0).unwrap();
+        let shape = vec![1, 1, 2, 2];
+        let dtype = DataType::Float;
+
+        let node_a = TestNode {
+            shape,
+            dtype,
+            data: Some(CudaData::F32(
+                device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap(),
+            )),
+        };
+
+        let node_c = TestNode {
+            shape: vec![1, 1, 2, 2],
+            dtype,
+            data: None,
+        };
+
+        let params = TestParams {
+            inputs: vec![node_a],
+            outputs: vec![node_c],
+            attributes: Vec::new(),
+            op: Op::Relu,
+        };
+
+        let (_, state) = test_utils::build_graph_and_state(params);
+        let mut context = Context::new(state, 1).unwrap();
+
+        let cuda_kernel = CudaKernel::new(Op::Relu, device.clone());
+        cuda_kernel.compute(&mut context).unwrap();
+
+        let out_data = context
+            .get_output(0)
+            .unwrap()
+            .data()
+            .unwrap()
+            .f32()
+            .unwrap();
+        let result = device.dtoh_sync_copy(out_data).unwrap();
+
+        assert_eq!(result, vec![0.0, 2.0, 0.0, 100.0])
+    }
 }

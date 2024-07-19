@@ -73,6 +73,9 @@ impl Kernel for CudaKernel {
             Op::GlobalAveragePool => {
                 ops::global_average_pool::compute(ctx, self.device.clone())?;
             }
+            Op::Relu => {
+                ops::activation::compute(ctx, self.device.clone())?;
+            }
             _ => todo!(),
         }
 
