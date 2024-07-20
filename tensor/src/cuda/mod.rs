@@ -1,7 +1,7 @@
 mod data;
 mod kernel;
 mod kernels;
-mod ops;
+mod op;
 mod provider;
 
 pub use provider::CudaProvider;
