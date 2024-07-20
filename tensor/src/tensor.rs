@@ -13,7 +13,16 @@ pub struct Tensor<T> {
 }
 
 impl<T> Tensor<T> {
-    pub fn new(dtype: DataType, shape: Vec<usize>) -> Self {
+    pub fn new(dtype: DataType) -> Self {
+        Self {
+            data: None,
+            dtype,
+            shape: Vec::new(),
+            stride: Vec::new(),
+        }
+    }
+
+    pub fn new_with_shape(dtype: DataType, shape: Vec<usize>) -> Self {
         let dims = shape.len();
         let mut stride = vec![0usize; dims];
         stride[dims - 1] = 1;
@@ -58,8 +67,11 @@ impl<T> Tensor<T> {
         &self.shape
     }
 
-    pub fn reshape(&mut self, _: Vec<usize>) -> Result<(), ()> {
-        todo!()
+    pub fn reshape(&mut self, shape: Vec<usize>) {
+        self.shape = shape;
+        let dims = self.shape.len();
+        let mut stride = vec![0usize; dims];
+        calculate_stride(self.shape.as_slice(), &mut stride.as_mut_slice());
     }
 
     pub fn stride(&self) -> &Vec<usize> {
@@ -68,5 +80,16 @@ impl<T> Tensor<T> {
 
     pub fn dtype(&self) -> &DataType {
         &self.dtype
+    }
+}
+
+fn calculate_stride(shape: &[usize], stride: &mut [usize]) {
+    let dims = shape.len();
+
+    debug_assert_eq!(dims, stride.len());
+
+    stride[dims - 1] = 1;
+    for i in (0..dims - 1).rev() {
+        stride[i] += stride[i + 1] * shape[i + 1];
     }
 }

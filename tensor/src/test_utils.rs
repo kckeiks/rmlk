@@ -49,7 +49,7 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
         let node_id = builder.add_input(input_node).unwrap();
         out_node.add_input(node_id);
 
-        let mut tensor = Tensor::new(input.dtype, input.shape.clone());
+        let mut tensor = Tensor::new_with_shape(input.dtype, input.shape.clone());
         tensor.init(input.data.unwrap());
         tensors.push(tensor)
     }
@@ -58,7 +58,11 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
 
     let graph = Arc::new(builder.build().unwrap());
 
-    let out_tensor = Tensor::new(params.outputs[0].dtype, params.outputs[0].shape.clone());
+    let out_tensor = if params.outputs[0].shape.is_empty() {
+        Tensor::new(params.outputs[0].dtype)
+    } else {
+        Tensor::new_with_shape(params.outputs[0].dtype, params.outputs[0].shape.clone())
+    };
 
     tensors.push(out_tensor);
 

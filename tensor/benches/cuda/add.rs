@@ -26,9 +26,12 @@ fn add(shape: Vec<usize>) -> Vec<f32> {
         rhs_strides[i] += rhs_strides[i - 1] * shape[i - 1];
     }
 
-    let mut lhs_tensor = Tensor::new(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
-    let mut rhs_tensor = Tensor::new(DataType::F32, shape.to_vec(), rhs_strides.to_vec());
-    let mut out_tensor = Tensor::new(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
+    let mut lhs_tensor =
+        Tensor::new_with_shape(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
+    let mut rhs_tensor =
+        Tensor::new_with_shape(DataType::F32, shape.to_vec(), rhs_strides.to_vec());
+    let mut out_tensor =
+        Tensor::new_with_shape(DataType::F32, shape.to_vec(), lhs_strides.to_vec());
 
     let lhs_data = cuda.htod_f32(vec![1.0; elem_num]).unwrap();
     let rhs_data = cuda.htod_f32(vec![1.0; elem_num]).unwrap();

@@ -62,6 +62,20 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         ),
     };
 
+    println!(
+        "lhs_shape={:?},\
+        lhs_stride={:?},\
+        rhs_shape={:?},\
+        rhs_stride={:?}\
+        attr={:?}\
+        ",
+        lhs.shape(),
+        lhs.stride(),
+        rhs.shape(),
+        rhs.stride(),
+        attr,
+    );
+
     match *lhs.dtype() {
         DataType::Float16 => {
             todo!()
@@ -234,6 +248,7 @@ pub unsafe fn _gemm_stride_batched_f16(
     .map_err(|_| Error::Unknown)
 }
 
+#[derive(Debug)]
 pub struct GemmAttributes {
     alpha: f32,
     beta: f32,
@@ -276,7 +291,7 @@ impl GemmAttributes {
 
         Ok(Self {
             alpha: alpha.unwrap_or(1.0),
-            beta: beta.unwrap_or(1.0),
+            beta: beta.unwrap_or(0.0),
             trans_a: trans_a.unwrap_or(false),
             trans_b: trans_b.unwrap_or(false),
         })

@@ -4,6 +4,7 @@ mod cuda;
 mod error;
 mod execution_state;
 mod kernel;
+mod op;
 mod provider;
 mod tensor;
 #[cfg(test)]
