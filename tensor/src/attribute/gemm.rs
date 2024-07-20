@@ -45,7 +45,7 @@ impl GemmAttributes {
 
         Ok(Self {
             alpha: alpha.unwrap_or(1.0),
-            beta: beta.unwrap_or(0.0),
+            beta: beta.unwrap_or(1.0),
             trans_a: trans_a.unwrap_or(false),
             trans_b: trans_b.unwrap_or(false),
         })

@@ -91,7 +91,8 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
             .unwrap();
 
             // let out = ctx.allocate(DataType::Float, vec![b, m, n])?;
-            let mut out_slice = unsafe { device.alloc::<f32>(b * m * n).unwrap() };
+            // Todo: get values from optional input.
+            let mut out_slice = device.alloc_zeros::<f32>(b * m * n).unwrap();
 
             let cublas = CudaBlas::new(device).unwrap();
 
