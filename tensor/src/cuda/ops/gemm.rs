@@ -1,3 +1,4 @@
+use crate::attribute::gemm::GemmAttributes;
 use crate::cuda::data::CudaData;
 use crate::kernel::Context;
 use crate::Error;
@@ -5,8 +6,7 @@ use crate::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
-use rmlk_ir::{Attribute, DataType};
-use std::collections::HashMap;
+use rmlk_ir::DataType;
 use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -17,7 +17,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
     let lhs_shape = lhs.shape();
     let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
-    let (m, k) = match attr.trans_a {
+    let (m, k) = match attr.trans_a() {
         true => {
             let m = lhs_shape[lhs_shape.len() - 1];
             let k = lhs_shape[lhs_shape.len() - 2];
@@ -31,14 +31,14 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     };
 
     let rhs_shape = rhs.shape();
-    let n = match attr.trans_b {
+    let n = match attr.trans_b() {
         true => rhs_shape[rhs_shape.len() - 1],
         false => rhs_shape[rhs_shape.len() - 2],
     };
 
     let lhs_stride = lhs.stride();
     let lhs_dims = lhs_shape.len();
-    let (lhs_shape, lhs_stride) = match attr.trans_a {
+    let (lhs_shape, lhs_stride) = match attr.trans_a() {
         true => (
             [lhs_shape[lhs_dims - 1], lhs_shape[lhs_dims - 2]],
             [lhs_stride[lhs_dims - 1], lhs_stride[lhs_dims - 2]],
@@ -51,7 +51,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
     let rhs_stride = rhs.stride();
     let rhs_dims = rhs_shape.len();
-    let (rhs_shape, rhs_stride) = match attr.trans_b {
+    let (rhs_shape, rhs_stride) = match attr.trans_b() {
         true => (
             [rhs_shape[rhs_dims - 1], rhs_shape[rhs_dims - 2]],
             [rhs_stride[rhs_dims - 1], rhs_stride[rhs_dims - 2]],
@@ -82,8 +82,8 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         }
         DataType::Float => {
             let config = gemm_config::<f32>(
-                attr.alpha,
-                attr.beta,
+                attr.alpha(),
+                attr.beta(),
                 (b, m, n, k),
                 (&lhs_shape, &lhs_stride),
                 (&rhs_shape, &rhs_stride),
@@ -246,56 +246,6 @@ pub unsafe fn _gemm_stride_batched_f16(
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
     .map_err(|_| Error::Unknown)
-}
-
-#[derive(Debug)]
-pub struct GemmAttributes {
-    alpha: f32,
-    beta: f32,
-    trans_a: bool,
-    trans_b: bool,
-}
-
-impl GemmAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> Result<Self> {
-        let mut alpha = None;
-        let mut beta = None;
-        let mut trans_a = None;
-        let mut trans_b = None;
-
-        if let Some(attr) = attrs.get("alpha") {
-            alpha = attr.float();
-        }
-
-        if let Some(attr) = attrs.get("beta") {
-            beta = attr.float();
-        }
-
-        if let Some(attr) = attrs.get("transA") {
-            trans_a = match attr.int() {
-                Some(0) => Some(false),
-                Some(1) => Some(true),
-                None => None,
-                _ => return Err(Error::InvalidAttribute),
-            };
-        }
-
-        if let Some(attr) = attrs.get("transB") {
-            trans_b = match attr.int() {
-                Some(0) => Some(false),
-                Some(1) => Some(true),
-                None => None,
-                _ => return Err(Error::InvalidAttribute),
-            };
-        }
-
-        Ok(Self {
-            alpha: alpha.unwrap_or(1.0),
-            beta: beta.unwrap_or(0.0),
-            trans_a: trans_a.unwrap_or(false),
-            trans_b: trans_b.unwrap_or(false),
-        })
-    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 extern crate core;
 
+mod attribute;
 mod cuda;
 mod error;
 mod execution_state;
