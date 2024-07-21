@@ -24,6 +24,13 @@ impl CudaData {
         }
     }
 
+    pub fn f32_mut(&mut self) -> Result<&mut CudaSlice<f32>> {
+        match self {
+            Self::F32(slice) => Ok(slice),
+            _ => return Err(Error::Unknown),
+        }
+    }
+
     pub fn f64(&self) -> Result<&CudaSlice<f64>> {
         match &self {
             Self::F64(slice) => Ok(slice),

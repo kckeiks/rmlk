@@ -10,6 +10,11 @@ use rmlk_ir::DataType;
 use std::sync::Arc;
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
+    let c_data = ctx
+        .get_input_mut(2)
+        .ok()
+        .map(|tensor| tensor.take_data())
+        .flatten();
     let lhs = ctx.get_input(0)?;
     let rhs = ctx.get_input(1)?;
 
@@ -90,9 +95,10 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
             )
             .unwrap();
 
-            // let out = ctx.allocate(DataType::Float, vec![b, m, n])?;
-            // Todo: get values from optional input.
-            let mut out_slice = device.alloc_zeros::<f32>(b * m * n).unwrap();
+            let mut out_slice = match c_data {
+                None => CudaData::F32(device.alloc_zeros::<f32>(b * m * n).unwrap()),
+                Some(data) => data,
+            };
 
             let cublas = CudaBlas::new(device).unwrap();
 
@@ -102,13 +108,14 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                     config,
                     &rhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
                     &lhs.data().ok_or(()).unwrap().f32().unwrap().slice(..),
-                    &mut out_slice,
+                    // Todo: Handle unwrap better because this could be of a different type.
+                    out_slice.f32_mut().unwrap(),
                 )
                 .unwrap();
             };
 
             let out = ctx.get_output_mut(0)?;
-            let _ = out.init(CudaData::F32(out_slice));
+            let _ = out.init(out_slice);
         }
         DataType::Double => {
             todo!()

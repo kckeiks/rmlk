@@ -38,6 +38,16 @@ impl<T> Context<T> {
             .ok_or(Error::MissingTensor)
     }
 
+    pub fn get_input_mut(&mut self, index: usize) -> crate::Result<&mut Tensor<T>> {
+        if self.current_node + self.input_count <= self.current_node + index {
+            return Err(Error::NoTensorFound);
+        }
+
+        self.execution_state
+            .get_tensor_mut(self.current_node, index)
+            .ok_or(Error::MissingTensor)
+    }
+
     pub fn get_output(&self, index: usize) -> crate::Result<&Tensor<T>> {
         self.execution_state
             .get_tensor(

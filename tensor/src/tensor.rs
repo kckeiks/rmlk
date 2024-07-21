@@ -63,6 +63,10 @@ impl<T> Tensor<T> {
         self.data.as_mut()
     }
 
+    pub fn take_data(&mut self) -> Option<T> {
+        self.data.take()
+    }
+
     pub fn shape(&self) -> &Vec<usize> {
         &self.shape
     }
