@@ -95,6 +95,8 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
         }
 
         for name in ir_node.input.iter() {
+            // Todo: Mapping one name to a single node id, we lose information,
+            // because a single node might have two outputs, how do we differentiate?
             let input_node_id = builder.get_node_id(name).ok_or_else(|| {
                 println!("name {name}");
                 Error::MissingInputNode

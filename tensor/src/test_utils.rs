@@ -1,6 +1,8 @@
 use crate::{ExecutionState, Tensor};
+use log::debug;
 use rmlk_graph::{Definition, Graph, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct TestConvAttributes {
@@ -39,7 +41,8 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
     let mut out_node = Node::new(params.op, Definition::default());
 
     let mut tensors = Vec::new();
-
+    let mut node_to_tensor_index = HashMap::new();
+    let mut node_tensors = Vec::new();
     for attr in params.attributes {
         out_node.add_attr(attr.name.clone().into_boxed_str(), attr);
     }
@@ -51,7 +54,16 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
 
         let mut tensor = Tensor::new_with_shape(input.dtype, input.shape.clone());
         tensor.init(input.data.unwrap());
-        tensors.push(tensor)
+
+        let current_index = tensors.len();
+        tensors.push(tensor);
+        node_tensors.push(current_index);
+        node_to_tensor_index.insert(node_id, current_index);
+    }
+
+    for input in out_node.inputs() {
+        let tensor_index = node_to_tensor_index.get(input).unwrap();
+        node_tensors.push(*tensor_index);
     }
 
     builder.add_node(out_node).unwrap();
@@ -64,13 +76,17 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
         Tensor::new_with_shape(params.outputs[0].dtype, params.outputs[0].shape.clone())
     };
 
+    let current_index = tensors.len();
     tensors.push(out_tensor);
+    node_tensors.push(current_index);
+
+    debug!("{node_tensors:?}");
 
     let state = ExecutionState::new(
         graph.clone(),
-        tensors,
+        tensors.into_boxed_slice(),
         // Todo: Update.
-        vec![0, 0, 0, 0],
+        node_tensors.into_boxed_slice(),
     );
     (graph, state)
 }

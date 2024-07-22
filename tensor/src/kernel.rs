@@ -12,62 +12,79 @@ pub trait Kernel {
 
 pub struct Context<T> {
     execution_state: ExecutionState<T>,
-    current_node: usize,
-    input_count: usize,
+    input_start_index: usize,
+    max_tensors: usize,
+    output_start_index: usize,
 }
 
 impl<T> Context<T> {
-    pub fn new(execution_state: ExecutionState<T>, node_id: usize) -> crate::Result<Self> {
+    pub fn new(execution_state: ExecutionState<T>, node_index: usize) -> crate::Result<Self> {
         let input_count = execution_state
-            .get_input_count(node_id)
+            .get_input_count(node_index)
             .ok_or(Error::MissingNodeInGraph)?;
+
+        let output_count = execution_state
+            .get_output_count(node_index)
+            .ok_or(Error::MissingNodeInGraph)?;
+
         Ok(Self {
             execution_state,
-            current_node: node_id,
-            input_count,
+            input_start_index: node_index,
+            max_tensors: input_count + output_count,
+            output_start_index: node_index + input_count,
         })
     }
 
     pub fn get_input(&self, index: usize) -> crate::Result<&Tensor<T>> {
-        if self.current_node + self.input_count <= self.current_node + index {
+        let node_index = self.input_start_index + index;
+        if self.output_start_index <= node_index {
             return Err(Error::NoTensorFound);
         }
 
         self.execution_state
-            .get_tensor(self.current_node, index)
+            .get_tensor(node_index)
             .ok_or(Error::MissingTensor)
     }
 
     pub fn get_input_mut(&mut self, index: usize) -> crate::Result<&mut Tensor<T>> {
-        if self.current_node + self.input_count <= self.current_node + index {
+        let node_index = self.input_start_index + index;
+        if self.output_start_index <= node_index {
             return Err(Error::NoTensorFound);
         }
 
         self.execution_state
-            .get_tensor_mut(self.current_node, index)
+            .get_tensor_mut(node_index)
             .ok_or(Error::MissingTensor)
     }
 
     pub fn get_output(&self, index: usize) -> crate::Result<&Tensor<T>> {
+        let node_index = self.output_start_index + index;
+        if self.input_start_index + self.max_tensors < node_index {
+            return Err(Error::NoTensorFound);
+        }
+
         self.execution_state
-            .get_tensor(
-                self.current_node,
-                self.input_count.checked_add(index).ok_or(Error::Overflow)?,
-            )
+            .get_tensor(node_index)
             .ok_or(Error::MissingTensor)
     }
 
     pub fn get_output_mut(&mut self, index: usize) -> crate::Result<&mut Tensor<T>> {
+        let node_index = self.output_start_index + index;
+        if self.input_start_index + self.max_tensors < node_index {
+            return Err(Error::NoTensorFound);
+        }
+
         self.execution_state
-            .get_tensor_mut(
-                self.current_node,
-                self.input_count.checked_add(index).ok_or(Error::Overflow)?,
-            )
+            .get_tensor_mut(node_index)
             .ok_or(Error::MissingTensor)
     }
 
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
-        Some(self.execution_state.get_node(self.current_node)?.attrs())
+        Some(
+            self.execution_state
+                .get_node(self.input_start_index)?
+                .attrs(),
+        )
     }
 }
 

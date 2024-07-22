@@ -284,7 +284,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
                                 &mut out_slice,
                             )
                             .map_err(|e| {
-                                println!("cudnn error: {:?}", e.0);
+                                debug!("cudnn error: {:?}", e.0);
                                 Error::CudnnInternal
                             })?;
                         }

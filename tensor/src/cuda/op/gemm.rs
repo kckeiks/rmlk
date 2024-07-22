@@ -6,6 +6,7 @@ use crate::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
+use log::debug;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -13,6 +14,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
     let c_data = ctx
         .get_input_mut(2)
         .ok()
+        // We have to take it because the rust compiler will complain about invalid borrows.
         .map(|tensor| tensor.take_data())
         .flatten();
     let lhs = ctx.get_input(0)?;
@@ -67,7 +69,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         ),
     };
 
-    println!(
+    debug!(
         "lhs_shape={:?},\
         lhs_stride={:?},\
         rhs_shape={:?},\
