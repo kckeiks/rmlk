@@ -1,5 +1,4 @@
 use crate::{ExecutionState, Tensor};
-use log::debug;
 use rmlk_graph::{Definition, Graph, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
 use std::collections::HashMap;
@@ -40,9 +39,15 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
 
     let mut out_node = Node::new(params.op, Definition::default());
 
-    let mut tensors = Vec::new();
+    let mut all_tensors = Vec::new();
+
+    // Mapping node id to its index in the tensors buffer.
     let mut node_to_tensor_index = HashMap::new();
+
+    // Mapping from a node to the indices of all of its inputs and outputs.
+    // Note: the key here is not the node id.
     let mut node_tensors = Vec::new();
+
     for attr in params.attributes {
         out_node.add_attr(attr.name.clone().into_boxed_str(), attr);
     }
@@ -55,8 +60,8 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
         let mut tensor = Tensor::new_with_shape(input.dtype, input.shape.clone());
         tensor.init(input.data.unwrap());
 
-        let current_index = tensors.len();
-        tensors.push(tensor);
+        let current_index = all_tensors.len();
+        all_tensors.push(tensor);
         node_tensors.push(current_index);
         node_to_tensor_index.insert(node_id, current_index);
     }
@@ -76,15 +81,13 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> (Arc<Graph>, Execution
         Tensor::new_with_shape(params.outputs[0].dtype, params.outputs[0].shape.clone())
     };
 
-    let current_index = tensors.len();
-    tensors.push(out_tensor);
+    let current_index = all_tensors.len();
+    all_tensors.push(out_tensor);
     node_tensors.push(current_index);
-
-    debug!("{node_tensors:?}");
 
     let state = ExecutionState::new(
         graph.clone(),
-        tensors.into_boxed_slice(),
+        all_tensors.into_boxed_slice(),
         // Todo: Update.
         node_tensors.into_boxed_slice(),
     );

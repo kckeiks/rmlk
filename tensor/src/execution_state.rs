@@ -11,7 +11,7 @@ pub struct ExecutionState<T> {
     ///
     /// This includes the inputs, outputs and
     /// intermediate values of the entire graph.
-    tensors: Box<[Tensor<T>]>,
+    all_tensors: Box<[Tensor<T>]>,
     /// Indices for all of a node's tensors.
     ///
     /// The order is inputs, optional inputs and outputs.
@@ -26,7 +26,7 @@ impl<T> ExecutionState<T> {
         node_tensors: Box<[usize]>,
     ) -> ExecutionState<T> {
         Self {
-            tensors,
+            all_tensors: tensors,
             node_tensors,
             graph,
         }
@@ -48,12 +48,12 @@ impl<T> ExecutionState<T> {
 
     pub fn get_tensor(&self, node_index: usize) -> Option<&Tensor<T>> {
         let tensor_index = self.get_tensor_index(node_index)?;
-        self.tensors.get(tensor_index)
+        self.all_tensors.get(tensor_index)
     }
 
     pub fn get_tensor_mut(&mut self, node_index: usize) -> Option<&mut Tensor<T>> {
         let tensor_index = self.get_tensor_index(node_index)?;
-        self.tensors.get_mut(tensor_index)
+        self.all_tensors.get_mut(tensor_index)
     }
 
     fn get_tensor_index(&self, node_index: usize) -> Option<usize> {
