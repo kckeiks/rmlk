@@ -66,7 +66,7 @@ impl GraphBuilder {
     }
 
     pub fn build(self) -> Result<Graph> {
-        let (_, _plan) = traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice())?;
+        // let (_, _plan) = traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice())?;
 
         Ok(Graph::new(
             self.initializers,
