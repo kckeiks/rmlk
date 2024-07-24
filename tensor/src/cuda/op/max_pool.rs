@@ -167,8 +167,8 @@ mod test {
             op: Op::MaxPool,
         };
 
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 1).unwrap();
+        let (_, mut state) = test_utils::build_graph_and_state(params);
+        let mut context = Context::new(&mut state, 1).unwrap();
 
         let cuda_kernel = CudaKernel::new(Op::MaxPool, device.clone());
         cuda_kernel.compute(&mut context).unwrap();

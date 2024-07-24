@@ -155,8 +155,8 @@ mod test {
             op: Op::Add,
         };
 
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 2).unwrap();
+        let (_, mut state) = test_utils::build_graph_and_state(params);
+        let mut context = Context::new(&mut state, 2).unwrap();
 
         let cuda_kernel = CudaKernel::new(Op::Add, device.clone());
         cuda_kernel.compute(&mut context).unwrap();
@@ -215,8 +215,8 @@ mod test {
             op: Op::Add,
         };
 
-        let (_, state) = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(state, 2).unwrap();
+        let (_, mut state) = test_utils::build_graph_and_state(params);
+        let mut context = Context::new(&mut state, 2).unwrap();
 
         let cuda_kernel = CudaKernel::new(Op::Add, device.clone());
         cuda_kernel.compute(&mut context).unwrap();

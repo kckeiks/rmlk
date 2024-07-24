@@ -10,15 +10,15 @@ pub trait Kernel {
     fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::Result<()>;
 }
 
-pub struct Context<T> {
-    execution_state: ExecutionState<T>,
+pub struct Context<'a, T> {
+    execution_state: &'a mut ExecutionState<T>,
     input_start_index: usize,
     max_tensors: usize,
     output_start_index: usize,
 }
 
-impl<T> Context<T> {
-    pub fn new(execution_state: ExecutionState<T>, node_index: usize) -> crate::Result<Self> {
+impl<'a, T> Context<'a, T> {
+    pub fn new(execution_state: &'a mut ExecutionState<T>, node_index: usize) -> crate::Result<Self> {
         let input_count = execution_state
             .get_input_count(node_index)
             .ok_or(Error::MissingNodeInGraph)?;
