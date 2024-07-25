@@ -4,6 +4,6 @@ mod kernels;
 mod op;
 mod provider;
 
-pub use kernel::CudaKernel;
 pub use data::CudaData;
+pub use kernel::CudaKernel;
 pub use provider::CudaProvider;

@@ -4,4 +4,6 @@ pub enum Error {
     ModelDeserializationFailed,
     ComputingPlanFailed,
     MissingNode,
+    NotSupported,
+    Unknown,
 }
