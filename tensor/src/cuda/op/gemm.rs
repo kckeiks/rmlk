@@ -10,6 +10,206 @@ use log::debug;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
+pub struct GemmOp {
+    lhs_shape: [usize; 2],
+    lhs_stride: [usize; 2],
+    rhs_shape: [usize; 2],
+    rhs_stride: [usize; 2],
+    b: usize,
+    m: usize,
+    n: usize,
+    k: usize,
+}
+
+impl GemmOp {
+    pub fn new(
+        lhs_shape: &[usize],
+        lhs_stride: &[usize],
+        rhs_shape: &[usize],
+        rhs_stride: &[usize],
+        trans_a: bool,
+        trans_b: bool,
+    ) -> Self {
+        let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
+        let (m, k) = match trans_a {
+            true => {
+                let m = lhs_shape[lhs_shape.len() - 1];
+                let k = lhs_shape[lhs_shape.len() - 2];
+                (m, k)
+            }
+            false => {
+                let m = lhs_shape[lhs_shape.len() - 2];
+                let k = lhs_shape[lhs_shape.len() - 1];
+                (m, k)
+            }
+        };
+
+        let n = match trans_b {
+            true => rhs_shape[rhs_shape.len() - 1],
+            false => rhs_shape[rhs_shape.len() - 2],
+        };
+
+        let lhs_dims = lhs_shape.len();
+        let (lhs_shape, lhs_stride) = match trans_a {
+            true => (
+                [lhs_shape[lhs_dims - 1], lhs_shape[lhs_dims - 2]],
+                [lhs_stride[lhs_dims - 1], lhs_stride[lhs_dims - 2]],
+            ),
+            false => (
+                [lhs_shape[lhs_dims - 2], lhs_shape[lhs_dims - 1]],
+                [lhs_stride[lhs_dims - 2], lhs_stride[lhs_dims - 1]],
+            ),
+        };
+
+        let rhs_dims = rhs_shape.len();
+        let (rhs_shape, rhs_stride) = match trans_b {
+            true => (
+                [rhs_shape[rhs_dims - 1], rhs_shape[rhs_dims - 2]],
+                [rhs_stride[rhs_dims - 1], rhs_stride[rhs_dims - 2]],
+            ),
+            false => (
+                [rhs_shape[rhs_dims - 2], rhs_shape[rhs_dims - 1]],
+                [rhs_stride[rhs_dims - 2], rhs_stride[rhs_dims - 1]],
+            ),
+        };
+
+        debug!(
+            "lhs_shape={:?},\
+                lhs_stride={:?},\
+                rhs_shape={:?},\
+                rhs_stride={:?}\
+                ",
+            lhs_shape, lhs_stride, rhs_shape, rhs_stride,
+        );
+
+        Self {
+            lhs_shape,
+            lhs_stride,
+            rhs_shape,
+            rhs_stride,
+            b,
+            m,
+            n,
+            k,
+        }
+    }
+
+    pub fn calculate_output_size(&self) -> usize {
+        self.b * self.m * self.n
+    }
+
+    fn strided_batch_config<T>(&self, (alpha, beta): (T, T)) -> Result<StridedBatchedConfig<T>> {
+        gemm_config::<T>(
+            alpha,
+            beta,
+            (self.b, self.m, self.n, self.k),
+            (&self.lhs_shape, &self.lhs_stride),
+            (&self.rhs_shape, &self.rhs_stride),
+        )
+    }
+
+    fn compute_f32(
+        &self,
+        device: Arc<CudaDevice>,
+        lhs_data: &CudaSlice<f32>,
+        rhs_data: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        config: StridedBatchedConfig<f32>,
+    ) -> Result<()> {
+        let cublas = CudaBlas::new(device).unwrap();
+
+        unsafe {
+            gemm_stride_batched_f32(
+                &cublas,
+                config,
+                &rhs_data.slice(..),
+                &lhs_data.slice(..),
+                out,
+            )?;
+        };
+
+        Ok(())
+    }
+}
+
+// pub fn compute_v2<T>() {
+//
+// }
+//
+// fn compute_config<T>(
+//     lhs_shape: &[usize],
+//     lhs_stride: &[usize],
+//     rhs_shape: &[usize],
+//     rhs_stride: &[usize],
+//     attrs: GemmAttributes,
+// ) -> Result<StridedBatchedConfig<T>> {
+//
+//     let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
+//     let (m, k) = match attrs.trans_a() {
+//         true => {
+//             let m = lhs_shape[lhs_shape.len() - 1];
+//             let k = lhs_shape[lhs_shape.len() - 2];
+//             (m, k)
+//         }
+//         false => {
+//             let m = lhs_shape[lhs_shape.len() - 2];
+//             let k = lhs_shape[lhs_shape.len() - 1];
+//             (m, k)
+//         }
+//     };
+//
+//     let n = match attrs.trans_b() {
+//         true => rhs_shape[rhs_shape.len() - 1],
+//         false => rhs_shape[rhs_shape.len() - 2],
+//     };
+//
+//     let lhs_dims = lhs_shape.len();
+//     let (lhs_shape, lhs_stride) = match attrs.trans_a() {
+//         true => (
+//             [lhs_shape[lhs_dims - 1], lhs_shape[lhs_dims - 2]],
+//             [lhs_stride[lhs_dims - 1], lhs_stride[lhs_dims - 2]],
+//         ),
+//         false => (
+//             [lhs_shape[lhs_dims - 2], lhs_shape[lhs_dims - 1]],
+//             [lhs_stride[lhs_dims - 2], lhs_stride[lhs_dims - 1]],
+//         ),
+//     };
+//
+//     let rhs_dims = rhs_shape.len();
+//     let (rhs_shape, rhs_stride) = match attrs.trans_b() {
+//         true => (
+//             [rhs_shape[rhs_dims - 1], rhs_shape[rhs_dims - 2]],
+//             [rhs_stride[rhs_dims - 1], rhs_stride[rhs_dims - 2]],
+//         ),
+//         false => (
+//             [rhs_shape[rhs_dims - 2], rhs_shape[rhs_dims - 1]],
+//             [rhs_stride[rhs_dims - 2], rhs_stride[rhs_dims - 1]],
+//         ),
+//     };
+//
+//     debug!(
+//         "lhs_shape={:?},\
+//         lhs_stride={:?},\
+//         rhs_shape={:?},\
+//         rhs_stride={:?}\
+//         attr={:?}\
+//         ",
+//         lhs_shape,
+//         lhs_stride,
+//         rhs_shape,
+//         rhs_stride,
+//         attrs,
+//     );
+//
+//     gemm_config::<T>(
+//         attrs.alpha(),
+//         attrs.beta(),
+//         (b, m, n, k),
+//         (&lhs_shape, &lhs_stride),
+//         (&rhs_shape, &rhs_stride),
+//     )
+// }
+
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
     let c_data = ctx
         .get_input_mut(2)
@@ -182,6 +382,8 @@ pub fn gemm_config<T>(
     })
 }
 
+trait GemmStrideBatched {}
+
 pub unsafe fn gemm_stride_batched_f32(
     cublas: &CudaBlas,
     config: StridedBatchedConfig<f32>,
@@ -263,10 +465,11 @@ mod test {
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
-    use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
+    use crate::{test_utils, Tensor};
     use cudarc::driver::CudaDevice;
     // use half::f16;
+    use crate::cuda::op::gemm::GemmOp;
     use rmlk_ir::{DataType, Op};
 
     // #[test]
@@ -344,6 +547,36 @@ mod test {
     //         ]
     //     )
     // }
+
+    #[test]
+    fn test_gemm_f32_v2() {
+        let device = CudaDevice::new(0).unwrap();
+        let lhs = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 2, 2]);
+        let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+
+        let rhs = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 2, 2]);
+        let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+
+        let op = GemmOp::new(
+            lhs.shape(),
+            lhs.stride(),
+            rhs.shape(),
+            rhs.stride(),
+            false,
+            false,
+        );
+        let config = op.strided_batch_config((1.0, 0.0)).unwrap();
+
+        let output_size = op.calculate_output_size();
+        let mut out = device.alloc_zeros(output_size).unwrap();
+
+        op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
+            .unwrap();
+
+        let result = device.dtoh_sync_copy(&out).unwrap();
+
+        assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
+    }
 
     #[test]
     fn test_gemm_f32() {
