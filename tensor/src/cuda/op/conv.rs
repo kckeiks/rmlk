@@ -1,13 +1,236 @@
 use crate::attribute::conv::ConvAttributes;
 use crate::cuda::data::CudaData;
-use crate::Result;
+use crate::{utils, Result};
 use crate::{Context, Error};
 use cudarc::cudnn;
-use cudarc::cudnn::{ConvBiasActivationForward, ConvForward};
-use cudarc::driver::CudaDevice;
+use cudarc::cudnn::{ConvBiasActivationForward, ConvForward, CudnnDataType};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use rmlk_ir::DataType;
 use std::sync::Arc;
+
+// Todo: We need to figure out how to preprocess the bias input.
+// Bias is expected to be in a certain shape,
+// for example see https://forums.developer.nvidia.com/t/cudnn-how-to-construct-the-bias-tensor-for-convolution-layer/35223.
+pub struct BiasInput<'a, T> {
+    pub data: &'a CudaSlice<T>,
+    pub shape: &'a [i32],
+    pub stride: &'a [i32],
+}
+
+pub fn compute_v2<T>(
+    device: Arc<CudaDevice>,
+    (alpha, beta): (T, T),
+    x_data: &CudaSlice<T>,
+    x_shape: &[i32],
+    x_stride: &[i32],
+    w_data: &CudaSlice<T>,
+    w_shape: &[i32],
+    bias: Option<BiasInput<T>>,
+    attrs: ConvAttributes,
+) -> Result<CudaSlice<T>>
+where
+    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+{
+    let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
+
+    // Todo: the input may not have a shape.
+    // When the shape is missing, it means the input can have any shape.
+    // The shape of the input can be inferred by the caller of this function.
+    // This may not be a problem if we stick to the invariant that
+    // every input must have a shape and we must set the shape of the output
+    // if it doesn't exist.
+    if (x_shape.len() != 4 && x_shape.len() != 5) || (w_shape.len() != 4 && w_shape.len() != 5) {
+        return Err(Error::InvalidTensorDimensions);
+    }
+
+    // Todo: Update attr api to return a reference instead if possible.
+    // Todo: we need a allocator api to optimize these allocations.
+    let w_shape = match attrs.kernel_shape(&x_shape) {
+        None => w_shape.iter().copied().collect::<Box<[i32]>>(),
+        Some(shape) => shape,
+    };
+    let out_shape = attrs.calculate_output_shape(&x_shape, &w_shape);
+    let mut out_stride = out_shape.iter().map(|_| 0).collect::<Box<[i32]>>();
+    utils::calculate_stride(&out_shape, &mut out_stride);
+    let out_size = out_shape.iter().product::<i32>();
+
+    debug!(
+        "x_shape={x_shape:?}, \
+        w_shape={w_shape:?}, \
+        out_shape={out_shape:?}, \
+        group={:?}, \
+        pads={:?}, \
+        strides={:?}, \
+        dilations={:?}",
+        attrs.group(),
+        attrs.pads(),
+        attrs.strides(),
+        attrs.dilations()
+    );
+
+    // Todo: handle this data and move it to device.
+    let input_slice = x_data;
+    let input_desc = cudnn
+        .create_nd_tensor::<T>(&x_shape, &x_stride)
+        .map_err(|_| Error::CudnnInternal)?;
+
+    // Todo: Fix this.
+    // Does this cudnnTensorFormat_t handle 5d inputs?
+    let filter_slice = w_data;
+    let filter_desc = cudnn
+        .create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, &w_shape)
+        .map_err(|_| Error::CudnnInternal)?;
+
+    // Check for optional bias input.
+    // If it exists, for performance, we compute it in one single cudnn function call.
+    // Todo: handle fused activation function operations.
+    match bias {
+        None => {
+            let mut conv = cudnn
+                .create_convnd::<T>(
+                    attrs.pads(),
+                    attrs.strides(),
+                    attrs.dilations(),
+                    cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
+                )
+                .map_err(|_| Error::CudnnInternal)?;
+
+            conv.set_group_count(attrs.group())
+                .map_err(|_| Error::Unknown)?;
+
+            let out_desc = cudnn
+                .create_nd_tensor::<T>(&out_shape, &out_stride)
+                .map_err(|_| Error::CudnnInternal)?;
+            let mut out_slice = device
+                .alloc_zeros::<T>(out_size as usize)
+                .map_err(|_| Error::AllocationFailed)?;
+            {
+                let op = ConvForward {
+                    conv: &conv,
+                    x: &input_desc,
+                    w: &filter_desc,
+                    y: &out_desc,
+                };
+
+                // Pick algorithm.
+                let algo = op.pick_algorithm().map_err(|_| Error::CudnnInternal)?;
+
+                // Get workspace size.
+                let workspace_size = op
+                    .get_workspace_size(algo.clone())
+                    .map_err(|_| Error::CudnnInternal)?;
+                let mut workspace = device
+                    .alloc_zeros::<u8>(workspace_size)
+                    .map_err(|_| Error::AllocationFailed)?;
+
+                // Launch the operation.
+                unsafe {
+                    op.launch(
+                        algo,
+                        Some(&mut workspace),
+                        (alpha, beta),
+                        input_slice,
+                        filter_slice,
+                        &mut out_slice,
+                    )
+                    .map_err(|_| Error::CudnnInternal)?;
+                }
+            }
+
+            Ok(out_slice)
+        }
+        Some(bias_tensor) => {
+            let bias_slice = bias_tensor.data;
+            let bias_shape = bias_tensor.shape;
+            let bias_stride = bias_tensor.stride;
+            let bias_desc = cudnn
+                .create_nd_tensor::<T>(&bias_shape, &bias_stride)
+                .map_err(|_| Error::CudnnInternal)?;
+
+            debug!("bias_shape={:?},bias_stride{:?}", bias_shape, bias_stride);
+
+            let mut conv = cudnn
+                .create_convnd::<T>(
+                    attrs.pads(),
+                    attrs.strides(),
+                    attrs.dilations(),
+                    cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
+                )
+                .map_err(|_| Error::CudnnInternal)?;
+
+            conv.set_group_count(attrs.group())
+                .map_err(|_| Error::Unknown)?;
+
+            let out_desc = cudnn
+                .create_nd_tensor::<T>(&out_shape, &out_stride)
+                .map_err(|_| Error::CudnnInternal)?;
+            let mut out_slice = device
+                .alloc_zeros::<T>(out_size as usize)
+                .map_err(|_| Error::AllocationFailed)?;
+
+            let z_desc = cudnn
+                .create_nd_tensor::<T>(&out_shape, &out_stride)
+                .map_err(|_| Error::CudnnInternal)?;
+            // Todo: Do we have to actually allocate anything if we are not going to use it?
+            let z_slice = device
+                .alloc_zeros::<T>(out_size as usize)
+                .map_err(|_| Error::AllocationFailed)?;
+            {
+                let activation_desc = cudnn
+                    .create_activation::<T>(
+                        cudarc::cudnn::sys::cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
+                        // Note: For other activations,
+                        // this needs to be a certain value https://docs.nvidia.com/deeplearning/cudnn/latest/api/cudnn-cnn-library.html#cudnnconvolutionbiasactivationforward.
+                        cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+                        1.0,
+                    )
+                    .map_err(|_| Error::CudnnInternal)?;
+
+                let op = ConvBiasActivationForward {
+                    conv: &conv,
+                    act: &activation_desc,
+                    x: &input_desc,
+                    w: &filter_desc,
+                    z: &z_desc,
+                    bias: &bias_desc,
+                    y: &out_desc,
+                };
+
+                // This needs to be the algorithm.
+                // See https://docs.nvidia.com/deeplearning/cudnn/latest/api/cudnn-cnn-library.html#cudnnconvolutionbiasactivationforward.
+                let algo = cudarc::cudnn::sys::cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+
+                // Get workspace size.
+                let workspace_size = op
+                    .get_workspace_size(algo.clone())
+                    .map_err(|_| Error::CudnnInternal)?;
+                let mut workspace = device
+                    .alloc_zeros::<u8>(workspace_size)
+                    .map_err(|_| Error::AllocationFailed)?;
+
+                unsafe {
+                    op.launch(
+                        algo,
+                        Some(&mut workspace),
+                        (alpha, beta),
+                        input_slice,
+                        filter_slice,
+                        &z_slice,
+                        bias_slice,
+                        &mut out_slice,
+                    )
+                    .map_err(|e| {
+                        debug!("cudnn error: {:?}", e.0);
+                        Error::CudnnInternal
+                    })?;
+                }
+            }
+
+            Ok(out_slice)
+        }
+    }
+}
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
     let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
@@ -302,13 +525,78 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 
 #[cfg(test)]
 mod test {
+    use crate::attribute::conv::ConvAttributes;
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
+    use crate::cuda::op::conv::compute_v2;
     use crate::kernel::{Context, Kernel};
-    use crate::test_utils;
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
+    use crate::{test_utils, Error, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_conv_f32_2d_v2() {
+        let device = CudaDevice::new(0).unwrap();
+
+        let mut x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
+        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_data = device
+            .htod_copy(vec![
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ])
+            .unwrap();
+
+        let mut w = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
+        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_stride = w.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
+
+        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
+            dilations: Some(Box::new([1, 1])),
+            group: Some(1),
+            kernel_shape: None,
+            pads: Some(Box::new([1, 1, 1, 1])),
+            strides: Some(Box::new([1, 1])),
+        });
+        let attributes = attributes
+            .into_iter()
+            .map(|attr| (attr.name.clone().into_boxed_str(), attr))
+            .collect::<HashMap<_, _>>();
+        let filter_dims = match x.shape().len() {
+            4 => 2,
+            5 => 3,
+            _ => {
+                unreachable!("we already checked the dimensions of x for the supported dimensions")
+            }
+        };
+        let attributes = ConvAttributes::new(&attributes, filter_dims).unwrap();
+
+        let y_data = compute_v2::<f32>(
+            device.clone(),
+            (1.0, 0.0),
+            &x_data,
+            &x_shape,
+            &x_stride,
+            &w_data,
+            &w_shape,
+            None,
+            attributes,
+        )
+        .unwrap();
+        let result = device.dtoh_sync_copy(&y_data).unwrap();
+
+        assert_eq!(
+            result,
+            vec![
+                12.0, 21.0, 27.0, 33.0, 24.0, 33.0, 54.0, 63.0, 72.0, 51.0, 63.0, 99.0, 108.0,
+                117.0, 81.0, 93.0, 144.0, 153.0, 162.0, 111.0, 72.0, 111.0, 117.0, 123.0, 84.0,
+            ]
+        )
+    }
 
     #[test]
     fn test_conv_f32_2d_bias() {

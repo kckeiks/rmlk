@@ -10,6 +10,7 @@ mod provider;
 mod tensor;
 #[cfg(test)]
 mod test_utils;
+mod utils;
 
 pub use cuda::{CudaData, CudaKernel, CudaProvider};
 pub use error::Error;

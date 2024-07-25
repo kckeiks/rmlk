@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 // pub fn compute_v2() -> {}
 
-pub fn internal_compute_v2<T: CudnnDataType>(
+pub fn compute_v2<T: CudnnDataType>(
     device: Arc<CudaDevice>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,
@@ -108,7 +108,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 mod test {
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
-    use crate::cuda::op::activation::internal_compute_v2;
+    use crate::cuda::op::activation::compute_v2;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestNode, TestParams};
     use crate::{test_utils, Error, Tensor};
@@ -124,8 +124,7 @@ mod test {
         let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();
 
         let y_data =
-            internal_compute_v2::<f32>(device.clone(), (1.0, 0.0), &x_data, &x_shape, &x_stride)
-                .unwrap();
+            compute_v2::<f32>(device.clone(), (1.0, 0.0), &x_data, &x_shape, &x_stride).unwrap();
         let result = device.dtoh_sync_copy(&y_data).unwrap();
 
         assert_eq!(result, vec![0.0, 2.0, 0.0, 100.0])
