@@ -18,7 +18,10 @@ pub struct Context<'a, T> {
 }
 
 impl<'a, T> Context<'a, T> {
-    pub fn new(execution_state: &'a mut ExecutionState<T>, node_index: usize) -> crate::Result<Self> {
+    pub fn new(
+        execution_state: &'a mut ExecutionState<T>,
+        node_index: usize,
+    ) -> crate::Result<Self> {
         let input_count = execution_state
             .get_input_count(node_index)
             .ok_or(Error::MissingNodeInGraph)?;

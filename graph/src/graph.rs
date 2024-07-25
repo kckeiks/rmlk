@@ -39,12 +39,19 @@ impl Graph {
         self.nodes.iter()
     }
 
+    pub fn nodes_slice(&self) -> &[Node] {
+        self.nodes.as_slice()
+    }
+
     pub fn inputs(&self) -> impl Iterator<Item = usize> + '_ {
         self.inputs.iter().copied()
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = usize> + '_ {
         self.outputs.iter().copied()
+    }
+    pub fn outputs_slice(&self) -> &[usize] {
+        self.outputs.as_slice()
     }
 
     pub fn initializers(&self) -> impl Iterator<Item = &rmlk_ir::Tensor> + '_ {
