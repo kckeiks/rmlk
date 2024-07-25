@@ -17,7 +17,7 @@ impl CudaKernel {
         Self { op, device }
     }
 
-    fn kernel(&self, dtype: DataType) -> Result<CudaFunction> {
+    pub(crate) fn kernel(&self, dtype: DataType) -> Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match self.op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],

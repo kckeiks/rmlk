@@ -14,8 +14,7 @@ pub fn internal_compute_v2<T: CudnnDataType>(
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
     x_stride: &[i32],
-    y_data: &mut CudaSlice<T>,
-) -> Result<()>
+) -> Result<CudaSlice<T>>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
@@ -43,10 +42,16 @@ where
         y: &y_desc,
     };
 
-    op.launch((alpha, beta), x_data, y_data)
+    // Todo: Handle overflow.
+    let output_size = x_shape.iter().product::<i32>();
+    let mut y_data = device
+        .alloc_zeros::<T>(output_size as usize)
         .map_err(|_| Error::CudnnInternal)?;
 
-    Ok(())
+    op.launch((alpha, beta), x_data, &mut y_data)
+        .map_err(|_| Error::CudnnInternal)?;
+
+    Ok(y_data)
 }
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -113,28 +118,14 @@ mod test {
     #[test]
     fn test_relu_f32_v2() {
         let device = CudaDevice::new(0).unwrap();
-        let shape = vec![1, 1, 2, 2];
-        let mut x = Tensor::<CudaData>::new_with_shape(DataType::Float, shape);
+        let mut x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 2, 2]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-
         let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();
 
-        let output_size = x.shape().iter().product();
-        let mut y_data = device
-            .alloc_zeros::<f32>(output_size)
-            .map_err(|_| Error::CudnnInternal)
-            .unwrap();
-
-        internal_compute_v2::<f32>(
-            device.clone(),
-            (1.0, 0.0),
-            &x_data,
-            &x_shape,
-            &x_stride,
-            &mut y_data,
-        )
-        .unwrap();
+        let y_data =
+            internal_compute_v2::<f32>(device.clone(), (1.0, 0.0), &x_data, &x_shape, &x_stride)
+                .unwrap();
         let result = device.dtoh_sync_copy(&y_data).unwrap();
 
         assert_eq!(result, vec![0.0, 2.0, 0.0, 100.0])
