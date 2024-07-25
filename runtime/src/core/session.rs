@@ -1,5 +1,5 @@
 use crate::core::error::{Error, Result};
-use crate::core::kernel::{CudaComputer, KernelComputer, ProviderComputer};
+use crate::core::kernel::{CudaComputer, ProviderComputer};
 use crate::core::provider::{CudaProvider, ExecutionProvider, Provider};
 use ndarray::ArrayD;
 use rmlk_graph::Graph;
@@ -107,6 +107,10 @@ pub struct SessionState {
 
 impl SessionState {
     pub fn new(plan: Box<[usize]>, graph: Graph, provider: Box<[Provider]>) -> Self {
-        todo!()
+        Self {
+            plan,
+            provider,
+            graph: Arc::new(graph),
+        }
     }
 }
