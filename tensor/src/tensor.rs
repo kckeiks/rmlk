@@ -26,10 +26,7 @@ impl<T> Tensor<T> {
     pub fn new_with_shape(dtype: DataType, shape: Vec<usize>) -> Self {
         let dims = shape.len();
         let mut stride = vec![0usize; dims];
-        stride[dims - 1] = 1;
-        for i in (0..dims - 1).rev() {
-            stride[i] += stride[i + 1] * shape[i + 1];
-        }
+        utils::calculate_stride(&shape, &mut stride);
 
         Self {
             data: None,
