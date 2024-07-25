@@ -528,7 +528,7 @@ mod test {
     use crate::attribute::conv::ConvAttributes;
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
-    use crate::cuda::op::conv::compute_v2;
+    use crate::cuda::op::conv::{compute_v2, BiasInput};
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use crate::{test_utils, Error, Tensor};
@@ -594,6 +594,85 @@ mod test {
             vec![
                 12.0, 21.0, 27.0, 33.0, 24.0, 33.0, 54.0, 63.0, 72.0, 51.0, 63.0, 99.0, 108.0,
                 117.0, 81.0, 93.0, 144.0, 153.0, 162.0, 111.0, 72.0, 111.0, 117.0, 123.0, 84.0,
+            ]
+        )
+    }
+
+    #[test]
+    fn test_conv_f32_2d_bias_v2() {
+        let device = CudaDevice::new(0).unwrap();
+
+        let mut x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
+        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_data = device
+            .htod_copy(vec![
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ])
+            .unwrap();
+
+        let mut w = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
+        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_stride = w.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
+
+        let mut bias = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 1, 1]);
+        let bias_shape = bias
+            .shape()
+            .iter()
+            .map(|d| *d as i32)
+            .collect::<Box<[i32]>>();
+        let bias_stride = bias
+            .stride()
+            .iter()
+            .map(|d| *d as i32)
+            .collect::<Box<[i32]>>();
+        let bias_data = device.htod_copy(vec![1.0f32; 1]).unwrap();
+
+        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
+            dilations: Some(Box::new([1, 1])),
+            group: Some(1),
+            kernel_shape: None,
+            pads: Some(Box::new([1, 1, 1, 1])),
+            strides: Some(Box::new([1, 1])),
+        });
+        let attributes = attributes
+            .into_iter()
+            .map(|attr| (attr.name.clone().into_boxed_str(), attr))
+            .collect::<HashMap<_, _>>();
+        let filter_dims = match x.shape().len() {
+            4 => 2,
+            5 => 3,
+            _ => {
+                unreachable!("we already checked the dimensions of x for the supported dimensions")
+            }
+        };
+        let attributes = ConvAttributes::new(&attributes, filter_dims).unwrap();
+
+        let y_data = compute_v2::<f32>(
+            device.clone(),
+            (1.0, 0.0),
+            &x_data,
+            &x_shape,
+            &x_stride,
+            &w_data,
+            &w_shape,
+            Some(BiasInput {
+                data: &bias_data,
+                shape: &bias_shape,
+                stride: &bias_stride,
+            }),
+            attributes,
+        )
+        .unwrap();
+        let result = device.dtoh_sync_copy(&y_data).unwrap();
+
+        assert_eq!(
+            result,
+            vec![
+                13.0, 22.0, 28.0, 34.0, 25.0, 34.0, 55.0, 64.0, 73.0, 52.0, 64.0, 100.0, 109.0,
+                118.0, 82.0, 94.0, 145.0, 154.0, 163.0, 112.0, 73.0, 112.0, 118.0, 124.0, 85.0,
             ]
         )
     }
