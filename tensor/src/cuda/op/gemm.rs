@@ -94,8 +94,8 @@ impl GemmOp {
         }
     }
 
-    pub fn calculate_output_size(&self) -> usize {
-        self.b * self.m * self.n
+    pub fn calculate_output_shape(&self) -> [usize; 3] {
+        [self.b, self.m, self.n]
     }
 
     fn strided_batch_config<T>(&self, (alpha, beta): (T, T)) -> Result<StridedBatchedConfig<T>> {
@@ -567,7 +567,7 @@ mod test {
         );
         let config = op.strided_batch_config((1.0, 0.0)).unwrap();
 
-        let output_size = op.calculate_output_size();
+        let output_size = op.calculate_output_shape().iter().product();
         let mut out = device.alloc_zeros(output_size).unwrap();
 
         op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)

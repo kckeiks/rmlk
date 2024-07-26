@@ -1,6 +1,8 @@
 #[derive(Debug)]
 pub enum Error {
     Unknown,
+    InvalidBufferSize,
+    InvalidInputShapes,
     InvalidTensorDimensions,
     InvalidAttribute,
     InvalidAttributeFormat,
