@@ -16,15 +16,14 @@ pub struct MaxPoolAttributes {
 }
 
 impl MaxPoolAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>, kernel_dims: usize) -> crate::Result<Self> {
+    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> crate::Result<Self> {
         let kernel_shape = match attrs.get("kernel_shape") {
-            Some(attr) => Some(
-                attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
-                    // Todo: Let's figure out to avoid these allocations.
-                    .to_vec()
-                    .into_boxed_slice(),
-            ),
+            Some(attr) => attr
+                .ints()
+                .ok_or(Error::InvalidAttributeFormat)?
+                // Todo: Let's figure out to avoid these allocations.
+                .to_vec()
+                .into_boxed_slice(),
             None => return Err(Error::MissingAttributes),
         };
 
@@ -71,14 +70,16 @@ impl MaxPoolAttributes {
             }
         }
 
+        let kernel_dims = kernel_shape.len();
+
         Ok(Self {
             _dilations: alloc.alloc_with_value::<i32>(1, kernel_dims),
             ceil_mode: ceil_mode.unwrap_or(false),
-            kernel_shape: kernel_shape.ok_or(Error::MissingAttributes)?,
             pads: pads.unwrap_or_else(|| alloc.alloc_with_value::<i32>(0, kernel_dims)),
             _row_major_order: row_major_order.unwrap_or(false),
             strides: strides.unwrap_or_else(|| alloc.alloc_with_value::<i32>(1, kernel_dims)),
             kernel_dims,
+            kernel_shape,
             alloc,
         })
     }
@@ -93,6 +94,10 @@ impl MaxPoolAttributes {
 
     pub fn kernel_shape(&self) -> &[i32] {
         self.kernel_shape.as_ref()
+    }
+
+    pub fn ceil_mode(&self) -> bool {
+        false
     }
 
     pub fn calculate_output_shape(&self, x_shape: &[i32]) -> crate::Result<Box<[i32]>> {
