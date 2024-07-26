@@ -22,7 +22,6 @@ where
     T: Num + Copy + AddAssign + FromPrimitive,
     f64: From<T>,
 {
-    // For reference, https://docs.nvidia.com/deeplearning/cudnn/latest/api/cudnn-ops-library.html#cudnngetpoolingndforwardoutputdim.
     let two = T::one() + T::one();
     if kernel_shape.len() == 2 && y_shape.len() == 4 {
         let height =

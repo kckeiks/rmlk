@@ -6,8 +6,66 @@ use cudarc::cudnn;
 use cudarc::cudnn::{ConvBiasActivationForward, ConvForward, CudnnDataType};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use log::debug;
+use num_traits::{FromPrimitive, Num};
 use rmlk_ir::DataType;
+use std::ops::AddAssign;
 use std::sync::Arc;
+
+// Todo: figure out how to make this generic.
+pub fn calculate_output_shape<T>(
+    x_shape: &[T],
+    kernel_shape: &[T],
+    pads: &[T],
+    strides: &[T],
+    dilations: &[T],
+    y_shape: &mut [T],
+) -> Result<()>
+where
+    T: Num + Copy + AddAssign + FromPrimitive,
+    f64: From<T>,
+{
+    let two = T::one() + T::one();
+    if y_shape.len() == 4 && kernel_shape.len() == y_shape.len() {
+        // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d.
+        let height =
+            ((x_shape[2] + two * pads[0] - dilations[0] * (kernel_shape[2] - T::one()) - T::one())
+                / strides[0])
+                + T::one();
+        let width =
+            ((x_shape[3] + two * pads[1] - dilations[1] * (kernel_shape[3] - T::one()) - T::one())
+                / strides[1])
+                + T::one();
+
+        y_shape[0] = x_shape[0];
+        y_shape[1] = kernel_shape[1];
+        y_shape[2] = height;
+        y_shape[3] = width;
+    } else if y_shape.len() == 5 && kernel_shape.len() == y_shape.len() {
+        // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html#torch.nn.Conv3d.
+        let depth =
+            ((x_shape[0] + two * pads[0] - dilations[0] * (kernel_shape[2] - T::one()) - T::one())
+                / strides[0])
+                + T::one();
+        let height =
+            ((x_shape[2] + two * pads[1] - dilations[1] * (kernel_shape[3] - T::one()) - T::one())
+                / strides[1])
+                + T::one();
+        let width =
+            ((x_shape[3] + two * pads[2] - dilations[2] * (kernel_shape[4] - T::one()) - T::one())
+                / strides[2])
+                + T::one();
+
+        y_shape[0] = x_shape[0];
+        y_shape[1] = kernel_shape[1];
+        y_shape[2] = depth;
+        y_shape[3] = height;
+        y_shape[4] = width;
+    } else {
+        return Err(Error::InvalidInputShapes);
+    }
+
+    Ok(())
+}
 
 // Todo: We need to figure out how to preprocess the bias input.
 // Bias is expected to be in a certain shape,
@@ -26,12 +84,29 @@ pub fn compute_v2<T>(
     x_stride: &[i32],
     w_data: &CudaSlice<T>,
     w_shape: &[i32],
+    pads: &[i32],
+    strides: &[i32],
+    dilations: &[i32],
+    group: i32,
     bias: Option<BiasInput<T>>,
-    attrs: ConvAttributes,
-) -> Result<CudaSlice<T>>
+    y_data: &mut CudaSlice<T>,
+    y_shape: &[i32],
+    y_stride: &[i32],
+) -> Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
+    println!(
+        "x_shape={x_shape:?}\
+        x_stride={x_stride:?}\
+        w_shape={w_shape:?}\
+        pads={pads:?}\
+        strides={strides:?}\
+        dilations={dilations:?}\
+        group={group:?}\
+        y_shape={y_shape:?}
+        "
+    );
     let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
 
     // Todo: the input may not have a shape.
@@ -44,41 +119,14 @@ where
         return Err(Error::InvalidTensorDimensions);
     }
 
-    // Todo: Update attr api to return a reference instead if possible.
-    // Todo: we need a allocator api to optimize these allocations.
-    let w_shape = match attrs.kernel_shape(&x_shape) {
-        None => w_shape.iter().copied().collect::<Box<[i32]>>(),
-        Some(shape) => shape,
-    };
-    let out_shape = attrs.calculate_output_shape(&x_shape, &w_shape);
-    let mut out_stride = out_shape.iter().map(|_| 0).collect::<Box<[i32]>>();
-    utils::calculate_stride(&out_shape, &mut out_stride);
-    let out_size = out_shape.iter().product::<i32>();
-
-    debug!(
-        "x_shape={x_shape:?}, \
-        w_shape={w_shape:?}, \
-        out_shape={out_shape:?}, \
-        group={:?}, \
-        pads={:?}, \
-        strides={:?}, \
-        dilations={:?}",
-        attrs.group(),
-        attrs.pads(),
-        attrs.strides(),
-        attrs.dilations()
-    );
-
     // Todo: handle this data and move it to device.
-    let input_slice = x_data;
-    let input_desc = cudnn
+    let x_desc = cudnn
         .create_nd_tensor::<T>(&x_shape, &x_stride)
         .map_err(|_| Error::CudnnInternal)?;
 
     // Todo: Fix this.
     // Does this cudnnTensorFormat_t handle 5d inputs?
-    let filter_slice = w_data;
-    let filter_desc = cudnn
+    let w_desc = cudnn
         .create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, &w_shape)
         .map_err(|_| Error::CudnnInternal)?;
 
@@ -89,28 +137,25 @@ where
         None => {
             let mut conv = cudnn
                 .create_convnd::<T>(
-                    attrs.pads(),
-                    attrs.strides(),
-                    attrs.dilations(),
+                    pads,
+                    strides,
+                    dilations,
                     cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 )
                 .map_err(|_| Error::CudnnInternal)?;
 
-            conv.set_group_count(attrs.group())
-                .map_err(|_| Error::Unknown)?;
+            conv.set_group_count(group).map_err(|_| Error::Unknown)?;
 
-            let out_desc = cudnn
-                .create_nd_tensor::<T>(&out_shape, &out_stride)
+            let y_desc = cudnn
+                .create_nd_tensor::<T>(&y_shape, &y_stride)
                 .map_err(|_| Error::CudnnInternal)?;
-            let mut out_slice = device
-                .alloc_zeros::<T>(out_size as usize)
-                .map_err(|_| Error::AllocationFailed)?;
+
             {
                 let op = ConvForward {
                     conv: &conv,
-                    x: &input_desc,
-                    w: &filter_desc,
-                    y: &out_desc,
+                    x: &x_desc,
+                    w: &w_desc,
+                    y: &y_desc,
                 };
 
                 // Pick algorithm.
@@ -130,15 +175,13 @@ where
                         algo,
                         Some(&mut workspace),
                         (alpha, beta),
-                        input_slice,
-                        filter_slice,
-                        &mut out_slice,
+                        x_data,
+                        w_data,
+                        y_data,
                     )
                     .map_err(|_| Error::CudnnInternal)?;
                 }
             }
-
-            Ok(out_slice)
         }
         Some(bias_tensor) => {
             let bias_slice = bias_tensor.data;
@@ -148,33 +191,27 @@ where
                 .create_nd_tensor::<T>(&bias_shape, &bias_stride)
                 .map_err(|_| Error::CudnnInternal)?;
 
-            debug!("bias_shape={:?},bias_stride{:?}", bias_shape, bias_stride);
-
             let mut conv = cudnn
                 .create_convnd::<T>(
-                    attrs.pads(),
-                    attrs.strides(),
-                    attrs.dilations(),
+                    pads,
+                    strides,
+                    dilations,
                     cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 )
                 .map_err(|_| Error::CudnnInternal)?;
 
-            conv.set_group_count(attrs.group())
-                .map_err(|_| Error::Unknown)?;
+            conv.set_group_count(group).map_err(|_| Error::Unknown)?;
 
-            let out_desc = cudnn
-                .create_nd_tensor::<T>(&out_shape, &out_stride)
+            let y_desc = cudnn
+                .create_nd_tensor::<T>(&y_shape, &y_stride)
                 .map_err(|_| Error::CudnnInternal)?;
-            let mut out_slice = device
-                .alloc_zeros::<T>(out_size as usize)
-                .map_err(|_| Error::AllocationFailed)?;
 
             let z_desc = cudnn
-                .create_nd_tensor::<T>(&out_shape, &out_stride)
+                .create_nd_tensor::<T>(&y_shape, &y_stride)
                 .map_err(|_| Error::CudnnInternal)?;
             // Todo: Do we have to actually allocate anything if we are not going to use it?
             let z_slice = device
-                .alloc_zeros::<T>(out_size as usize)
+                .alloc_zeros::<T>(y_shape.iter().map(|d| *d as usize).product())
                 .map_err(|_| Error::AllocationFailed)?;
             {
                 let activation_desc = cudnn
@@ -190,11 +227,11 @@ where
                 let op = ConvBiasActivationForward {
                     conv: &conv,
                     act: &activation_desc,
-                    x: &input_desc,
-                    w: &filter_desc,
+                    x: &y_desc,
+                    w: &w_desc,
                     z: &z_desc,
                     bias: &bias_desc,
-                    y: &out_desc,
+                    y: &y_desc,
                 };
 
                 // This needs to be the algorithm.
@@ -214,11 +251,11 @@ where
                         algo,
                         Some(&mut workspace),
                         (alpha, beta),
-                        input_slice,
-                        filter_slice,
+                        x_data,
+                        w_data,
                         &z_slice,
                         bias_slice,
-                        &mut out_slice,
+                        y_data,
                     )
                     .map_err(|e| {
                         debug!("cudnn error: {:?}", e.0);
@@ -226,10 +263,10 @@ where
                     })?;
                 }
             }
-
-            Ok(out_slice)
         }
     }
+
+    Ok(())
 }
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -286,6 +323,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
         Some(shape) => shape,
     };
     let out_shape = attrs.calculate_output_shape(&x_shape, &w_shape);
+    println!("This one is {out_shape:?}");
     let out_size = out_shape.iter().product::<i32>();
 
     // Todo: Do we validate that our calculated output shape matches
@@ -528,10 +566,10 @@ mod test {
     use crate::attribute::conv::ConvAttributes;
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
-    use crate::cuda::op::conv::{compute_v2, BiasInput};
+    use crate::cuda::op::conv::{calculate_output_shape, compute_v2, BiasInput};
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
-    use crate::{test_utils, Error, Tensor};
+    use crate::{test_utils, utils, Error, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use std::collections::HashMap;
@@ -573,9 +611,27 @@ mod test {
                 unreachable!("we already checked the dimensions of x for the supported dimensions")
             }
         };
-        let attributes = ConvAttributes::new(&attributes, filter_dims).unwrap();
+        let attrs = ConvAttributes::new(&attributes, filter_dims).unwrap();
 
-        let y_data = compute_v2::<f32>(
+        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+        calculate_output_shape(
+            &x_shape,
+            &w_shape,
+            attrs.pads(),
+            attrs.strides(),
+            attrs.dilations(),
+            &mut y_shape,
+        )
+        .unwrap();
+        println!("Test y_shape={:?}", &w_shape[2..]);
+        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        utils::calculate_stride(&y_shape, &mut y_stride);
+
+        let mut y_data = device
+            .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+            .unwrap();
+
+        compute_v2::<f32>(
             device.clone(),
             (1.0, 0.0),
             &x_data,
@@ -583,8 +639,14 @@ mod test {
             &x_stride,
             &w_data,
             &w_shape,
+            attrs.pads(),
+            attrs.strides(),
+            attrs.dilations(),
+            attrs.group(),
             None,
-            attributes,
+            &mut y_data,
+            &y_shape,
+            &y_stride,
         )
         .unwrap();
         let result = device.dtoh_sync_copy(&y_data).unwrap();
@@ -648,9 +710,26 @@ mod test {
                 unreachable!("we already checked the dimensions of x for the supported dimensions")
             }
         };
-        let attributes = ConvAttributes::new(&attributes, filter_dims).unwrap();
+        let attrs = ConvAttributes::new(&attributes, filter_dims).unwrap();
 
-        let y_data = compute_v2::<f32>(
+        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+        calculate_output_shape(
+            &x_shape,
+            &w_shape,
+            attrs.pads(),
+            attrs.strides(),
+            attrs.dilations(),
+            &mut y_shape,
+        )
+        .unwrap();
+        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        utils::calculate_stride(&y_shape, &mut y_stride);
+
+        let mut y_data = device
+            .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+            .unwrap();
+
+        compute_v2::<f32>(
             device.clone(),
             (1.0, 0.0),
             &x_data,
@@ -658,12 +737,18 @@ mod test {
             &x_stride,
             &w_data,
             &w_shape,
+            attrs.pads(),
+            attrs.strides(),
+            attrs.dilations(),
+            attrs.group(),
             Some(BiasInput {
                 data: &bias_data,
                 shape: &bias_shape,
                 stride: &bias_stride,
             }),
-            attributes,
+            &mut y_data,
+            &y_shape,
+            &y_stride,
         )
         .unwrap();
         let result = device.dtoh_sync_copy(&y_data).unwrap();

@@ -94,6 +94,7 @@ impl ConvAttributes {
         self.group
     }
 
+    // Todo: pass the output buffer.
     pub fn kernel_shape(&self, x_shape: &[i32]) -> Option<Box<[i32]>> {
         if let Some(shape) = self.kernel_shape.as_ref() {
             if self.kernel_dims == 2 {
