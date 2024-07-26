@@ -19,7 +19,8 @@ pub fn compute_v2<T>(
     rhs_data: &CudaSlice<T>,
     rhs_shape: &[usize],
     rhs_stride: &[usize],
-) -> Result<CudaSlice<T>>
+    out_data: &mut CudaSlice<T>,
+) -> Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
@@ -28,6 +29,7 @@ where
 
     // Todo: Validate that the tensors are valid for the operation.
     // Todo: should we directly initialize this in the device?
+    // Todo: pass in vector.
     let mut info: Vec<usize> = Vec::with_capacity(3 * lhs_shape.len());
     info.extend(lhs_shape);
     info.extend(lhs_stride);
@@ -47,20 +49,18 @@ where
         shared_mem_bytes: 0,
     };
 
-    let mut out_slice = unsafe { device.alloc::<T>(elem_count).unwrap() };
-
     let params = (
         elem_count,
         lhs_shape.len(),
         &info,
         lhs_data,
         rhs_data,
-        &mut out_slice,
+        out_data,
     );
 
     unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
 
-    return Ok(out_slice);
+    Ok(())
 }
 
 pub fn compute(
@@ -178,7 +178,9 @@ mod test {
         let cuda_wrapper = CudaKernel::new(Op::Add, device.clone());
         let func = cuda_wrapper.kernel(DataType::Float).unwrap();
 
-        let out_data = compute_v2::<f32>(
+        let mut out_data = device.alloc_zeros(lhs.shape().iter().product()).unwrap();
+
+        compute_v2::<f32>(
             device.clone(),
             func,
             &lhs_data,
@@ -187,6 +189,7 @@ mod test {
             &rhs_data,
             rhs.shape(),
             rhs.stride(),
+            &mut out_data,
         )
         .unwrap();
         let result = device.dtoh_sync_copy(&out_data).unwrap();
