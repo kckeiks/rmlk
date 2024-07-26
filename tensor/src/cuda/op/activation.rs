@@ -14,7 +14,8 @@ pub fn compute_v2<T: CudnnDataType>(
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
     x_stride: &[i32],
-) -> Result<CudaSlice<T>>
+    y_data: &mut CudaSlice<T>,
+) -> Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
@@ -42,16 +43,10 @@ where
         y: &y_desc,
     };
 
-    // Todo: Handle overflow.
-    let output_size = x_shape.iter().product::<i32>();
-    let mut y_data = device
-        .alloc_zeros::<T>(output_size as usize)
+    op.launch((alpha, beta), x_data, y_data)
         .map_err(|_| Error::CudnnInternal)?;
 
-    op.launch((alpha, beta), x_data, &mut y_data)
-        .map_err(|_| Error::CudnnInternal)?;
-
-    Ok(y_data)
+    Ok(())
 }
 
 pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<()> {
@@ -123,8 +118,16 @@ mod test {
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();
 
-        let y_data =
-            compute_v2::<f32>(device.clone(), (1.0, 0.0), &x_data, &x_shape, &x_stride).unwrap();
+        let mut y_data = device.alloc_zeros(x.shape().iter().product()).unwrap();
+        compute_v2::<f32>(
+            device.clone(),
+            (1.0, 0.0),
+            &x_data,
+            &x_shape,
+            &x_stride,
+            &mut y_data,
+        )
+        .unwrap();
         let result = device.dtoh_sync_copy(&y_data).unwrap();
 
         assert_eq!(result, vec![0.0, 2.0, 0.0, 100.0])
