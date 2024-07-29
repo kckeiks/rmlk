@@ -144,8 +144,7 @@ impl ConvKernel {
 mod test {
     use crate::core::context::Context;
     use crate::core::provider::cuda::kernel::conv::ConvKernel;
-    use crate::core::provider::cuda::test_utils;
-    use crate::core::provider::cuda::test_utils::{TestConvAttributes, TestNode, TestParams};
+    use crate::core::test_utils::{TestConvAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use rmlk_tensor::cuda::CudaData;
@@ -187,7 +186,7 @@ mod test {
             data: None,
         };
 
-        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
+        let attributes = crate::core::test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
             kernel_shape: None,
@@ -202,7 +201,7 @@ mod test {
             op: Op::Conv,
         };
 
-        let mut state = test_utils::build_graph_and_state(params);
+        let mut state = crate::core::test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 3).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());
@@ -256,7 +255,7 @@ mod test {
             data: None,
         };
 
-        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
+        let attributes = crate::core::test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
             kernel_shape: None,
@@ -271,7 +270,7 @@ mod test {
             op: Op::Conv,
         };
 
-        let mut state = test_utils::build_graph_and_state(params);
+        let mut state = crate::core::test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());

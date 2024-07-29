@@ -76,8 +76,7 @@ impl MaxPoolKernel {
 mod test {
     use crate::core::context::Context;
     use crate::core::provider::cuda::kernel::max_pool::MaxPoolKernel;
-    use crate::core::provider::cuda::test_utils;
-    use crate::core::provider::cuda::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
+    use crate::core::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use rmlk_tensor::cuda::CudaData;
@@ -107,14 +106,15 @@ mod test {
             data: None,
         };
 
-        let attributes = test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
-            dilations: None,
-            kernel_shape: Some(Box::new([2, 2])),
-            strides: Some(Box::new([2, 2])),
-            row_major_order: None,
-            ceil_mode: None,
-            pads: None,
-        });
+        let attributes =
+            crate::core::test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
+                dilations: None,
+                kernel_shape: Some(Box::new([2, 2])),
+                strides: Some(Box::new([2, 2])),
+                row_major_order: None,
+                ceil_mode: None,
+                pads: None,
+            });
 
         let params = TestParams {
             inputs: vec![node_a],
@@ -123,7 +123,7 @@ mod test {
             op: Op::MaxPool,
         };
 
-        let mut state = test_utils::build_graph_and_state(params);
+        let mut state = crate::core::test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 1).unwrap();
 
         let cuda_kernel = MaxPoolKernel::new(device.clone());
