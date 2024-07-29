@@ -1,3 +1,4 @@
+mod activation;
 mod add;
 mod conv;
 mod gemm;

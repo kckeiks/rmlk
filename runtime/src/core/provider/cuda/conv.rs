@@ -3,9 +3,8 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use cudarc::driver::CudaDevice;
 use rmlk_ir::DataType;
-use rmlk_tensor::cuda::conv::{calculate_output_shape, compute_v2, BiasInput};
+use rmlk_tensor::cuda::conv::BiasInput;
 use rmlk_tensor::cuda::CudaData;
-use rmlk_tensor::Tensor;
 use std::sync::Arc;
 
 pub struct ConvKernel {
@@ -39,7 +38,7 @@ impl ConvKernel {
         )?;
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        calculate_output_shape(
+        rmlk_tensor::cuda::conv::calculate_output_shape(
             &x_shape,
             &w_shape,
             attrs.pads(),
@@ -70,7 +69,7 @@ impl ConvKernel {
 
             match ctx.get_input(2).ok() {
                 None => {
-                    compute_v2::<f32>(
+                    rmlk_tensor::cuda::conv::compute_v2::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,
@@ -113,7 +112,7 @@ impl ConvKernel {
                         stride: &bias_stride,
                     };
 
-                    compute_v2::<f32>(
+                    rmlk_tensor::cuda::conv::compute_v2::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,
