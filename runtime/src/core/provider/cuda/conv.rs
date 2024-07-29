@@ -53,14 +53,12 @@ impl ConvKernel {
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
             let w_data = w
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
 
             let mut y_data = self
                 .device
@@ -102,9 +100,8 @@ impl ConvKernel {
 
                     let bias_data = bias
                         .data()
-                        .ok_or(Error::MissingData)?
-                        .f32()
-                        .map_err(|_| Error::MissingData)?;
+                        .and_then(|data| data.f32())
+                        .ok_or(Error::MissingData)?;
 
                     let bias = BiasInput {
                         data: bias_data,

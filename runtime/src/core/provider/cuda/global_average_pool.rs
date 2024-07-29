@@ -32,9 +32,8 @@ impl GlobalAveragePool {
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
 
             let mut y_data = self
                 .device

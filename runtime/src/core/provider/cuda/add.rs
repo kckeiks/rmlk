@@ -26,14 +26,12 @@ impl AddKernel {
         if matches!(lhs.dtype(), &DataType::Float) {
             let lhs_data = lhs
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
             let rhs_data = rhs
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
 
             let mut out_slice = unsafe {
                 self.device

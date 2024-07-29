@@ -34,14 +34,12 @@ impl GemmKernel {
         if matches!(lhs.dtype(), DataType::Float) {
             let lhs_data = lhs
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
             let rhs_data = rhs
                 .data()
-                .ok_or(Error::MissingData)?
-                .f32()
-                .map_err(|_| Error::MissingData)?;
+                .and_then(|data| data.f32())
+                .ok_or(Error::MissingData)?;
 
             let mut out_slice = self
                 .device
@@ -50,7 +48,7 @@ impl GemmKernel {
 
             let config = op
                 .strided_batch_config((attrs.alpha(), attrs.beta()))
-                .unwrap();
+                .map_err(|_| Error::ComputingPlanFailed)?;
 
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
                 .map_err(|_| Error::ComputationFailed)?;
