@@ -20,7 +20,6 @@ impl GemmKernel {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(0)?;
 
-        // Todo: Get param values from attributes.
         let attrs = GemmAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
         let op = GemmOp::new(
             lhs.shape(),
@@ -56,7 +55,7 @@ impl GemmKernel {
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
                 .map_err(|_| Error::ComputationFailed)?;
 
-            let mut output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(out_slice));
         } else {
             return Err(Error::UnsupportedDataType);

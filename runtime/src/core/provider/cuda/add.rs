@@ -41,7 +41,7 @@ impl AddKernel {
                     .map_err(|_| Error::AllocationFailed)?
             };
 
-            rmlk_tensor::cuda::add::compute_v2::<f32>(
+            rmlk_tensor::cuda::add::compute::<f32>(
                 self.device,
                 self.f,
                 lhs_data,
@@ -54,7 +54,7 @@ impl AddKernel {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
-            let mut result = ctx.get_output_mut(0)?;
+            let result = ctx.get_output_mut(0)?;
             result.init(CudaData::F32(out_slice));
         } else {
             return Err(Error::UnsupportedDataType);

@@ -15,7 +15,7 @@ impl GlobalAveragePool {
     }
 
     pub fn compute(self, ctx: &mut Context<CudaData>) -> Result<()> {
-        let mut x = ctx.get_input(0)?;
+        let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
@@ -41,7 +41,7 @@ impl GlobalAveragePool {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .unwrap();
 
-            rmlk_tensor::cuda::global_average_pool::compute_v2::<f32>(
+            rmlk_tensor::cuda::global_average_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
                 &x_data,
@@ -53,7 +53,7 @@ impl GlobalAveragePool {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
-            let mut output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
         } else {
             todo!()

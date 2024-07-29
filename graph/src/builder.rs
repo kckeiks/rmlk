@@ -1,6 +1,5 @@
 use crate::graph::{Graph, GraphError};
 use crate::node::Node;
-use crate::traversal;
 use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, GraphError>;

@@ -17,11 +17,11 @@ impl ConvKernel {
     }
 
     pub fn compute(self, ctx: &mut Context<CudaData>) -> Result<()> {
-        let mut x = ctx.get_input(0)?;
+        let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
-        let mut w = ctx.get_input(1)?;
+        let w = ctx.get_input(1)?;
         let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let filter_dims = match x.shape().len() {
@@ -69,7 +69,7 @@ impl ConvKernel {
 
             match ctx.get_input(2).ok() {
                 None => {
-                    rmlk_tensor::cuda::conv::compute_v2::<f32>(
+                    rmlk_tensor::cuda::conv::compute::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,
@@ -112,7 +112,7 @@ impl ConvKernel {
                         stride: &bias_stride,
                     };
 
-                    rmlk_tensor::cuda::conv::compute_v2::<f32>(
+                    rmlk_tensor::cuda::conv::compute::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,
@@ -133,7 +133,7 @@ impl ConvKernel {
                 }
             }
 
-            let mut output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
         } else {
             todo!()

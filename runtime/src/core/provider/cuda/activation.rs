@@ -31,7 +31,7 @@ impl ActivationKernel {
                 .alloc_zeros(x.shape().iter().product())
                 .map_err(|_| Error::MissingData)?;
 
-            rmlk_tensor::cuda::activation::compute_v2(
+            rmlk_tensor::cuda::activation::compute(
                 self.device,
                 (1.0, 0.0),
                 x_data,
@@ -41,7 +41,7 @@ impl ActivationKernel {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
-            let mut output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
         } else {
             todo!()

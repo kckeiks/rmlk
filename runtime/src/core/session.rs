@@ -63,8 +63,6 @@ impl Builder {
             }
         }
 
-        let is_cuda = provider.is_cuda();
-
         let session_state = Arc::new(SessionState {
             plan: plan.into_boxed_slice(),
             graph: Arc::new(graph),
@@ -82,7 +80,7 @@ pub struct Session {
 impl Session {
     pub fn run(
         &mut self,
-        input: HashMap<String, ArrayD<f32>>,
+        _input: HashMap<String, ArrayD<f32>>,
     ) -> Result<HashMap<String, ArrayD<f32>>> {
         todo!()
     }

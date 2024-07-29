@@ -3,7 +3,6 @@ pub mod cuda;
 use cuda::CudaProvider;
 use rmlk_graph::Graph;
 use rmlk_ir::Op;
-use rmlk_tensor::cuda::CudaKernel;
 use std::collections::HashMap;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -33,6 +32,6 @@ impl Provider {
 }
 
 pub enum Registry {
-    Cuda(HashMap<Op, CudaKernel>),
-    Cpu(HashMap<Op, CudaKernel>),
+    Cuda(HashMap<Op, String>),
+    Cpu(HashMap<Op, String>),
 }

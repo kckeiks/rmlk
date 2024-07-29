@@ -17,4 +17,5 @@ pub enum Error {
     MissingAttributes,
     InvalidAttribute,
     UnsupportedAttribute,
+    InvalidTensorDimensions,
 }

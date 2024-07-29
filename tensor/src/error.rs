@@ -19,6 +19,7 @@ pub enum Error {
     OutputShapeMismatch,
     ComputationError,
     NoTensorFound,
+    KernelFailedToLoad,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

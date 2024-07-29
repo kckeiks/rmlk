@@ -16,7 +16,7 @@ impl MaxPoolKernel {
     }
 
     pub fn compute(self, ctx: &mut Context<CudaData>) -> Result<()> {
-        let mut x = ctx.get_input(0)?;
+        let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
@@ -48,7 +48,7 @@ impl MaxPoolKernel {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(|_| Error::AllocationFailed)?;
 
-            rmlk_tensor::cuda::max_pool::compute_v2::<f32>(
+            rmlk_tensor::cuda::max_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
                 &x_data,
@@ -63,7 +63,7 @@ impl MaxPoolKernel {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
-            let mut output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
         } else {
             todo!()
@@ -81,7 +81,7 @@ mod test {
     use crate::core::provider::cuda::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use rmlk_tensor::cuda::{CudaData, CudaKernel};
+    use rmlk_tensor::cuda::CudaData;
 
     #[test]
     fn test_max_pool_f32_2d() {
