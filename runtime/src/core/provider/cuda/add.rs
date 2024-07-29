@@ -68,8 +68,8 @@ impl AddKernel {
 mod test {
     use crate::core::context::Context;
     use crate::core::provider::cuda::add::AddKernel;
+    use crate::core::provider::cuda::test_utils;
     use crate::core::provider::cuda::test_utils::{TestNode, TestParams};
-    use crate::core::provider::cuda::{test_utils, utils};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use rmlk_tensor::cuda::CudaData;
@@ -111,7 +111,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let f = utils::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
+        let f = rmlk_tensor::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
         let cuda_kernel = AddKernel::new(device.clone(), f);
         cuda_kernel.compute(&mut context).unwrap();
 
