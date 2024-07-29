@@ -1,4 +1,5 @@
 mod add;
+mod gemm;
 mod provider;
 mod test_utils;
 mod utils;

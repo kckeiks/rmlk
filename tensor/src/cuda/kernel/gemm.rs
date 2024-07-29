@@ -98,7 +98,10 @@ impl GemmOp {
         [self.b, self.m, self.n]
     }
 
-    fn strided_batch_config<T>(&self, (alpha, beta): (T, T)) -> Result<StridedBatchedConfig<T>> {
+    pub fn strided_batch_config<T>(
+        &self,
+        (alpha, beta): (T, T),
+    ) -> Result<StridedBatchedConfig<T>> {
         gemm_config::<T>(
             alpha,
             beta,
@@ -108,7 +111,7 @@ impl GemmOp {
         )
     }
 
-    fn compute_f32(
+    pub fn compute_f32(
         &self,
         device: Arc<CudaDevice>,
         lhs_data: &CudaSlice<f32>,
