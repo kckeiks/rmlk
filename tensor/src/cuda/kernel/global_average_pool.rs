@@ -1,6 +1,7 @@
 use crate::cuda::data::CudaData;
-use crate::Result;
-use crate::{Context, Error};
+use crate::error::Error;
+use crate::error::Result;
+use crate::kernel::Context;
 use cudarc::cudnn;
 use cudarc::cudnn::{CudnnDataType, PoolingForward};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};

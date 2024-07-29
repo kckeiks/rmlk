@@ -19,6 +19,7 @@ impl GemmKernel {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(0)?;
 
+        // Todo: Get param values from attributes.
         let op = GemmOp::new(
             lhs.shape(),
             lhs.stride(),

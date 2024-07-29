@@ -7,7 +7,8 @@ pub mod max_pool;
 pub mod mul;
 
 use crate::cuda::CudaData;
-use crate::{op, Context, Error, Kernel};
+use crate::kernel::Context;
+use crate::{error::Error, op, Kernel};
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::{DataType, Op};
 use std::sync::Arc;
@@ -22,7 +23,7 @@ impl CudaKernel {
         Self { op, device }
     }
 
-    pub(crate) fn kernel(&self, dtype: DataType) -> crate::Result<CudaFunction> {
+    pub(crate) fn kernel(&self, dtype: DataType) -> crate::error::Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match self.op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],
@@ -54,7 +55,7 @@ impl CudaKernel {
 impl Kernel for CudaKernel {
     type Data = CudaData;
 
-    fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::Result<()> {
+    fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::error::Result<()> {
         match self.op {
             Op::Gemm => {
                 gemm::compute(ctx, self.device.clone())?;

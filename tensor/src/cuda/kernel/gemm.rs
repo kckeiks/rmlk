@@ -1,8 +1,8 @@
 use crate::attribute::gemm::GemmAttributes;
 use crate::cuda::data::CudaData;
+use crate::error::Error;
+use crate::error::Result;
 use crate::kernel::Context;
-use crate::Error;
-use crate::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;

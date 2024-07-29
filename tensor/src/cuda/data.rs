@@ -1,4 +1,5 @@
-use crate::{Error, Result};
+use crate::error::Error;
+use crate::error::Result;
 use cudarc::driver::CudaSlice;
 use half::f16;
 

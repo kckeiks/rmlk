@@ -13,4 +13,6 @@ pub enum Error {
     UnsupportedDataType,
     ComputationFailed,
     AllocationFailed,
+    InvalidAttributeFormat,
+    MissingAttributes,
 }

@@ -1,5 +1,5 @@
+use crate::error::Error;
 use crate::kernel::Allocator;
-use crate::Error;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
@@ -15,7 +15,10 @@ pub struct ConvAttributes {
 }
 
 impl ConvAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>, kernel_dims: usize) -> crate::Result<Self> {
+    pub fn new(
+        attrs: &HashMap<Box<str>, Attribute>,
+        kernel_dims: usize,
+    ) -> crate::error::Result<Self> {
         let alloc = Allocator;
         // Todo: We can probably do better than this
         let mut dilations = None;

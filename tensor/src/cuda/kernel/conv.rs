@@ -1,7 +1,9 @@
 use crate::attribute::conv::ConvAttributes;
 use crate::cuda::data::CudaData;
-use crate::{utils, Result};
-use crate::{Context, Error};
+use crate::error::Error;
+use crate::error::Result;
+use crate::kernel::Context;
+use crate::utils;
 use cudarc::cudnn;
 use cudarc::cudnn::{ConvBiasActivationForward, ConvForward, CudnnDataType};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
@@ -569,7 +571,7 @@ mod test {
     use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
-    use crate::{test_utils, utils, Error, Tensor};
+    use crate::{test_utils, utils, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use std::collections::HashMap;

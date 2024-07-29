@@ -1,5 +1,5 @@
+use crate::error::Error;
 use crate::kernel::Allocator;
-use crate::Error;
 use num_traits::FromPrimitive;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub struct MaxPoolAttributes {
 }
 
 impl MaxPoolAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> crate::Result<Self> {
+    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> crate::error::Result<Self> {
         let kernel_shape = match attrs.get("kernel_shape") {
             Some(attr) => attr
                 .ints()
@@ -100,7 +100,7 @@ impl MaxPoolAttributes {
         false
     }
 
-    pub fn calculate_output_shape(&self, x_shape: &[i32]) -> crate::Result<Box<[i32]>> {
+    pub fn calculate_output_shape(&self, x_shape: &[i32]) -> crate::error::Result<Box<[i32]>> {
         // For reference, https://docs.nvidia.com/deeplearning/cudnn/latest/api/cudnn-ops-library.html#cudnngetpoolingndforwardoutputdim.
         if self.kernel_dims == 2 {
             let height = (f64::from(x_shape[2] + 2 * self.pads[0] - self.kernel_shape[0])
@@ -164,7 +164,10 @@ impl MaxPoolAttributes {
         }
     }
 
-    pub fn _calculate_output_shape_pytorch(&self, x_shape: &[i32]) -> crate::Result<Box<[i32]>> {
+    pub fn _calculate_output_shape_pytorch(
+        &self,
+        x_shape: &[i32],
+    ) -> crate::error::Result<Box<[i32]>> {
         if self.kernel_dims == 2 {
             // For reference, see https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html#torch.nn.MaxPool2d.
             let height = (f64::from(

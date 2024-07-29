@@ -1,6 +1,7 @@
 use crate::cuda::data::CudaData;
-use crate::{Context, Error};
-use crate::{Result, Tensor};
+use crate::error::Error;
+use crate::error::Result;
+use crate::kernel::Context;
 use cudarc::cudnn::{sys, ActivationForward, Cudnn, CudnnDataType};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_ir::DataType;
@@ -106,7 +107,7 @@ mod test {
     use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestNode, TestParams};
-    use crate::{test_utils, Error, Tensor};
+    use crate::{test_utils, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
 

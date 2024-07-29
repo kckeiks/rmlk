@@ -10,9 +10,8 @@ mod tensor;
 mod test_utils;
 mod utils;
 
-pub use error::Error;
 pub use execution_state::ExecutionState;
-pub use kernel::{Context, Kernel};
+pub use kernel::Kernel;
 pub use provider::Provider;
 pub use tensor::Tensor;
-type Result<T> = std::result::Result<T, Error>;
+pub use utils::calculate_stride;

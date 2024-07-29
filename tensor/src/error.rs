@@ -20,3 +20,5 @@ pub enum Error {
     ComputationError,
     NoTensorFound,
 }
+
+pub type Result<T> = std::result::Result<T, Error>;

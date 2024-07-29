@@ -1,4 +1,4 @@
-use crate::Error;
+use crate::error::Error;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ pub struct GemmAttributes {
 }
 
 impl GemmAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> crate::Result<Self> {
+    pub fn new(attrs: &HashMap<Box<str>, Attribute>) -> crate::error::Result<Self> {
         let mut alpha = None;
         let mut beta = None;
         let mut trans_a = None;

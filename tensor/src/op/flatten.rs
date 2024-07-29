@@ -1,5 +1,6 @@
-use crate::Result;
-use crate::{Context, Error};
+use crate::error::Error;
+use crate::error::Result;
+use crate::kernel::Context;
 
 pub fn compute<T>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;

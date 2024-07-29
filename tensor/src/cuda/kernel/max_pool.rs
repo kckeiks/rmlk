@@ -1,6 +1,8 @@
 use crate::attribute::pooling::MaxPoolAttributes;
 use crate::cuda::data::CudaData;
-use crate::{Context, Error, Result};
+use crate::error::Error;
+use crate::error::Result;
+use crate::kernel::Context;
 use cudarc::cudnn::{Cudnn, CudnnDataType, PoolingForward};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use log::debug;

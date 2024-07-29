@@ -1,13 +1,12 @@
 use log::warn;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{DataType, Graph, Op};
-use rmlk_tensor::Error as ProviderError;
 
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Device(ProviderError),
+    Device,
     MissingInputNode,
     Unknown,
 }

@@ -1,13 +1,13 @@
+use crate::error::Error;
 use crate::execution_state::ExecutionState;
 use crate::tensor::Tensor;
-use crate::Error;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
 pub trait Kernel {
     type Data;
 
-    fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::Result<()>;
+    fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::error::Result<()>;
 }
 
 pub struct Context<'a, T> {
@@ -21,7 +21,7 @@ impl<'a, T> Context<'a, T> {
     pub fn new(
         execution_state: &'a mut ExecutionState<T>,
         node_index: usize,
-    ) -> crate::Result<Self> {
+    ) -> crate::error::Result<Self> {
         let input_count = execution_state
             .get_input_count(node_index)
             .ok_or(Error::MissingNodeInGraph)?;
@@ -38,7 +38,7 @@ impl<'a, T> Context<'a, T> {
         })
     }
 
-    pub fn get_input(&self, index: usize) -> crate::Result<&Tensor<T>> {
+    pub fn get_input(&self, index: usize) -> crate::error::Result<&Tensor<T>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
             return Err(Error::NoTensorFound);
@@ -49,7 +49,7 @@ impl<'a, T> Context<'a, T> {
             .ok_or(Error::MissingTensor)
     }
 
-    pub fn get_input_mut(&mut self, index: usize) -> crate::Result<&mut Tensor<T>> {
+    pub fn get_input_mut(&mut self, index: usize) -> crate::error::Result<&mut Tensor<T>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
             return Err(Error::NoTensorFound);
@@ -60,7 +60,7 @@ impl<'a, T> Context<'a, T> {
             .ok_or(Error::MissingTensor)
     }
 
-    pub fn get_output(&self, index: usize) -> crate::Result<&Tensor<T>> {
+    pub fn get_output(&self, index: usize) -> crate::error::Result<&Tensor<T>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_tensors < node_index {
             return Err(Error::NoTensorFound);
@@ -71,7 +71,7 @@ impl<'a, T> Context<'a, T> {
             .ok_or(Error::MissingTensor)
     }
 
-    pub fn get_output_mut(&mut self, index: usize) -> crate::Result<&mut Tensor<T>> {
+    pub fn get_output_mut(&mut self, index: usize) -> crate::error::Result<&mut Tensor<T>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_tensors < node_index {
             return Err(Error::NoTensorFound);
