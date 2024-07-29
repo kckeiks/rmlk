@@ -15,4 +15,5 @@ pub enum Error {
     AllocationFailed,
     InvalidAttributeFormat,
     MissingAttributes,
+    UnsupportedAttribute,
 }
