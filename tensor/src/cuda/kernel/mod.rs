@@ -1,8 +1,3 @@
-use rmlk_ir::{DataType, Op};
-use std::sync::Arc;
-use cudarc::driver::{CudaDevice, CudaFunction};
-use crate::{Context, cuda, CudaData, Error, Kernel, op};
-
 pub mod activation;
 pub mod add;
 pub mod conv;
@@ -10,6 +5,12 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
+
+use crate::cuda::CudaData;
+use crate::{op, Context, Error, Kernel};
+use cudarc::driver::{CudaDevice, CudaFunction};
+use rmlk_ir::{DataType, Op};
+use std::sync::Arc;
 
 pub struct CudaKernel {
     op: Op,

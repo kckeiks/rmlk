@@ -1,6 +1,6 @@
 use crate::core::error::{Error, Result};
-use crate::core::kernel::{CudaComputer, ProviderComputer};
-use crate::core::provider::{CudaProvider, ExecutionProvider, Provider};
+use crate::core::provider::cuda::CudaProvider;
+use crate::core::provider::{ExecutionProvider, Provider};
 use ndarray::ArrayD;
 use rmlk_graph::Graph;
 use rmlk_ir::Model;
@@ -71,23 +71,12 @@ impl Builder {
             provider: Box::new([provider]),
         });
 
-        let computers = match is_cuda {
-            true => ProviderComputer::Cuda(CudaComputer::new(&session_state)),
-            false => {
-                return Err(Error::NotSupported);
-            }
-        };
-
-        Ok(Session {
-            session_state,
-            computers: Box::new([computers]),
-        })
+        Ok(Session { session_state })
     }
 }
 
 pub struct Session {
     session_state: Arc<SessionState>,
-    computers: Box<[ProviderComputer]>,
 }
 
 impl Session {
@@ -112,5 +101,9 @@ impl SessionState {
             provider,
             graph: Arc::new(graph),
         }
+    }
+
+    pub fn graph(&self) -> &Arc<Graph> {
+        &self.graph
     }
 }

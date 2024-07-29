@@ -102,8 +102,8 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 #[cfg(test)]
 mod test {
     use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::CudaKernel;
     use crate::cuda::kernel::activation::compute_v2;
+    use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestNode, TestParams};
     use crate::{test_utils, Error, Tensor};

@@ -565,8 +565,8 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 mod test {
     use crate::attribute::conv::ConvAttributes;
     use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::CudaKernel;
     use crate::cuda::kernel::conv::{calculate_output_shape, compute_v2, BiasInput};
+    use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use crate::{test_utils, utils, Error, Tensor};

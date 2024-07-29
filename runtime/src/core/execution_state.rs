@@ -35,8 +35,7 @@ impl<T> ExecutionState<T> {
     }
 
     pub fn get_node(&self, node_id: usize) -> Option<&Node> {
-        // self.session_state.graph().get_node(node_id)
-        todo!()
+        self.session_state.graph().get_node(node_id)
     }
 
     pub fn get_input_count(&self, node_id: usize) -> Option<usize> {

@@ -1,7 +1,5 @@
-extern crate core;
-
 mod attribute;
-mod cuda;
+pub mod cuda;
 mod error;
 mod execution_state;
 mod kernel;
@@ -12,8 +10,6 @@ mod tensor;
 mod test_utils;
 mod utils;
 
-pub use cuda::{CudaData, CudaProvider};
-pub use cuda::CudaKernel;
 pub use error::Error;
 pub use execution_state::ExecutionState;
 pub use kernel::{Context, Kernel};

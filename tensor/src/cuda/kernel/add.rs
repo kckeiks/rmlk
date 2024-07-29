@@ -7,9 +7,13 @@ use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig, ValidAsZeroBits,
 };
 use half::f16;
+use rmlk_cuda::BINARY_ADD;
 use rmlk_ir::DataType;
 use std::sync::Arc;
-use rmlk_cuda::BINARY_ADD;
+
+pub const MODULE_NAME: &str = "binary_add";
+pub const FWD_FN_NAMES: [&'static str; 3] = ["badd_fwd_f16", "badd_fwd_f32", "badd_fwd_f64"];
+pub const PTX_SRC: &str = BINARY_ADD;
 
 pub fn compute_v2<T>(
     device: Arc<CudaDevice>,
@@ -156,11 +160,11 @@ pub fn compute(
 #[cfg(test)]
 mod test {
     use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::CudaKernel;
     use crate::cuda::kernel::add::compute_v2;
+    use crate::cuda::kernel::CudaKernel;
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestNode, TestParams};
-    use crate::{Tensor, test_utils};
+    use crate::{test_utils, Tensor};
     use cudarc::driver::CudaDevice;
     use half::f16;
     use rmlk_ir::{DataType, Op};
@@ -324,7 +328,3 @@ mod test {
         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
     }
 }
-
-pub const MODULE_NAME: &str = "binary_add";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["badd_fwd_f16", "badd_fwd_f32", "badd_fwd_f64"];
-pub const PTX_SRC: &str = BINARY_ADD;
