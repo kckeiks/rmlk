@@ -1,4 +1,3 @@
-use crate::core::attributes::pooling::MaxPoolAttributes;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use cudarc::driver::CudaDevice;
@@ -6,11 +5,11 @@ use rmlk_ir::DataType;
 use rmlk_tensor::cuda::CudaData;
 use std::sync::Arc;
 
-pub struct MaxPoolKernel {
+pub struct GlobalAveragePoolKernel {
     device: Arc<CudaDevice>,
 }
 
-impl MaxPoolKernel {
+impl GlobalAveragePoolKernel {
     pub fn new(device: Arc<CudaDevice>) -> Self {
         Self { device }
     }
@@ -20,20 +19,14 @@ impl MaxPoolKernel {
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
-        let attrs = MaxPoolAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
-
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_tensor::cuda::max_pool::compute_output_shape(
+        let mut y_shape = vec![0; x_shape.len()];
+        rmlk_tensor::cuda::global_average_pool::compute_output_shape(
             &x_shape,
-            attrs.kernel_shape(),
-            attrs.pads(),
-            attrs.strides(),
-            &mut y_shape,
-            false,
+            y_shape.as_mut_slice(),
         )
         .unwrap();
 
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_stride = vec![0; y_shape.len()];
         rmlk_tensor::calculate_stride(&y_shape, &mut y_stride);
 
         if matches!(x.dtype(), DataType::Float) {
@@ -45,17 +38,14 @@ impl MaxPoolKernel {
             let mut y_data = self
                 .device
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-                .map_err(|_| Error::AllocationFailed)?;
+                .unwrap();
 
-            rmlk_tensor::cuda::max_pool::compute::<f32>(
+            rmlk_tensor::cuda::global_average_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
                 &x_data,
                 &x_shape,
                 &x_stride,
-                attrs.kernel_shape(),
-                attrs.pads(),
-                attrs.strides(),
                 &mut y_data,
                 &y_shape,
                 &y_stride,
@@ -75,17 +65,17 @@ impl MaxPoolKernel {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
-    use crate::core::provider::cuda::max_pool::MaxPoolKernel;
+    use crate::core::provider::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
     use crate::core::provider::cuda::test_utils;
-    use crate::core::provider::cuda::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
+    use crate::core::provider::cuda::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
     use rmlk_tensor::cuda::CudaData;
 
     #[test]
-    fn test_max_pool_f32_2d() {
+    fn test_global_average_pool_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
-        let shape = vec![1, 1, 4, 4];
+        let shape = vec![1, 1, 3, 3];
         let dtype = DataType::Float;
 
         let node_a = TestNode {
@@ -93,40 +83,28 @@ mod test {
             dtype,
             data: Some(CudaData::F32(
                 device
-                    .htod_copy(vec![
-                        1.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 3.0, 2.0, 1.0, 0.0, 1.0, 2.0, 3.0,
-                        4.0,
-                    ])
+                    .htod_copy(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
                     .unwrap(),
             )),
         };
 
         let node_c = TestNode {
-            shape: vec![1, 1, 2, 2],
+            shape: vec![1, 1, 1, 1],
             dtype,
             data: None,
         };
 
-        let attributes = test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
-            dilations: None,
-            kernel_shape: Some(Box::new([2, 2])),
-            strides: Some(Box::new([2, 2])),
-            row_major_order: None,
-            ceil_mode: None,
-            pads: None,
-        });
-
         let params = TestParams {
             inputs: vec![node_a],
             outputs: vec![node_c],
-            attributes,
-            op: Op::MaxPool,
+            attributes: Vec::new(),
+            op: Op::GlobalAveragePool,
         };
 
         let mut state = test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 1).unwrap();
 
-        let cuda_kernel = MaxPoolKernel::new(device.clone());
+        let cuda_kernel = GlobalAveragePoolKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context
@@ -138,6 +116,6 @@ mod test {
             .unwrap();
         let result = device.dtoh_sync_copy(out_data).unwrap();
 
-        assert_eq!(result, vec![6.0, 8.0, 3.0, 4.0])
+        assert_eq!(result, vec![5.0])
     }
 }

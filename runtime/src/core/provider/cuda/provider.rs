@@ -16,7 +16,7 @@ impl CudaProvider {
 
 impl ExecutionProvider for CudaProvider {
     fn check_capacity(&self, _graph: &mut Graph, _plan: &[usize]) -> Option<Graph> {
-        todo!()
+        None
     }
 
     fn registry(&self) -> Registry {
