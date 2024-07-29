@@ -391,7 +391,7 @@ mod test {
     use crate::{test_utils, Tensor};
     use cudarc::driver::CudaDevice;
     // use half::f16;
-    use crate::cuda::op::gemm::GemmOp;
+    use crate::cuda::kernel::gemm::GemmOp;
     use rmlk_ir::{DataType, Op};
 
     // #[test]

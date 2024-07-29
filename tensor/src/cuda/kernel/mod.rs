@@ -1,11 +1,15 @@
-use crate::cuda::data::CudaData;
-use crate::cuda::kernels::{add, mul};
-use crate::kernel::Context;
-use crate::kernel::Kernel;
-use crate::{cuda, op, Error, Result};
-use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::{DataType, Op};
 use std::sync::Arc;
+use cudarc::driver::{CudaDevice, CudaFunction};
+use crate::{Context, cuda, CudaData, Error, Kernel, op};
+
+pub mod activation;
+pub mod add;
+pub mod conv;
+pub mod gemm;
+pub mod global_average_pool;
+pub mod max_pool;
+pub mod mul;
 
 pub struct CudaKernel {
     op: Op,
@@ -17,7 +21,7 @@ impl CudaKernel {
         Self { op, device }
     }
 
-    pub(crate) fn kernel(&self, dtype: DataType) -> Result<CudaFunction> {
+    pub(crate) fn kernel(&self, dtype: DataType) -> crate::Result<CudaFunction> {
         let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match self.op {
             Op::Add => (
                 add::FWD_FN_NAMES[dtype as usize],
@@ -49,31 +53,31 @@ impl CudaKernel {
 impl Kernel for CudaKernel {
     type Data = CudaData;
 
-    fn compute(&self, ctx: &mut Context<Self::Data>) -> Result<()> {
+    fn compute(&self, ctx: &mut Context<Self::Data>) -> crate::Result<()> {
         match self.op {
             Op::Gemm => {
-                cuda::op::gemm::compute(ctx, self.device.clone())?;
+                gemm::compute(ctx, self.device.clone())?;
             }
             Op::MatMul => {
-                cuda::op::gemm::compute(ctx, self.device.clone())?;
+                gemm::compute(ctx, self.device.clone())?;
             }
             Op::Add => {
                 // Todo: More validation.
                 let dtype = ctx.get_input(0)?.dtype();
                 let func = self.kernel(*dtype)?;
-                cuda::op::add::compute(ctx, self.device.clone(), func)?;
+                add::compute(ctx, self.device.clone(), func)?;
             }
             Op::Conv => {
-                cuda::op::conv::compute(ctx, self.device.clone())?;
+                conv::compute(ctx, self.device.clone())?;
             }
             Op::MaxPool => {
-                cuda::op::max_pool::compute(ctx, self.device.clone())?;
+                max_pool::compute(ctx, self.device.clone())?;
             }
             Op::GlobalAveragePool => {
-                cuda::op::global_average_pool::compute(ctx, self.device.clone())?;
+                global_average_pool::compute(ctx, self.device.clone())?;
             }
             Op::Relu => {
-                cuda::op::activation::compute(ctx, self.device.clone())?;
+                activation::compute(ctx, self.device.clone())?;
             }
             Op::Flatten => {
                 op::flatten::compute::<CudaData>(ctx)?;

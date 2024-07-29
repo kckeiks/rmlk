@@ -566,7 +566,7 @@ mod test {
     use crate::attribute::conv::ConvAttributes;
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
-    use crate::cuda::op::conv::{calculate_output_shape, compute_v2, BiasInput};
+    use crate::cuda::kernel::conv::{calculate_output_shape, compute_v2, BiasInput};
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use crate::{test_utils, utils, Error, Tensor};
@@ -623,7 +623,6 @@ mod test {
             &mut y_shape,
         )
         .unwrap();
-        println!("Test y_shape={:?}", &w_shape[2..]);
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
 

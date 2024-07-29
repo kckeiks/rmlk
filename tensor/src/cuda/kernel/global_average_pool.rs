@@ -194,7 +194,7 @@ pub fn compute(ctx: &mut Context<CudaData>, device: Arc<CudaDevice>) -> Result<(
 mod test {
     use crate::cuda::data::CudaData;
     use crate::cuda::kernel::CudaKernel;
-    use crate::cuda::op::global_average_pool::{compute_output_shape, compute_v2};
+    use crate::cuda::kernel::global_average_pool::{compute_output_shape, compute_v2};
     use crate::kernel::{Context, Kernel};
     use crate::test_utils::{TestNode, TestParams};
     use crate::{test_utils, Tensor};

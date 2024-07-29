@@ -12,7 +12,8 @@ mod tensor;
 mod test_utils;
 mod utils;
 
-pub use cuda::{CudaData, CudaKernel, CudaProvider};
+pub use cuda::{CudaData, CudaProvider};
+pub use cuda::CudaKernel;
 pub use error::Error;
 pub use execution_state::ExecutionState;
 pub use kernel::{Context, Kernel};
