@@ -1,3 +1,4 @@
+use crate::core::attributes::gemm::GemmAttributes;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use cudarc::driver::CudaDevice;
@@ -20,13 +21,14 @@ impl GemmKernel {
         let rhs = ctx.get_input(0)?;
 
         // Todo: Get param values from attributes.
+        let attrs = GemmAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
         let op = GemmOp::new(
             lhs.shape(),
             lhs.stride(),
             rhs.shape(),
             rhs.stride(),
-            false,
-            false,
+            attrs.trans_a(),
+            attrs.trans_b(),
         );
         let output_size = op.calculate_output_shape().iter().product();
 
@@ -47,7 +49,9 @@ impl GemmKernel {
                 .alloc_zeros(output_size)
                 .map_err(|_| Error::AllocationFailed)?;
 
-            let config = op.strided_batch_config((1.0, 0.0)).unwrap();
+            let config = op
+                .strided_batch_config((attrs.alpha(), attrs.beta()))
+                .unwrap();
 
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
                 .map_err(|_| Error::ComputationFailed)?;
