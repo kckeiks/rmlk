@@ -1,8 +1,8 @@
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
+use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
 use rmlk_ir::DataType;
-use rmlk_tensor::cuda::CudaData;
 use std::sync::Arc;
 
 pub struct GlobalAveragePoolKernel {
@@ -65,11 +65,11 @@ impl GlobalAveragePoolKernel {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
+    use crate::core::provider::cuda::data::CudaData;
     use crate::core::provider::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
     use crate::core::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use rmlk_tensor::cuda::CudaData;
 
     #[test]
     fn test_global_average_pool_f32_2d() {

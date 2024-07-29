@@ -47,8 +47,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::activation::compute;
+    use crate::cuda::activation::compute;
     use crate::Tensor;
     use cudarc::driver::CudaDevice;
     use rmlk_ir::DataType;
@@ -56,7 +55,7 @@ mod test {
     #[test]
     fn test_relu_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 2, 2]);
+        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 2, 2]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();

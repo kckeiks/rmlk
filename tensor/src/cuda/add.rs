@@ -66,8 +66,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::add::compute;
+    use crate::cuda::add::compute;
     use crate::{utils, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
@@ -77,10 +76,10 @@ mod test {
         let device = CudaDevice::new(0).unwrap();
         let shape = vec![4, 1, 1, 1];
 
-        let lhs = Tensor::<CudaData>::new_with_shape(DataType::Float, shape.clone());
+        let lhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, shape.clone());
         let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let rhs = Tensor::<CudaData>::new_with_shape(DataType::Float, shape);
+        let rhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, shape);
         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let f = utils::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();

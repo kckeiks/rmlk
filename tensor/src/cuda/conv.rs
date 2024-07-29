@@ -268,8 +268,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::conv::{calculate_output_shape, compute, BiasInput};
+    use crate::cuda::conv::{calculate_output_shape, compute, BiasInput};
     use crate::{utils, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::DataType;
@@ -278,7 +277,7 @@ mod test {
     fn test_conv_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
+        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device
@@ -288,7 +287,7 @@ mod test {
             ])
             .unwrap();
 
-        let w = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
+        let w = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
         let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
 
@@ -335,7 +334,7 @@ mod test {
     fn test_conv_f32_2d_bias() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
+        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device
@@ -345,11 +344,11 @@ mod test {
             ])
             .unwrap();
 
-        let w = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
+        let w = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
         let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
 
-        let bias = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 1, 1]);
+        let bias = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 1, 1]);
         let bias_shape = bias
             .shape()
             .iter()

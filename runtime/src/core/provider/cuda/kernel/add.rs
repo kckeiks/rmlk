@@ -1,8 +1,8 @@
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
+use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::DataType;
-use rmlk_tensor::cuda::CudaData;
 use std::sync::Arc;
 
 pub struct AddKernel {
@@ -65,11 +65,11 @@ impl AddKernel {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
+    use crate::core::provider::cuda::data::CudaData;
     use crate::core::provider::cuda::kernel::add::AddKernel;
     use crate::core::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use rmlk_tensor::cuda::CudaData;
 
     #[test]
     fn test_add_f32() {

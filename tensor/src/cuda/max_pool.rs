@@ -124,8 +124,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::max_pool::{compute, compute_output_shape};
+    use crate::cuda::max_pool::{compute, compute_output_shape};
     use crate::{utils, Tensor};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::DataType;
@@ -134,7 +133,7 @@ mod test {
     fn test_max_pool_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 4, 4]);
+        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 4, 4]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device

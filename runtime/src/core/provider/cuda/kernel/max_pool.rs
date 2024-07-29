@@ -1,9 +1,9 @@
 use crate::core::attributes::pooling::MaxPoolAttributes;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
+use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
 use rmlk_ir::DataType;
-use rmlk_tensor::cuda::CudaData;
 use std::sync::Arc;
 
 pub struct MaxPoolKernel {
@@ -75,11 +75,11 @@ impl MaxPoolKernel {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
+    use crate::core::provider::cuda::data::CudaData;
     use crate::core::provider::cuda::kernel::max_pool::MaxPoolKernel;
     use crate::core::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use rmlk_tensor::cuda::CudaData;
 
     #[test]
     fn test_max_pool_f32_2d() {

@@ -1,5 +1,7 @@
-mod data;
-mod kernel;
-
-pub use data::CudaData;
-pub use kernel::*;
+pub mod activation;
+pub mod add;
+pub mod conv;
+pub mod gemm;
+pub mod global_average_pool;
+pub mod max_pool;
+pub mod mul;

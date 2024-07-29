@@ -97,8 +97,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::data::CudaData;
-    use crate::cuda::kernel::global_average_pool::{compute, compute_output_shape};
+    use crate::cuda::global_average_pool::{compute, compute_output_shape};
     use crate::Tensor;
     use cudarc::driver::CudaDevice;
     use rmlk_ir::DataType;
@@ -107,7 +106,7 @@ mod test {
     fn test_global_average_pool_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<CudaData>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
+        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_data = device
@@ -117,7 +116,7 @@ mod test {
         let mut y_shape = x.shape().clone();
         compute_output_shape(x.shape(), y_shape.as_mut_slice()).unwrap();
 
-        let y = Tensor::<CudaData>::new_with_shape(DataType::Float, y_shape.to_vec());
+        let y = Tensor::<Vec<()>>::new_with_shape(DataType::Float, y_shape.to_vec());
         let y_stride = y.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let y_shape = y_shape.iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let mut y_data = device

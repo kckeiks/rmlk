@@ -1,10 +1,10 @@
 use crate::core::attributes::gemm::GemmAttributes;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
+use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
 use rmlk_ir::DataType;
 use rmlk_tensor::cuda::gemm::GemmOp;
-use rmlk_tensor::cuda::CudaData;
 use std::sync::Arc;
 
 pub struct GemmKernel {
@@ -66,11 +66,11 @@ impl GemmKernel {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
+    use crate::core::provider::cuda::data::CudaData;
     use crate::core::provider::cuda::kernel::gemm::GemmKernel;
     use crate::core::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use rmlk_tensor::cuda::CudaData;
 
     #[test]
     fn test_gemm_f32() {
