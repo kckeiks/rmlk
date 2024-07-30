@@ -1,10 +1,10 @@
 use criterion::{black_box, criterion_group, Criterion};
 use cudarc::driver::CudaDevice;
-use rmlk_tensor::device::cuda::cuda::Cuda;
-use rmlk_tensor::device::Provider;
-use rmlk_tensor::dtype::DataType;
-use rmlk_tensor::op::Op;
-use rmlk_tensor::tensor::Tensor;
+use rmlk_cuda::device::cuda::cuda::Cuda;
+use rmlk_cuda::device::Provider;
+use rmlk_cuda::dtype::DataType;
+use rmlk_cuda::op::Op;
+use rmlk_cuda::tensor::Tensor;
 use std::alloc::Global;
 use std::sync::Arc;
 use std::time::Duration;

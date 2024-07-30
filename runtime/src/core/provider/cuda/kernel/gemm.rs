@@ -3,8 +3,8 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
+use rmlk_cuda::cuda::gemm::GemmOp;
 use rmlk_ir::DataType;
-use rmlk_tensor::cuda::gemm::GemmOp;
 use std::sync::Arc;
 
 pub struct GemmKernel {

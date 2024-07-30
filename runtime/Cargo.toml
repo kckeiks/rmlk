@@ -13,5 +13,5 @@ log = "0.4"
 ndarray = "0.15"
 rmlk-ir = { path = "../ir" }
 rmlk-graph = { path = "../graph" }
-rmlk-tensor = { path = "../tensor" }
+rmlk-cuda = { path = "../cuda" }
 quick-protobuf = "0.8"

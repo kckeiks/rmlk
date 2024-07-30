@@ -3,11 +3,21 @@ name = "rmlk-cuda"
 version = "0.0.0"
 edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
-build = "build.rs"
 
 [dependencies]
-cudarc = {  version = "0.11", default-features = false, features = ["cuda-version-from-build-system", "driver"]}
+cudarc = {  git = "https://github.com/kckeiks/cudarc.git", branch = "add-actv-and-bias-conv-forward", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16"]}
+rmlk-ir = { path = "../ir" }
+rmlk-graph = { path = "../graph" }
+half = "2.4"
+log = "0.4.21"
+num-traits = "0.2"
+
+[dev-dependencies]
+criterion = { workspace = true }
 
 [build-dependencies]
 bindgen_cuda = "0.1.1"
 
+[[bench]]
+name = "bench_main"
+harness = false

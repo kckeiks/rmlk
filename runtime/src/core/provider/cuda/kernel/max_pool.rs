@@ -23,7 +23,7 @@ impl MaxPoolKernel {
         let attrs = MaxPoolAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_tensor::cuda::max_pool::compute_output_shape(
+        rmlk_cuda::cuda::max_pool::compute_output_shape(
             &x_shape,
             attrs.kernel_shape(),
             attrs.pads(),
@@ -34,7 +34,7 @@ impl MaxPoolKernel {
         .unwrap();
 
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_tensor::calculate_stride(&y_shape, &mut y_stride);
+        rmlk_cuda::calculate_stride(&y_shape, &mut y_stride);
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
@@ -47,7 +47,7 @@ impl MaxPoolKernel {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(|_| Error::AllocationFailed)?;
 
-            rmlk_tensor::cuda::max_pool::compute::<f32>(
+            rmlk_cuda::cuda::max_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
                 &x_data,

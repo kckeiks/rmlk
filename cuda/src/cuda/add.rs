@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::error::Result;
+use crate::kernels::BINARY_ADD;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig, ValidAsZeroBits,
 };
-use rmlk_cuda::BINARY_ADD;
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "binary_add";

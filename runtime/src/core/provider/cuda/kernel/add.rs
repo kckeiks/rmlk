@@ -39,7 +39,7 @@ impl AddKernel {
                     .map_err(|_| Error::AllocationFailed)?
             };
 
-            rmlk_tensor::cuda::add::compute::<f32>(
+            rmlk_cuda::cuda::add::compute::<f32>(
                 self.device,
                 self.f,
                 lhs_data,
@@ -108,7 +108,7 @@ mod test {
         let mut state = crate::core::test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let f = rmlk_tensor::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
+        let f = rmlk_cuda::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
         let cuda_kernel = AddKernel::new(device.clone(), f);
         cuda_kernel.compute(&mut context).unwrap();
 

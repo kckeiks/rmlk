@@ -20,14 +20,14 @@ impl GlobalAveragePoolKernel {
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let mut y_shape = vec![0; x_shape.len()];
-        rmlk_tensor::cuda::global_average_pool::compute_output_shape(
+        rmlk_cuda::cuda::global_average_pool::compute_output_shape(
             &x_shape,
             y_shape.as_mut_slice(),
         )
         .unwrap();
 
         let mut y_stride = vec![0; y_shape.len()];
-        rmlk_tensor::calculate_stride(&y_shape, &mut y_stride);
+        rmlk_cuda::calculate_stride(&y_shape, &mut y_stride);
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
@@ -40,7 +40,7 @@ impl GlobalAveragePoolKernel {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .unwrap();
 
-            rmlk_tensor::cuda::global_average_pool::compute::<f32>(
+            rmlk_cuda::cuda::global_average_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
                 &x_data,
