@@ -47,7 +47,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::activation::compute;
+    use crate::kernels::activation::compute;
     use crate::utils;
     use cudarc::driver::CudaDevice;
 

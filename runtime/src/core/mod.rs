@@ -8,6 +8,7 @@ mod provider;
 mod session;
 mod tensor;
 mod test_utils;
+mod utils;
 
 pub use error::{Error, Result};
 pub use session::{Builder, Session};

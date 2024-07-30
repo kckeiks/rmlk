@@ -2,8 +2,9 @@ use crate::core::attributes::conv::ConvAttributes;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
+use crate::core::utils;
 use cudarc::driver::CudaDevice;
-use rmlk_cuda::cuda::conv::BiasInput;
+use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -38,7 +39,7 @@ impl ConvKernel {
         )?;
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_cuda::cuda::conv::calculate_output_shape(
+        rmlk_cuda::kernels::conv::calculate_output_shape(
             &x_shape,
             &w_shape,
             attrs.pads(),
@@ -48,7 +49,7 @@ impl ConvKernel {
         )
         .unwrap();
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_cuda::calculate_stride(&y_shape, &mut y_stride);
+        utils::calculate_stride(&y_shape, &mut y_stride);
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
@@ -67,7 +68,7 @@ impl ConvKernel {
 
             match ctx.get_input(2).ok() {
                 None => {
-                    rmlk_cuda::cuda::conv::compute::<f32>(
+                    rmlk_cuda::kernels::conv::compute::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,
@@ -109,7 +110,7 @@ impl ConvKernel {
                         stride: &bias_stride,
                     };
 
-                    rmlk_cuda::cuda::conv::compute::<f32>(
+                    rmlk_cuda::kernels::conv::compute::<f32>(
                         self.device,
                         (1.0, 0.0),
                         &x_data,

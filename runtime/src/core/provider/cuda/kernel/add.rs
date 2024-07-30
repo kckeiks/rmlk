@@ -39,7 +39,7 @@ impl AddKernel {
                     .map_err(|_| Error::AllocationFailed)?
             };
 
-            rmlk_cuda::cuda::add::compute::<f32>(
+            rmlk_cuda::kernels::add::compute::<f32>(
                 self.device,
                 self.f,
                 lhs_data,

@@ -97,7 +97,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::global_average_pool::{compute, compute_output_shape};
+    use crate::kernels::global_average_pool::{compute, compute_output_shape};
     use crate::utils;
     use cudarc::driver::CudaDevice;
 

@@ -3,7 +3,7 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
-use rmlk_cuda::cuda::gemm::GemmOp;
+use rmlk_cuda::kernels::gemm::GemmOp;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 

@@ -264,7 +264,7 @@ pub unsafe fn _gemm_stride_batched_f16(
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::gemm::GemmOp;
+    use crate::kernels::gemm::GemmOp;
     use crate::utils;
     use cudarc::driver::CudaDevice;
 

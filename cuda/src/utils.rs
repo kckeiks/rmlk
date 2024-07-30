@@ -1,5 +1,5 @@
-use crate::cuda::{add, mul};
 use crate::error::{Error, Result};
+use crate::kernels::{add, mul};
 use cudarc::driver::{CudaDevice, CudaFunction};
 use num_traits::Num;
 use rmlk_ir::{DataType, Op};

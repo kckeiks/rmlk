@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::error::Result;
-use crate::kernels::BINARY_ADD;
+use crate::ptx::BINARY_ADD;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig, ValidAsZeroBits,
@@ -66,7 +66,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::add::compute;
+    use crate::kernels::add::compute;
     use crate::utils;
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};

@@ -1,6 +1,6 @@
-pub mod cuda;
 mod error;
-mod kernels;
+pub mod kernels;
+mod ptx;
 mod utils;
 
-pub use utils::{calculate_stride, load_kernel};
+pub use utils::load_kernel;

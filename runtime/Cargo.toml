@@ -11,6 +11,7 @@ env_logger = "0.11"
 half = "2.4"
 log = "0.4"
 ndarray = "0.15"
+num-traits.workspace = true
 rmlk-ir = { path = "../ir" }
 rmlk-graph = { path = "../graph" }
 rmlk-cuda = { path = "../cuda" }

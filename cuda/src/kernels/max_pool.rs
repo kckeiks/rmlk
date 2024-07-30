@@ -124,7 +124,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::max_pool::{compute, compute_output_shape};
+    use crate::kernels::max_pool::{compute, compute_output_shape};
     use crate::utils;
     use cudarc::driver::CudaDevice;
 

@@ -268,7 +268,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cuda::conv::{calculate_output_shape, compute, BiasInput};
+    use crate::kernels::conv::{calculate_output_shape, compute, BiasInput};
     use crate::utils;
     use cudarc::driver::CudaDevice;
 

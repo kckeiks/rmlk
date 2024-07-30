@@ -30,7 +30,7 @@ impl ActivationKernel {
                 .alloc_zeros(x.shape().iter().product())
                 .map_err(|_| Error::MissingData)?;
 
-            rmlk_cuda::cuda::activation::compute(
+            rmlk_cuda::kernels::activation::compute(
                 self.device,
                 (1.0, 0.0),
                 x_data,

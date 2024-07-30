@@ -1,4 +1,4 @@
-use crate::kernels::BINARY_MUL;
+use crate::ptx::BINARY_MUL;
 
 pub const MODULE_NAME: &str = "binary_mul";
 pub const FWD_FN_NAMES: [&'static str; 3] = ["bmul_fwd_f16", "bmul_fwd_f32", "bmul_fwd_f64"];

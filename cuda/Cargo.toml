@@ -10,7 +10,7 @@ rmlk-ir = { path = "../ir" }
 rmlk-graph = { path = "../graph" }
 half = "2.4"
 log = "0.4.21"
-num-traits = "0.2"
+num-traits.workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
