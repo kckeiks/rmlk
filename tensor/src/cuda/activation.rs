@@ -48,19 +48,22 @@ where
 #[cfg(test)]
 mod test {
     use crate::cuda::activation::compute;
-    use crate::Tensor;
+    use crate::utils;
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::DataType;
 
     #[test]
     fn test_relu_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 2, 2]);
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();
 
-        let mut y_data = device.alloc_zeros(x.shape().iter().product()).unwrap();
+        let x_shape = vec![1, 1, 2, 2];
+        let mut x_stride = vec![0; x_shape.len()];
+        utils::calculate_stride(&x_shape, &mut x_stride);
+
+        let x_data = device.htod_copy(vec![-1.0, 2.0, -3.0, 100.0]).unwrap();
+        let mut y_data = device
+            .alloc_zeros(x_shape.iter().map(|d| *d as usize).product())
+            .unwrap();
+
         compute::<f32>(
             device.clone(),
             (1.0, 0.0),
@@ -70,6 +73,7 @@ mod test {
             &mut y_data,
         )
         .unwrap();
+
         let result = device.dtoh_sync_copy(&y_data).unwrap();
 
         assert_eq!(result, vec![0.0, 2.0, 0.0, 100.0])

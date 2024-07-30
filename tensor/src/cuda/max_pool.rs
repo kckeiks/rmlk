@@ -125,27 +125,26 @@ where
 #[cfg(test)]
 mod test {
     use crate::cuda::max_pool::{compute, compute_output_shape};
-    use crate::{utils, Tensor};
+    use crate::utils;
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::DataType;
 
     #[test]
     fn test_max_pool_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 4, 4]);
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_shape = vec![1, 1, 4, 4];
+        let mut x_stride = vec![0; x_shape.len()];
+        utils::calculate_stride(&x_shape, &mut x_stride);
         let x_data = device
             .htod_copy(vec![
                 1.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 3.0, 2.0, 1.0, 0.0, 1.0, 2.0, 3.0, 4.0,
             ])
             .unwrap();
 
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_shape = vec![0; x_shape.len()];
         compute_output_shape(&x_shape, &[2, 2], &[0, 0], &[2, 2], &mut y_shape, false).unwrap();
 
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
 
         let mut y_data = device

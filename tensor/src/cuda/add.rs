@@ -67,34 +67,39 @@ where
 #[cfg(test)]
 mod test {
     use crate::cuda::add::compute;
-    use crate::{utils, Tensor};
+    use crate::utils;
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
 
     #[test]
     fn test_add_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let shape = vec![4, 1, 1, 1];
 
-        let lhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, shape.clone());
+        let lhs_shape = vec![4, 1, 1, 1];
+        let mut lhs_stride = vec![0; lhs_shape.len()];
+        utils::calculate_stride(&lhs_shape, &mut lhs_stride);
         let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let rhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, shape);
+        let rhs_shape = vec![4, 1, 1, 1];
+        let mut rhs_stride = vec![0; rhs_shape.len()];
+        utils::calculate_stride(&rhs_shape, &mut rhs_stride);
         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let f = utils::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
 
-        let mut out_data = device.alloc_zeros(lhs.shape().iter().product()).unwrap();
+        let mut out_data = device
+            .alloc_zeros(lhs_shape.iter().map(|d| *d as usize).product())
+            .unwrap();
 
         compute::<f32>(
             device.clone(),
             f,
             &lhs_data,
-            lhs.shape(),
-            lhs.stride(),
+            &lhs_shape,
+            &lhs_stride,
             &rhs_data,
-            rhs.shape(),
-            rhs.stride(),
+            &rhs_shape,
+            &rhs_stride,
             &mut out_data,
         )
         .unwrap();

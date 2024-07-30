@@ -2,9 +2,9 @@ use crate::core::execution_state::ExecutionState;
 use crate::core::provider::cuda::CudaProvider;
 use crate::core::provider::Provider;
 use crate::core::session::SessionState;
+use crate::core::tensor::Tensor;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
-use rmlk_tensor::Tensor;
 use std::collections::HashMap;
 use std::sync::Arc;
 

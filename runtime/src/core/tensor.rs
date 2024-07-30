@@ -1,4 +1,3 @@
-use crate::utils;
 use rmlk_ir::DataType;
 
 /// Tensor.
@@ -26,7 +25,7 @@ impl<T> Tensor<T> {
     pub fn new_with_shape(dtype: DataType, shape: Vec<usize>) -> Self {
         let dims = shape.len();
         let mut stride = vec![0usize; dims];
-        utils::calculate_stride(&shape, &mut stride);
+        rmlk_tensor::calculate_stride(&shape, &mut stride);
 
         Self {
             data: None,
@@ -73,7 +72,7 @@ impl<T> Tensor<T> {
         self.shape = shape;
         let dims = self.shape.len();
         let mut stride = vec![0usize; dims];
-        utils::calculate_stride(self.shape.as_slice(), &mut stride.as_mut_slice());
+        rmlk_tensor::calculate_stride(self.shape.as_slice(), &mut stride.as_mut_slice());
     }
 
     pub fn stride(&self) -> &Vec<usize> {

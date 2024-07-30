@@ -6,6 +6,7 @@ mod kernel;
 mod ops;
 mod provider;
 mod session;
+mod tensor;
 mod test_utils;
 
 pub use error::{Error, Result};

@@ -265,24 +265,28 @@ pub unsafe fn _gemm_stride_batched_f16(
 #[cfg(test)]
 mod test {
     use crate::cuda::gemm::GemmOp;
-    use crate::Tensor;
+    use crate::utils;
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::DataType;
 
     #[test]
     fn test_gemm_f32() {
         let device = CudaDevice::new(0).unwrap();
-        let lhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 2, 2]);
+
+        let lhs_shape = vec![1, 2, 2];
+        let mut lhs_stride = vec![0; lhs_shape.len()];
+        utils::calculate_stride(&lhs_shape, &mut lhs_stride);
         let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let rhs = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 2, 2]);
+        let rhs_shape = vec![1, 2, 2];
+        let mut rhs_stride = vec![0; rhs_shape.len()];
+        utils::calculate_stride(&rhs_shape, &mut rhs_stride);
         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let op = GemmOp::new(
-            lhs.shape(),
-            lhs.stride(),
-            rhs.shape(),
-            rhs.stride(),
+            &lhs_shape,
+            &lhs_stride,
+            &rhs_shape,
+            &rhs_stride,
             false,
             false,
         );

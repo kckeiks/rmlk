@@ -1,6 +1,6 @@
 use crate::core::session::SessionState;
+use crate::core::tensor::Tensor;
 use rmlk_graph::Node;
-use rmlk_tensor::Tensor;
 use std::sync::Arc;
 
 /// The execution context.

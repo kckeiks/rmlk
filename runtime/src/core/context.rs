@@ -1,7 +1,7 @@
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
+use crate::core::tensor::Tensor;
 use rmlk_ir::Attribute;
-use rmlk_tensor::Tensor;
 use std::collections::HashMap;
 
 pub struct Context<'a, T> {

@@ -269,17 +269,16 @@ where
 #[cfg(test)]
 mod test {
     use crate::cuda::conv::{calculate_output_shape, compute, BiasInput};
-    use crate::{utils, Tensor};
+    use crate::utils;
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::DataType;
 
     #[test]
     fn test_conv_f32_2d() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_shape = vec![1, 1, 5, 5];
+        let mut x_stride = vec![0; x_shape.len()];
+        utils::calculate_stride(&x_shape, &mut x_stride);
         let x_data = device
             .htod_copy(vec![
                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
@@ -287,8 +286,7 @@ mod test {
             ])
             .unwrap();
 
-        let w = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
-        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_shape = vec![1, 1, 3, 3];
         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
@@ -334,9 +332,9 @@ mod test {
     fn test_conv_f32_2d_bias() {
         let device = CudaDevice::new(0).unwrap();
 
-        let x = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 5, 5]);
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_shape = vec![1, 1, 5, 5];
+        let mut x_stride = vec![0; x_shape.len()];
+        utils::calculate_stride(&x_shape, &mut x_stride);
         let x_data = device
             .htod_copy(vec![
                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
@@ -344,21 +342,12 @@ mod test {
             ])
             .unwrap();
 
-        let w = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 3, 3]);
-        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let w_shape = vec![1, 1, 3, 3];
         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
 
-        let bias = Tensor::<Vec<()>>::new_with_shape(DataType::Float, vec![1, 1, 1, 1]);
-        let bias_shape = bias
-            .shape()
-            .iter()
-            .map(|d| *d as i32)
-            .collect::<Box<[i32]>>();
-        let bias_stride = bias
-            .stride()
-            .iter()
-            .map(|d| *d as i32)
-            .collect::<Box<[i32]>>();
+        let bias_shape = vec![1, 1, 1, 1];
+        let mut bias_stride = vec![0; x_shape.len()];
+        utils::calculate_stride(&bias_shape, &mut bias_stride);
         let bias_data = device.htod_copy(vec![1.0f32; 1]).unwrap();
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
