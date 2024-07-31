@@ -1,7 +1,7 @@
 use crate::core::execution_state::ExecutionState;
 use crate::core::provider::cuda::CudaProvider;
 use crate::core::provider::Provider;
-use crate::core::session::SessionState;
+use crate::core::session_state::SessionState;
 use crate::core::tensor::Tensor;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
@@ -93,7 +93,8 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> ExecutionState<T> {
     let session_state = SessionState::new(
         Box::new([]),
         graph,
-        Box::new([Provider::Cuda(CudaProvider::new())]),
+        // Todo: Fix
+        Box::new([]),
     );
 
     let state = ExecutionState::new(

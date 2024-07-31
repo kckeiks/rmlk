@@ -1,9 +1,14 @@
+use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::provider::cuda::CudaProvider;
+use crate::core::execution_state::ExecutionState;
+use crate::core::kernel::Kernel;
+use crate::core::provider::cuda::{CudaExecutionState, CudaProvider};
 use crate::core::provider::{ExecutionProvider, Provider};
+use crate::core::session_state::SessionState;
+use cudarc::driver::CudaDevice;
 use ndarray::ArrayD;
 use rmlk_graph::Graph;
-use rmlk_ir::Model;
+use rmlk_ir::{DataType, Model};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -15,29 +20,19 @@ pub const CUDA_PROVIDER_ID: usize = 1;
 // This contains session options.
 pub struct Builder {
     graph: Graph,
-    providers: [Option<Provider>; 2],
 }
 
 impl Builder {
+    pub fn new(graph: Graph) -> Self {
+        Self { graph }
+    }
+
     pub fn with_model_from_memory(model: Box<[u8]>) -> Result<Self> {
         let model =
             bincode::deserialize::<Model>(&model).map_err(|_| Error::ModelDeserializationFailed)?;
         let graph = crate::parse::parse_ir_graph(model.graph.unwrap()).unwrap();
 
-        Ok(Self {
-            graph,
-            providers: [None, None],
-        })
-    }
-
-    pub fn with_cuda_provider(self) -> Self {
-        let mut providers = self.providers;
-        providers[CUDA_PROVIDER_ID].replace(Provider::Cuda(CudaProvider::new()));
-
-        Self {
-            graph: self.graph,
-            providers,
-        }
+        Ok(Self { graph })
     }
 
     pub fn build(self) -> Result<Session> {
@@ -47,34 +42,30 @@ impl Builder {
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
                 .map_err(|_| Error::ComputingPlanFailed)?;
 
-        let mut providers = self.providers;
-        // In the future we can provide a default CPU provider instead of returning an error.
-        let provider = providers[CUDA_PROVIDER_ID]
-            .take()
-            .ok_or(Error::NotSupported)?;
+        let mut provider = CudaProvider::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
 
-        let mut graph = self.graph;
-        match &provider {
-            Provider::Cuda(provider) => {
-                provider.check_capacity(&mut graph, plan.as_slice());
-            }
-            Provider::Cpu => {
-                return Err(Error::NotSupported);
-            }
-        }
+        let graph = self.graph;
+        let (node_to_tensor_set_index, tensors, node_tensors) =
+            provider.allocate_execution_state(&graph, &plan)?;
 
-        let session_state = Arc::new(SessionState {
-            plan: plan.into_boxed_slice(),
-            graph: Arc::new(graph),
-            provider: Box::new([provider]),
-        });
+        let session_state = Arc::new(SessionState::new(
+            plan.into_boxed_slice(),
+            graph,
+            Box::new([Provider::Cuda(provider)]),
+        ));
 
-        Ok(Session { session_state })
+        Ok(Session {
+            execution_state: ExecutionState::new(session_state.clone(), tensors, node_tensors),
+            session_state,
+            node_tensor_index_map: node_to_tensor_set_index,
+        })
     }
 }
 
 pub struct Session {
     session_state: Arc<SessionState>,
+    execution_state: CudaExecutionState,
+    node_tensor_index_map: HashMap<usize, usize>,
 }
 
 impl Session {
@@ -82,26 +73,28 @@ impl Session {
         &mut self,
         _input: HashMap<String, ArrayD<f32>>,
     ) -> Result<HashMap<String, ArrayD<f32>>> {
-        todo!()
-    }
-}
-
-pub struct SessionState {
-    plan: Box<[usize]>,
-    graph: Arc<Graph>,
-    provider: Box<[Provider]>,
-}
-
-impl SessionState {
-    pub fn new(plan: Box<[usize]>, graph: Graph, provider: Box<[Provider]>) -> Self {
-        Self {
-            plan,
-            provider,
-            graph: Arc::new(graph),
+        let graph = self.session_state.graph().clone();
+        for provider in self.session_state.providers() {
+            match provider {
+                Provider::Cuda(provider) => {
+                    for i in self.session_state.plan() {
+                        let node = graph.get_node(i).ok_or(Error::MissingNode)?;
+                        // Todo: We might want to separate the load operation because at this point we don't know the type.
+                        let kernel = provider.get_kernel(node.op(), DataType::Float)?;
+                        let node_tensor_index = self
+                            .node_tensor_index_map
+                            .get(&i)
+                            .ok_or(Error::MissingData)?;
+                        let mut ctx = Context::new(&mut self.execution_state, *node_tensor_index)?;
+                        kernel.compute(&mut ctx)?;
+                    }
+                }
+                Provider::Cpu => {
+                    return Err(Error::NotSupported);
+                }
+            }
         }
-    }
 
-    pub fn graph(&self) -> &Arc<Graph> {
-        &self.graph
+        Ok(HashMap::new())
     }
 }

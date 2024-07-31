@@ -85,7 +85,7 @@ mod test {
         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
+        let f = utils::load_kernel(&device.clone(), Op::Add, DataType::Float).unwrap();
 
         let mut out_data = device
             .alloc_zeros(lhs_shape.iter().map(|d| *d as usize).product())

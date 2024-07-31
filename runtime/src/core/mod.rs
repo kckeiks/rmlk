@@ -6,6 +6,7 @@ mod kernel;
 mod ops;
 mod provider;
 mod session;
+mod session_state;
 mod tensor;
 mod test_utils;
 mod utils;

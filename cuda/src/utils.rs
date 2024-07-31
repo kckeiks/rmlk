@@ -17,7 +17,7 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
     }
 }
 
-pub fn load_kernel(device: Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
+pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
     let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
         Op::Add => (
             add::FWD_FN_NAMES[dtype as usize],

@@ -105,6 +105,7 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
 
         let node_id = builder.add_node(node).expect("TODO");
 
+        // Todo: let's create nodes for each output.
         for name in ir_node.output {
             builder.insert_name_to_id(name, node_id);
         }

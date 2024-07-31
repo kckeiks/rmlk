@@ -1,19 +1,26 @@
 pub mod cuda;
 
+use crate::core::error::Result;
+use crate::core::kernel::Kernel;
+use crate::core::tensor::Tensor;
 use cuda::CudaProvider;
+use ndarray::Data;
 use rmlk_graph::Graph;
-use rmlk_ir::Op;
+use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
 
-type Result<T> = std::result::Result<T, Error>;
-
-enum Error {
-    Unknown,
-}
-
 pub trait ExecutionProvider {
-    fn check_capacity(&self, graph: &mut Graph, plan: &[usize]) -> Option<Graph>;
-    fn registry(&self) -> Registry;
+    type Kernel: Kernel;
+    fn allocate_execution_state(
+        &mut self,
+        graph: &Graph,
+        plan: &[usize],
+    ) -> Result<(
+        HashMap<usize, usize>,
+        Box<[Tensor<<Self::Kernel as Kernel>::Data>]>,
+        Box<[usize]>,
+    )>;
+    fn get_kernel(&self, op: Op, dtype: DataType) -> Result<Self::Kernel>;
 }
 
 pub enum Provider {

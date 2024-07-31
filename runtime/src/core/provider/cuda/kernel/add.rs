@@ -108,7 +108,7 @@ mod test {
         let mut state = crate::core::test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let f = rmlk_cuda::load_kernel(device.clone(), Op::Add, DataType::Float).unwrap();
+        let f = rmlk_cuda::load_kernel(&device, Op::Add, DataType::Float).unwrap();
         let cuda_kernel = AddKernel::new(device.clone(), f);
         cuda_kernel.compute(&mut context).unwrap();
 
