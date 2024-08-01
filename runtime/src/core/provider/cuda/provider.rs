@@ -11,7 +11,7 @@ use crate::core::provider::cuda::kernel::CudaKernel;
 use crate::core::provider::cuda::max_pool::MaxPoolKernel;
 use crate::core::provider::ExecutionProvider;
 use crate::core::tensor::Tensor;
-use cudarc::driver::{CudaDevice, CudaFunction};
+use cudarc::driver::{CudaDevice, CudaFunction, DeviceSlice};
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
@@ -28,6 +28,28 @@ impl CudaProvider {
 
     fn load_kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
         rmlk_cuda::load_kernel(&self.device, op, dtype).map_err(|_| Error::Unknown)
+    }
+
+    pub fn load_float(&self, data: Vec<f32>) -> Result<CudaData> {
+        let ptr = self
+            .device
+            .htod_copy(data)
+            .map_err(|_| Error::AllocationFailed)?;
+        Ok(CudaData::F32(ptr))
+    }
+
+    pub fn dtoh_float(&self, data: &mut CudaData) -> Result<Vec<f32>> {
+        match data {
+            CudaData::F32(ptr) => {
+                let result = self
+                    .device
+                    .dtoh_sync_copy::<f32, _>(ptr)
+                    .map_err(|_| Error::AllocationFailed)?;
+
+                Ok(result)
+            }
+            _ => Err(Error::Unknown),
+        }
     }
 }
 

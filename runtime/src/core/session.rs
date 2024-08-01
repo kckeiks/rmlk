@@ -6,7 +6,6 @@ use crate::core::provider::cuda::{CudaExecutionState, CudaProvider};
 use crate::core::provider::{ExecutionProvider, Provider};
 use crate::core::session_state::SessionState;
 use cudarc::driver::CudaDevice;
-use ndarray::ArrayD;
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Model};
 use std::collections::HashMap;
@@ -15,9 +14,6 @@ use std::sync::Arc;
 pub const CPU_PROVIDER_ID: usize = 0;
 pub const CUDA_PROVIDER_ID: usize = 1;
 
-// API: public. loads model from file or memory.
-// An inference session.
-// This contains session options.
 pub struct Builder {
     graph: Graph,
 }
@@ -69,10 +65,69 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn run(
-        &mut self,
-        _input: HashMap<String, ArrayD<f32>>,
-    ) -> Result<HashMap<String, ArrayD<f32>>> {
+    fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
+        let mut inputs = self.session_state.graph().inputs();
+
+        let provider = match self.session_state.providers().next().unwrap() {
+            Provider::Cuda(provider) => provider,
+            _ => return Err(Error::NotSupported),
+        };
+
+        let input = inputs.next().ok_or(Error::MissingData)?;
+        match self.session_state.graph().get_node(input) {
+            None => Err(Error::MissingData),
+            Some(_) => {
+                let node_tensor_index = self
+                    .node_tensor_index_map
+                    .get(&input)
+                    .ok_or(Error::MissingData)?;
+
+                // Todo: Improve API for loading input values.
+                let tensor = self
+                    .execution_state
+                    .get_tensor_mut(*node_tensor_index)
+                    .ok_or(Error::MissingData)?;
+                tensor.init(provider.load_float(data)?);
+
+                Ok(())
+            }
+        }
+    }
+
+    fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
+        let provider = match self.session_state.providers().next().unwrap() {
+            Provider::Cuda(provider) => provider,
+            _ => return Err(Error::NotSupported),
+        };
+
+        let mut result = Vec::new();
+        for output in self.session_state.graph().outputs() {
+            match self.session_state.graph().get_node(output) {
+                None => return Err(Error::MissingData),
+                Some(_) => {
+                    let node_tensor_index = self
+                        .node_tensor_index_map
+                        .get(&output)
+                        .ok_or(Error::MissingData)?;
+
+                    // Todo: Improve API for loading input values.
+                    let tensor = self
+                        .execution_state
+                        .get_tensor_mut(*node_tensor_index)
+                        .ok_or(Error::MissingData)?;
+                    let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
+                    let data = provider.dtoh_float(ptr)?;
+                    result.push(data);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
+        self.load_input(input)?;
+
         let graph = self.session_state.graph().clone();
         for provider in self.session_state.providers() {
             match provider {
@@ -95,6 +150,6 @@ impl Session {
             }
         }
 
-        Ok(HashMap::new())
+        self.load_output()
     }
 }
