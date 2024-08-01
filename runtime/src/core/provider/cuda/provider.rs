@@ -1,5 +1,4 @@
 use crate::core::error::{Error, Result};
-use crate::core::execution_state::ExecutionState;
 use crate::core::kernel::Kernel;
 use crate::core::provider::cuda::activation::ActivationKernel;
 use crate::core::provider::cuda::conv::ConvKernel;
@@ -11,7 +10,7 @@ use crate::core::provider::cuda::kernel::CudaKernel;
 use crate::core::provider::cuda::max_pool::MaxPoolKernel;
 use crate::core::provider::ExecutionProvider;
 use crate::core::tensor::Tensor;
-use cudarc::driver::{CudaDevice, CudaFunction, DeviceSlice};
+use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
@@ -184,8 +183,4 @@ impl ExecutionProvider for CudaProvider {
 
         Ok(kernel)
     }
-}
-
-pub struct CudaAllocator {
-    inner: Arc<CudaDevice>,
 }

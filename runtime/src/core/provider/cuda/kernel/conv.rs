@@ -23,7 +23,6 @@ impl ConvKernel {
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let w = ctx.get_input(1)?;
-        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let filter_dims = match x.shape().len() {
             4 => 2,
@@ -37,6 +36,12 @@ impl ConvKernel {
             ctx.get_attributes().ok_or(Error::MissingAttributes)?,
             filter_dims,
         )?;
+
+        let w_shape = match attrs.kernel_shape() {
+            // Todo: let's avoid this clone.
+            Some(w_shape) => w_shape.clone(),
+            None => w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>(),
+        };
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
         rmlk_cuda::kernels::conv::calculate_output_shape(

@@ -8,6 +8,7 @@ mod provider;
 mod session;
 mod session_state;
 mod tensor;
+#[cfg(test)]
 mod test_utils;
 mod utils;
 

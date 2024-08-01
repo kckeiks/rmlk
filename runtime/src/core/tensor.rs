@@ -36,7 +36,7 @@ impl<T> Tensor<T> {
         }
     }
 
-    pub fn new_init(data: T, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
+    pub fn _new_init(data: T, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
         Self {
             data: Some(data),
             dtype,
@@ -49,7 +49,7 @@ impl<T> Tensor<T> {
         self.data = Some(data);
     }
 
-    pub fn is_init(&self) -> bool {
+    pub fn _is_init(&self) -> bool {
         self.data.is_some()
     }
 
@@ -61,7 +61,7 @@ impl<T> Tensor<T> {
         self.data.as_mut()
     }
 
-    pub fn take_data(&mut self) -> Option<T> {
+    pub fn _take_data(&mut self) -> Option<T> {
         self.data.take()
     }
 
@@ -69,7 +69,7 @@ impl<T> Tensor<T> {
         &self.shape
     }
 
-    pub fn reshape(&mut self, shape: Vec<usize>) {
+    pub fn _reshape(&mut self, shape: Vec<usize>) {
         self.shape = shape;
         let dims = self.shape.len();
         let mut stride = vec![0usize; dims];

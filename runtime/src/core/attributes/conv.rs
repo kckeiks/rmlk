@@ -3,11 +3,11 @@ use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
 pub struct ConvAttributes {
-    pub dilations: Box<[i32]>,
-    pub group: i32,
-    pub kernel_shape: Option<Box<[i32]>>,
-    pub pads: Box<[i32]>,
-    pub strides: Box<[i32]>,
+    dilations: Box<[i32]>,
+    group: i32,
+    kernel_shape: Option<Box<[i32]>>,
+    pads: Box<[i32]>,
+    strides: Box<[i32]>,
     kernel_dims: usize,
 }
 
@@ -80,10 +80,14 @@ impl ConvAttributes {
     }
 
     pub fn strides(&self) -> &[i32] {
-        self.pads.as_ref()
+        self.strides.as_ref()
     }
 
     pub fn group(&self) -> i32 {
         self.group
+    }
+
+    pub fn kernel_shape(&self) -> Option<&Box<[i32]>> {
+        self.kernel_shape.as_ref()
     }
 }

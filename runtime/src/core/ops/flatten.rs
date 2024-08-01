@@ -1,7 +1,7 @@
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 
-pub fn compute<T>(ctx: &mut Context<T>) -> Result<()> {
+pub fn _compute<T>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {
@@ -31,7 +31,7 @@ pub fn compute<T>(ctx: &mut Context<T>) -> Result<()> {
     }
 
     let y = ctx.get_output_mut(0)?;
-    y.reshape(y_shape.to_vec());
+    y._reshape(y_shape.to_vec());
     // Todo: This tensor needs to point to data in input, x.
     // This way we can avoid making a copy of the same data.
     Ok(())
@@ -40,7 +40,7 @@ pub fn compute<T>(ctx: &mut Context<T>) -> Result<()> {
 #[cfg(test)]
 mod test {
     use crate::core::context::Context;
-    use crate::core::ops::flatten::compute;
+    use crate::core::ops::flatten::_compute;
     use crate::core::test_utils;
     use crate::core::test_utils::{TestNode, TestParams};
     use rmlk_ir::{DataType, Op};
@@ -72,7 +72,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(params);
         let mut context = Context::new(&mut state, 1).unwrap();
 
-        compute(&mut context).unwrap();
+        _compute(&mut context).unwrap();
 
         let shape = context.get_output(0).unwrap().shape();
 

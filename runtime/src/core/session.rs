@@ -11,9 +11,6 @@ use rmlk_ir::{DataType, Model};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub const CPU_PROVIDER_ID: usize = 0;
-pub const CUDA_PROVIDER_ID: usize = 1;
-
 pub struct Builder {
     graph: Graph,
 }

@@ -16,3 +16,7 @@ rmlk-ir = { path = "../ir" }
 rmlk-graph = { path = "../graph" }
 rmlk-cuda = { path = "../cuda" }
 quick-protobuf = "0.8"
+
+[dev-dependencies]
+image = "0.24"
+

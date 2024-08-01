@@ -1,11 +1,14 @@
 use crate::error::{Error, Result};
 use crate::kernels::{add, mul};
 use cudarc::driver::{CudaDevice, CudaFunction};
+#[cfg(test)]
 use num_traits::Num;
 use rmlk_ir::{DataType, Op};
+#[cfg(test)]
 use std::ops::AddAssign;
 use std::sync::Arc;
 
+#[cfg(test)]
 pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let dims = shape.len();
 

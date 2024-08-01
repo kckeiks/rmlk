@@ -3,13 +3,12 @@ use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
 pub struct MaxPoolAttributes {
-    ceil_mode: bool,
+    _ceil_mode: bool,
     _dilations: Box<[i32]>,
     kernel_shape: Box<[i32]>,
     pads: Box<[i32]>,
     _row_major_order: bool,
     strides: Box<[i32]>,
-    kernel_dims: usize,
 }
 
 impl MaxPoolAttributes {
@@ -70,11 +69,10 @@ impl MaxPoolAttributes {
 
         Ok(Self {
             _dilations: vec![1; kernel_dims].into_boxed_slice(),
-            ceil_mode: ceil_mode.unwrap_or(false),
+            _ceil_mode: ceil_mode.unwrap_or(false),
             pads: pads.unwrap_or_else(|| vec![0; kernel_dims].into_boxed_slice()),
             _row_major_order: row_major_order.unwrap_or(false),
             strides: strides.unwrap_or_else(|| vec![1; kernel_dims].into_boxed_slice()),
-            kernel_dims,
             kernel_shape,
         })
     }
@@ -91,7 +89,7 @@ impl MaxPoolAttributes {
         self.kernel_shape.as_ref()
     }
 
-    pub fn ceil_mode(&self) -> bool {
+    pub fn _ceil_mode(&self) -> bool {
         false
     }
 }
