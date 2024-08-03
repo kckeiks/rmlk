@@ -40,8 +40,11 @@ impl ActivationKernel {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
+            let output_shape = x.shape().clone();
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
+            output._reshape(output_shape);
+            output.set_dtype(DataType::Float);
         } else {
             todo!()
         }

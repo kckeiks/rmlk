@@ -7,7 +7,7 @@ use crate::core::provider::{ExecutionProvider, Provider};
 use crate::core::session_state::SessionState;
 use cudarc::driver::CudaDevice;
 use rmlk_graph::Graph;
-use rmlk_ir::{DataType, Model};
+use rmlk_ir::{DataType, Model, Op};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -33,7 +33,10 @@ impl Builder {
         // are required for computing the outputs.
         let (_, plan) =
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
-                .map_err(|_| Error::ComputingPlanFailed)?;
+                .map_err(|e| {
+                    println!("{e:?}");
+                    Error::ComputingPlanFailed
+                })?;
 
         let mut provider = CudaProvider::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
 
@@ -74,17 +77,18 @@ impl Session {
         match self.session_state.graph().get_node(input) {
             None => Err(Error::MissingData),
             Some(_) => {
-                let node_tensor_index = self
-                    .node_tensor_index_map
-                    .get(&input)
-                    .ok_or(Error::MissingData)?;
+                // let node_tensor_index = self
+                //     .node_tensor_index_map
+                //     .get(&input)
+                //     .ok_or(Error::MissingData).unwrap();
 
                 // Todo: Improve API for loading input values.
                 let tensor = self
                     .execution_state
-                    .get_tensor_mut(*node_tensor_index)
-                    .ok_or(Error::MissingData)?;
-                tensor.init(provider.load_float(data)?);
+                    .get_value(input)
+                    .ok_or(Error::MissingData)
+                    .unwrap();
+                tensor.init(provider.htod_float(data)?);
 
                 Ok(())
             }
@@ -102,15 +106,15 @@ impl Session {
             match self.session_state.graph().get_node(output) {
                 None => return Err(Error::MissingData),
                 Some(_) => {
-                    let node_tensor_index = self
-                        .node_tensor_index_map
-                        .get(&output)
-                        .ok_or(Error::MissingData)?;
+                    // let node_tensor_index = self
+                    //     .node_tensor_index_map
+                    //     .get(&output)
+                    //     .ok_or(Error::MissingData)?;
 
                     // Todo: Improve API for loading input values.
                     let tensor = self
                         .execution_state
-                        .get_tensor_mut(*node_tensor_index)
+                        .get_value(output)
                         .ok_or(Error::MissingData)?;
                     let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
                     let data = provider.dtoh_float(ptr)?;
@@ -123,21 +127,29 @@ impl Session {
     }
 
     pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
-        self.load_input(input)?;
+        self.load_input(input).unwrap();
 
-        let graph = self.session_state.graph().clone();
         for provider in self.session_state.providers() {
             match provider {
                 Provider::Cuda(provider) => {
-                    for i in self.session_state.plan() {
-                        let node = graph.get_node(i).ok_or(Error::MissingNode)?;
+                    // Remove allocation.
+                    for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {
+                        // let node = graph.get_node(i).ok_or(Error::MissingNode)?;
                         // Todo: We might want to separate the load operation because at this point we don't know the type.
+                        if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
+                            continue;
+                        }
                         let kernel = provider.get_kernel(node.op(), DataType::Float)?;
-                        let node_tensor_index = self
-                            .node_tensor_index_map
-                            .get(&i)
-                            .ok_or(Error::MissingData)?;
-                        let mut ctx = Context::new(&mut self.execution_state, *node_tensor_index)?;
+
+                        let mut ctx =
+                            Context::new(&mut self.execution_state, &self.node_tensor_index_map, i)
+                                .unwrap();
+                        println!(
+                            "-- {i} {:?} {:?} inputs={:?}",
+                            node.op(),
+                            node.def().node.as_ref().unwrap().name,
+                            node.inputs()
+                        );
                         kernel.compute(&mut ctx)?;
                     }
                 }
@@ -147,6 +159,7 @@ impl Session {
             }
         }
 
-        self.load_output()
+        Ok(self.load_output().unwrap())
+        // Ok(Vec::new())
     }
 }

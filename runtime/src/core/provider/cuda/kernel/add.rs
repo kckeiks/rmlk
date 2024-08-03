@@ -52,8 +52,11 @@ impl AddKernel {
             )
             .map_err(|_| Error::ComputationFailed)?;
 
+            let result_shape = lhs.shape().clone();
             let result = ctx.get_output_mut(0)?;
             result.init(CudaData::F32(out_slice));
+            result._reshape(result_shape);
+            result.set_dtype(DataType::Float);
         } else {
             return Err(Error::UnsupportedDataType);
         }

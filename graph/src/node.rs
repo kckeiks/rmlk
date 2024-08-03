@@ -65,12 +65,18 @@ impl Node {
     pub fn add_attr(&mut self, name: Box<str>, attr: Attribute) {
         self.attributes.insert(name, attr);
     }
+
+    pub fn def(&self) -> &Definition {
+        &self._definition
+    }
 }
 
 /// The definition for this node's inputs and outputs.
 pub struct Definition {
     pub shape: Vec<usize>,
     pub dtype: DataType,
+    pub node: Option<rmlk_ir::Node>,
+    pub name: String,
 }
 
 impl Default for Definition {
@@ -78,6 +84,8 @@ impl Default for Definition {
         Self {
             shape: Vec::new(),
             dtype: DataType::Undefined,
+            node: None,
+            name: "".to_string(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::core::error::{Error, Result};
 use crate::core::kernel::Kernel;
+use crate::core::ops::flatten::FlattenOp;
 use crate::core::provider::cuda::activation::ActivationKernel;
 use crate::core::provider::cuda::conv::ConvKernel;
 use crate::core::provider::cuda::data::CudaData;
@@ -13,7 +14,7 @@ use crate::core::tensor::Tensor;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct CudaProvider {
@@ -29,7 +30,7 @@ impl CudaProvider {
         rmlk_cuda::load_kernel(&self.device, op, dtype).map_err(|_| Error::Unknown)
     }
 
-    pub fn load_float(&self, data: Vec<f32>) -> Result<CudaData> {
+    pub fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
         let ptr = self
             .device
             .htod_copy(data)
@@ -64,6 +65,7 @@ impl ExecutionProvider for CudaProvider {
         Box<[Tensor<<Self::Kernel as Kernel>::Data>]>,
         Box<[usize]>,
     )> {
+        // Todo: We might need the max id of the graph instead.
         let node_count = graph.nodes().count();
         let mut index_to_tensor_index = HashMap::new();
 
@@ -74,44 +76,66 @@ impl ExecutionProvider for CudaProvider {
 
         let mut node_tensors = Vec::with_capacity(3 * graph.nodes().count());
 
-        // Todo: Remove these enumerates.
-        for (node_id, node) in plan.iter().enumerate() {
-            let node = graph.get_node(*node).ok_or(Error::MissingNode)?;
+        // Load initializers.
+        for (node_id, ir_tensor) in graph.initializers() {
+            debug_assert_eq!(graph.get_node(*node_id).map(|n| n.op()), Some(Op::Const));
 
-            if !node.inputs().is_empty() {
-                let index = node_tensors.len();
-                index_to_tensor_index.insert(node_id, index);
+            let data = to_float_vec(ir_tensor.raw_data.as_ref().ok_or(Error::MissingData)?);
+            let ptr = self
+                .device
+                .htod_copy(data)
+                .map_err(|_| Error::AllocationFailed)?;
+
+            let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
+            tensor.init(CudaData::F32(ptr));
+            tensors[*node_id] = tensor;
+        }
+
+        for node_id in graph.inputs() {
+            match graph.get_node(node_id) {
+                Some(node) => {
+                    let def = node.def();
+                    let tensor = if def.shape.is_empty() {
+                        Tensor::new(def.dtype)
+                    } else {
+                        Tensor::new_with_shape(def.dtype, def.shape.clone())
+                    };
+                    tensors[node_id] = tensor;
+                }
+                None => return Err(Error::MissingNode),
             }
+        }
+
+        for node_id in graph.outputs() {
+            match graph.get_node(node_id) {
+                Some(node) => {
+                    let def = node.def();
+                    let tensor = if def.shape.is_empty() {
+                        Tensor::new(def.dtype)
+                    } else {
+                        Tensor::new_with_shape(def.dtype, def.shape.clone())
+                    };
+                    tensors[node_id] = tensor;
+                }
+                None => return Err(Error::MissingNode),
+            }
+        }
+
+        // Todo: Remove when we have a plan with steps to traverse the graph.
+        for (node_id, node) in graph.nodes().enumerate() {
+            // We already loaded the initializers.
+            if graph.get_initial_tensor(node_id).is_some()
+                || matches!(node.op(), Op::Const | Op::NoOp)
+            {
+                continue;
+            }
+
+            let index = node_tensors.len();
+            index_to_tensor_index.insert(node_id, index);
 
             for input in node.inputs() {
                 match graph.get_node(*input) {
-                    Some(node) => {
-                        if let Op::Const = node.op() {
-                            if tensors
-                                .get(*input)
-                                .map(|t| t.data().is_none())
-                                .ok_or(Error::MissingData)?
-                            {
-                                // One initializer should only have one node.
-                                debug_assert!(node.inputs().len() == 1);
-
-                                let input = node.inputs().get(0).ok_or(Error::MissingData)?;
-                                let initializer =
-                                    graph.get_initial_tensor(*input).ok_or(Error::MissingData)?;
-                                let ptr = self
-                                    .device
-                                    .htod_copy(initializer.float_data.clone())
-                                    .map_err(|_| Error::AllocationFailed)?;
-
-                                let mut tensor = Tensor::new_with_shape(
-                                    DataType::Float,
-                                    initializer.dims.clone(),
-                                );
-                                tensor.init(CudaData::F32(ptr));
-                                tensors[*input] = tensor;
-                            }
-                        }
-
+                    Some(_) => {
                         node_tensors.push(*input);
                     }
                     None => return Err(Error::MissingNode),
@@ -120,33 +144,7 @@ impl ExecutionProvider for CudaProvider {
 
             for output in node.outputs() {
                 match graph.get_node(*output) {
-                    Some(node) => {
-                        if let Op::Const = node.op() {
-                            if tensors
-                                .get(*output)
-                                .map(|t| t.data().is_none())
-                                .ok_or(Error::MissingData)?
-                            {
-                                // One initializer should only have one node.
-                                debug_assert!(node.inputs().len() == 1);
-
-                                let input = node.inputs().get(0).ok_or(Error::MissingData)?;
-                                let initializer =
-                                    graph.get_initial_tensor(*input).ok_or(Error::MissingData)?;
-                                let ptr = self
-                                    .device
-                                    .htod_copy(initializer.float_data.clone())
-                                    .map_err(|_| Error::AllocationFailed)?;
-
-                                let mut tensor = Tensor::new_with_shape(
-                                    DataType::Float,
-                                    initializer.dims.clone(),
-                                );
-                                tensor.init(CudaData::F32(ptr));
-                                tensors[*input] = tensor;
-                            }
-                        }
-
+                    Some(_) => {
                         node_tensors.push(*output);
                     }
                     None => return Err(Error::MissingNode),
@@ -154,6 +152,8 @@ impl ExecutionProvider for CudaProvider {
             }
         }
 
+        println!("index_to_tensor_index={index_to_tensor_index:?}");
+        println!("node_tensors={node_tensors:?}");
         Ok((
             index_to_tensor_index,
             tensors.into_boxed_slice(),
@@ -175,12 +175,17 @@ impl ExecutionProvider for CudaProvider {
                 CudaKernel::GlobalAveragePool(GlobalAveragePoolKernel::new(self.device.clone()))
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolKernel::new(self.device.clone())),
-            Op::Flatten => {
-                todo!()
-            }
+            Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             _ => return Err(Error::NotSupported),
         };
 
         Ok(kernel)
     }
+}
+
+// Todo: Move to utils after refactor.
+fn to_float_vec(data: &[u8]) -> Vec<f32> {
+    data.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+        .collect()
 }

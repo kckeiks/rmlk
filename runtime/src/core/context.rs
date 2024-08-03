@@ -9,16 +9,29 @@ pub struct Context<'a, T> {
     input_start_index: usize,
     max_tensors: usize,
     output_start_index: usize,
+
+    original_node_id: usize,
 }
 
 impl<'a, T> Context<'a, T> {
-    pub fn new(execution_state: &'a mut ExecutionState<T>, node_index: usize) -> Result<Self> {
+    pub fn new(
+        execution_state: &'a mut ExecutionState<T>,
+        node_tensor_map: &HashMap<usize, usize>,
+        index: usize,
+    ) -> Result<Self> {
+        // println!("new context: {index}");
+        let node_index = *node_tensor_map
+            .get(&index)
+            .ok_or(Error::MissingData)
+            .unwrap();
+        // println!("new node_index: {node_index}");
+
         let input_count = execution_state
-            .get_input_count(node_index)
+            .get_input_count(index)
             .ok_or(Error::ContextError)?;
 
         let output_count = execution_state
-            .get_output_count(node_index)
+            .get_output_count(index)
             .ok_or(Error::ContextError)?;
 
         Ok(Self {
@@ -26,6 +39,7 @@ impl<'a, T> Context<'a, T> {
             input_start_index: node_index,
             max_tensors: input_count + output_count,
             output_start_index: node_index + input_count,
+            original_node_id: index,
         })
     }
 
@@ -77,7 +91,7 @@ impl<'a, T> Context<'a, T> {
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
         Some(
             self.execution_state
-                .get_node(self.input_start_index)?
+                .get_node(self.original_node_id)?
                 .attrs(),
         )
     }

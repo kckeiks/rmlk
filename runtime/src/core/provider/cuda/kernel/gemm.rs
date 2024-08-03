@@ -55,6 +55,8 @@ impl GemmKernel {
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(out_slice));
+            output._reshape(op.calculate_output_shape().to_vec());
+            output.set_dtype(DataType::Float);
         } else {
             return Err(Error::UnsupportedDataType);
         }

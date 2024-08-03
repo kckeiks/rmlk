@@ -37,11 +37,7 @@ impl ConvKernel {
             filter_dims,
         )?;
 
-        let w_shape = match attrs.kernel_shape() {
-            // Todo: let's avoid this clone.
-            Some(w_shape) => w_shape.clone(),
-            None => w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>(),
-        };
+        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
         rmlk_cuda::kernels::conv::calculate_output_shape(
@@ -60,11 +56,13 @@ impl ConvKernel {
             let x_data = x
                 .data()
                 .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+                .ok_or(Error::MissingData)
+                .unwrap();
             let w_data = w
                 .data()
                 .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+                .ok_or(Error::MissingData)
+                .unwrap();
 
             let mut y_data = self
                 .device
@@ -93,16 +91,23 @@ impl ConvKernel {
                     .map_err(|_| Error::ComputationFailed)?;
                 }
                 Some(bias) => {
-                    let bias_shape = bias
-                        .shape()
-                        .iter()
-                        .map(|d| *d as i32)
-                        .collect::<Box<[i32]>>();
-                    let bias_stride = bias
-                        .stride()
-                        .iter()
-                        .map(|d| *d as i32)
-                        .collect::<Box<[i32]>>();
+                    let mut bias_shape = vec![1i32; x_shape.len()];
+                    bias_shape[1] = bias.shape()[0] as i32;
+
+                    // let bias_shape = bias
+                    //     .shape()
+                    //     .iter()
+                    //     .map(|d| *d as i32)
+                    //     .collect::<Box<[i32]>>();
+
+                    let mut bias_stride = vec![0i32; x_shape.len()];
+                    utils::calculate_stride(&bias_shape, &mut bias_stride);
+
+                    // let bias_stride = bias
+                    //     .stride()
+                    //     .iter()
+                    //     .map(|d| *d as i32)
+                    //     .collect::<Box<[i32]>>();
 
                     let bias_data = bias
                         .data()
@@ -138,6 +143,8 @@ impl ConvKernel {
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
+            output._reshape(y_shape.iter().map(|d| *d as usize).collect());
+            output.set_dtype(DataType::Float);
         } else {
             todo!()
         }

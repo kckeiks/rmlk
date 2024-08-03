@@ -1,4 +1,5 @@
 use crate::node::Node;
+use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
 
@@ -14,7 +15,7 @@ pub enum GraphError {
 }
 
 pub struct Graph {
-    initializers: Vec<rmlk_ir::Tensor>,
+    initializers: HashMap<usize, rmlk_ir::Tensor>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     nodes: Vec<Node>,
@@ -22,7 +23,7 @@ pub struct Graph {
 
 impl Graph {
     pub(crate) fn new(
-        initializers: Vec<rmlk_ir::Tensor>,
+        initializers: HashMap<usize, rmlk_ir::Tensor>,
         inputs: Vec<usize>,
         nodes: Vec<Node>,
         outputs: Vec<usize>,
@@ -54,7 +55,7 @@ impl Graph {
         self.outputs.as_slice()
     }
 
-    pub fn initializers(&self) -> impl Iterator<Item = &rmlk_ir::Tensor> + '_ {
+    pub fn initializers(&self) -> impl Iterator<Item = (&usize, &rmlk_ir::Tensor)> + '_ {
         self.initializers.iter()
     }
 
@@ -63,6 +64,6 @@ impl Graph {
     }
 
     pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_ir::Tensor> {
-        self.initializers.get(id)
+        self.initializers.get(&id)
     }
 }

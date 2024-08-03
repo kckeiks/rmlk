@@ -1,6 +1,17 @@
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 
+pub struct FlattenOp(());
+
+impl FlattenOp {
+    pub fn new() -> Self {
+        Self(())
+    }
+    pub fn compute<T>(self, ctx: &mut Context<T>) -> Result<()> {
+        _compute(ctx)
+    }
+}
+
 pub fn _compute<T>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 

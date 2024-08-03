@@ -8,6 +8,7 @@ pub mod max_pool;
 use crate::core::context::Context;
 use crate::core::error::Result;
 use crate::core::kernel::Kernel;
+use crate::core::ops::flatten::FlattenOp;
 use crate::core::provider::cuda::data::CudaData;
 use crate::core::provider::cuda::kernel::activation::ActivationKernel;
 use crate::core::provider::cuda::kernel::add::AddKernel;
@@ -23,7 +24,7 @@ pub enum CudaKernel {
     Gemm(GemmKernel),
     GlobalAveragePool(GlobalAveragePoolKernel),
     MaxPool(MaxPoolKernel),
-    // Todo: How will we handle Flatten, for example?
+    Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?
 }
 
 impl Kernel for CudaKernel {
@@ -37,6 +38,7 @@ impl Kernel for CudaKernel {
             CudaKernel::Gemm(kernel) => kernel.compute(ctx),
             CudaKernel::GlobalAveragePool(kernel) => kernel.compute(ctx),
             CudaKernel::MaxPool(kernel) => kernel.compute(ctx),
+            CudaKernel::Flatten(kernel) => kernel.compute(ctx),
         }
     }
 }

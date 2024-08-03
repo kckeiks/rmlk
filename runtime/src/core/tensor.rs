@@ -83,4 +83,8 @@ impl<T> Tensor<T> {
     pub fn dtype(&self) -> &DataType {
         &self.dtype
     }
+
+    pub fn set_dtype(&mut self, dtype: DataType) {
+        self.dtype = dtype;
+    }
 }

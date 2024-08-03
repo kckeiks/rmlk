@@ -7,7 +7,7 @@ use crate::onnx::{FunctionProto, OperatorSetIdProto};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
     NoOp,
     Add,

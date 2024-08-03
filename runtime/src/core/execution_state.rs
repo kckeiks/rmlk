@@ -58,7 +58,19 @@ impl<T> ExecutionState<T> {
         self.all_tensors.get_mut(tensor_index)
     }
 
+    pub fn get_value(&mut self, node_index: usize) -> Option<&mut Tensor<T>> {
+        self.all_tensors.get_mut(node_index)
+    }
+
     fn get_tensor_index(&self, node_index: usize) -> Option<usize> {
         self.node_tensors.get(node_index).copied()
+    }
+
+    pub fn get_tensors(&self) -> &[Tensor<T>] {
+        self.all_tensors.as_ref()
+    }
+
+    pub fn get_node_tensors(&self) -> &[usize] {
+        self.node_tensors.as_ref()
     }
 }

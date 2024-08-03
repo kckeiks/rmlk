@@ -65,6 +65,8 @@ impl MaxPoolKernel {
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
+            output._reshape(y_shape.iter().map(|d| *d as usize).collect());
+            output.set_dtype(DataType::Float);
         } else {
             todo!()
         }

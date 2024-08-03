@@ -27,6 +27,23 @@ pub struct Node {
     pub metadata_props: Vec<StringStringEntryProto>,
 }
 
+impl Clone for Node {
+    fn clone(&self) -> Self {
+        Self {
+            input: self.input.clone(),
+            output: self.output.clone(),
+            name: self.name.clone(),
+            op_type: self.op_type.clone(),
+            domain: self.domain.clone(),
+            // Todo: Finish.
+            overload: None,
+            attribute: vec![],
+            doc_string: None,
+            metadata_props: vec![],
+        }
+    }
+}
+
 impl TryFrom<NodeProto<'_>> for Node {
     type Error = Error;
 
