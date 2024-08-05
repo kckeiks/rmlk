@@ -63,12 +63,14 @@ impl AddKernel {
 
 #[cfg(test)]
 mod test {
-    use crate::core::context::Context;
-    use crate::core::provider::cuda::data::CudaData;
-    use crate::core::provider::cuda::kernel::add::AddKernel;
-    use crate::core::test_utils::{TestNode, TestParams};
+    use crate::core::Context;
+    use crate::provider::cuda::data::CudaData;
+    use crate::provider::cuda::kernel::add::AddKernel;
+    use crate::test_utils;
+    use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
+    use std::collections::HashMap;
 
     #[test]
     fn test_add_f32() {
@@ -104,8 +106,9 @@ mod test {
             op: Op::Add,
         };
 
-        let mut state = crate::core::test_utils::build_graph_and_state(params);
-        let mut context = Context::new(&mut state, 2).unwrap();
+        let mut state = test_utils::build_graph_and_state(params);
+        let map = HashMap::from([(1, 1), (2, 2)]);
+        let mut context = Context::new(&mut state, &map, 2).unwrap();
 
         let f = rmlk_cuda::load_kernel(&device, Op::Add, DataType::Float).unwrap();
         let cuda_kernel = AddKernel::new(device.clone(), f);

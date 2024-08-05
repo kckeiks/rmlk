@@ -189,12 +189,14 @@ impl ConvKernel {
 
 #[cfg(test)]
 mod test {
-    use crate::core::context::Context;
-    use crate::core::provider::cuda::data::CudaData;
-    use crate::core::provider::cuda::kernel::conv::ConvKernel;
-    use crate::core::test_utils::{TestConvAttributes, TestNode, TestParams};
+    use crate::core::Context;
+    use crate::provider::cuda::data::CudaData;
+    use crate::provider::cuda::kernel::conv::ConvKernel;
+    use crate::test_utils;
+    use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
+    use std::collections::HashMap;
 
     #[test]
     fn test_conv_f32_2d_bias() {
@@ -233,7 +235,7 @@ mod test {
             data: None,
         };
 
-        let attributes = crate::core::test_utils::create_conv_attributes(TestConvAttributes {
+        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
             kernel_shape: None,
@@ -248,8 +250,9 @@ mod test {
             op: Op::Conv,
         };
 
-        let mut state = crate::core::test_utils::build_graph_and_state(params);
-        let mut context = Context::new(&mut state, 3).unwrap();
+        let mut state = test_utils::build_graph_and_state(params);
+        let map = HashMap::from([(1, 1), (2, 2), (3, 3), (4, 4)]);
+        let mut context = Context::new(&mut state, &map, 3).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
@@ -302,7 +305,7 @@ mod test {
             data: None,
         };
 
-        let attributes = crate::core::test_utils::create_conv_attributes(TestConvAttributes {
+        let attributes = test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
             kernel_shape: None,
@@ -317,8 +320,9 @@ mod test {
             op: Op::Conv,
         };
 
-        let mut state = crate::core::test_utils::build_graph_and_state(params);
-        let mut context = Context::new(&mut state, 2).unwrap();
+        let mut state = test_utils::build_graph_and_state(params);
+        let map = HashMap::from([(1, 1), (2, 2), (3, 3)]);
+        let mut context = Context::new(&mut state, &map, 2).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();

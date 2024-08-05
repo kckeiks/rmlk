@@ -55,11 +55,12 @@ pub fn _compute<T>(ctx: &mut Context<T>) -> Result<()> {
 
 #[cfg(test)]
 mod test {
-    use crate::core::context::Context;
-    use crate::core::ops::flatten::_compute;
-    use crate::core::test_utils;
-    use crate::core::test_utils::{TestNode, TestParams};
+    use crate::core::Context;
+    use crate::ops::flatten::_compute;
+    use crate::test_utils;
+    use crate::test_utils::{TestNode, TestParams};
     use rmlk_ir::{DataType, Op};
+    use std::collections::HashMap;
 
     #[test]
     fn test_flatten_f32() {
@@ -86,7 +87,8 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(params);
-        let mut context = Context::new(&mut state, 1).unwrap();
+        let map = HashMap::from([(1, 1)]);
+        let mut context = Context::new(&mut state, &map, 1).unwrap();
 
         _compute(&mut context).unwrap();
 

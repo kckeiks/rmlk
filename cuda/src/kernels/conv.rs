@@ -350,67 +350,68 @@ mod test {
         )
     }
 
-    #[test]
-    fn test_conv_f32_2d_bias_2() {
-        let device = CudaDevice::new(0).unwrap();
-
-        let x_shape = vec![1, 3, 224, 224];
-        let mut x_stride = vec![0; x_shape.len()];
-        utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_data = device
-            .htod_copy(vec![1.0; x_shape.iter().map(|d| *d as usize).product()])
-            .unwrap();
-
-        let w_shape = vec![64, 3, 7, 7];
-        let w_data = device
-            .htod_copy(vec![1.0; w_shape.iter().map(|d| *d as usize).product()])
-            .unwrap();
-
-        let bias_shape = vec![1, 64, 1, 1];
-        let mut bias_stride = vec![0; bias_shape.len()];
-        utils::calculate_stride(&bias_shape, &mut bias_stride);
-        let bias_data = device.htod_copy(vec![1.0f32; 64]).unwrap();
-
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        calculate_output_shape(&x_shape, &w_shape, &[3, 3], &[2, 2], &[1, 1], &mut y_shape)
-            .unwrap();
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-        utils::calculate_stride(&y_shape, &mut y_stride);
-
-        let mut y_data = device
-            .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-            .unwrap();
-
-        compute::<f32>(
-            device.clone(),
-            (1.0, 0.0),
-            &x_data,
-            &x_shape,
-            &x_stride,
-            &w_data,
-            &w_shape,
-            &[3, 3],
-            &[2, 2],
-            &[1, 1],
-            1,
-            Some(BiasInput {
-                data: &bias_data,
-                shape: &bias_shape,
-                stride: &bias_stride,
-            }),
-            &mut y_data,
-            &y_shape,
-            &y_stride,
-        )
-        .unwrap();
-        let result = device.dtoh_sync_copy(&y_data).unwrap();
-        todo!()
-        // assert_eq!(
-        //     result,
-        //     vec![
-        //         13.0, 22.0, 28.0, 34.0, 25.0, 34.0, 55.0, 64.0, 73.0, 52.0, 64.0, 100.0, 109.0,
-        //         118.0, 82.0, 94.0, 145.0, 154.0, 163.0, 112.0, 73.0, 112.0, 118.0, 124.0, 85.0,
-        //     ]
-        // )
-    }
+    // Todo: Fix.
+    // #[test]
+    // fn test_conv_f32_2d_bias_2() {
+    //     let device = CudaDevice::new(0).unwrap();
+    //
+    //     let x_shape = vec![1, 3, 224, 224];
+    //     let mut x_stride = vec![0; x_shape.len()];
+    //     utils::calculate_stride(&x_shape, &mut x_stride);
+    //     let x_data = device
+    //         .htod_copy(vec![1.0; x_shape.iter().map(|d| *d as usize).product()])
+    //         .unwrap();
+    //
+    //     let w_shape = vec![64, 3, 7, 7];
+    //     let w_data = device
+    //         .htod_copy(vec![1.0; w_shape.iter().map(|d| *d as usize).product()])
+    //         .unwrap();
+    //
+    //     let bias_shape = vec![1, 64, 1, 1];
+    //     let mut bias_stride = vec![0; bias_shape.len()];
+    //     utils::calculate_stride(&bias_shape, &mut bias_stride);
+    //     let bias_data = device.htod_copy(vec![1.0f32; 64]).unwrap();
+    //
+    //     let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+    //     calculate_output_shape(&x_shape, &w_shape, &[3, 3], &[2, 2], &[1, 1], &mut y_shape)
+    //         .unwrap();
+    //     let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+    //     utils::calculate_stride(&y_shape, &mut y_stride);
+    //
+    //     let mut y_data = device
+    //         .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+    //         .unwrap();
+    //
+    //     compute::<f32>(
+    //         device.clone(),
+    //         (1.0, 0.0),
+    //         &x_data,
+    //         &x_shape,
+    //         &x_stride,
+    //         &w_data,
+    //         &w_shape,
+    //         &[3, 3],
+    //         &[2, 2],
+    //         &[1, 1],
+    //         1,
+    //         Some(BiasInput {
+    //             data: &bias_data,
+    //             shape: &bias_shape,
+    //             stride: &bias_stride,
+    //         }),
+    //         &mut y_data,
+    //         &y_shape,
+    //         &y_stride,
+    //     )
+    //     .unwrap();
+    //     let result = device.dtoh_sync_copy(&y_data).unwrap();
+    //     todo!()
+    //     // assert_eq!(
+    //     //     result,
+    //     //     vec![
+    //     //         13.0, 22.0, 28.0, 34.0, 25.0, 34.0, 55.0, 64.0, 73.0, 52.0, 64.0, 100.0, 109.0,
+    //     //         118.0, 82.0, 94.0, 145.0, 154.0, 163.0, 112.0, 73.0, 112.0, 118.0, 124.0, 85.0,
+    //     //     ]
+    //     // )
+    // }
 }

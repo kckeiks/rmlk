@@ -55,12 +55,14 @@ impl ActivationKernel {
 
 #[cfg(test)]
 mod test {
-    use crate::core::context::Context;
-    use crate::core::provider::cuda::data::CudaData;
-    use crate::core::provider::cuda::kernel::activation::ActivationKernel;
-    use crate::core::test_utils::{TestNode, TestParams};
+    use crate::core::Context;
+    use crate::provider::cuda::data::CudaData;
+    use crate::provider::cuda::kernel::activation::ActivationKernel;
+    use crate::test_utils;
+    use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
+    use std::collections::HashMap;
 
     #[test]
     fn test_relu_f32() {
@@ -89,8 +91,9 @@ mod test {
             op: Op::Relu,
         };
 
-        let mut state = crate::core::test_utils::build_graph_and_state(params);
-        let mut context = Context::new(&mut state, 1).unwrap();
+        let mut state = test_utils::build_graph_and_state(params);
+        let map = HashMap::from([(1, 1)]);
+        let mut context = Context::new(&mut state, &map, 1).unwrap();
 
         let cuda_kernel = ActivationKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();

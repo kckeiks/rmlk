@@ -1,6 +1,6 @@
-use crate::core::execution_state::ExecutionState;
-use crate::core::session_state::SessionState;
-use crate::core::tensor::Tensor;
+use crate::core::ExecutionState;
+use crate::core::SessionState;
+use crate::core::Tensor;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> ExecutionState<T> {
         tensor.init(input.data.unwrap());
 
         let current_index = all_tensors.len();
-        all_tensors.push(tensor);
+        all_tensors.push(Some(tensor));
         node_tensors.push(current_index);
         node_to_tensor_index.insert(node_id, current_index);
     }
@@ -84,7 +84,7 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> ExecutionState<T> {
     };
 
     let current_index = all_tensors.len();
-    all_tensors.push(out_tensor);
+    all_tensors.push(Some(out_tensor));
     node_tensors.push(current_index);
 
     // Todo: finish.
