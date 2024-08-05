@@ -2,6 +2,7 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
+use log::debug;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -29,6 +30,8 @@ impl ActivationKernel {
                 .device
                 .alloc_zeros(x.shape().iter().product())
                 .map_err(|_| Error::MissingData)?;
+
+            println!("x_shape={x_shape:?},x_stride={x_stride:?}");
 
             rmlk_cuda::kernels::activation::compute(
                 self.device,

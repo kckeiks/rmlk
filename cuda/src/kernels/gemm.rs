@@ -40,6 +40,9 @@ impl GemmOp {
             }
         };
 
+        // let m = lhs_shape[lhs_shape.len() - 2];
+        // let k = lhs_shape[lhs_shape.len() - 1];
+        // let n = rhs_shape[rhs_shape.len() - 1];
         let n = match trans_b {
             true => rhs_shape[rhs_shape.len() - 1],
             false => rhs_shape[rhs_shape.len() - 2],
@@ -69,11 +72,14 @@ impl GemmOp {
             ),
         };
 
-        debug!(
+        println!(
             "lhs_shape={:?},\
                 lhs_stride={:?},\
                 rhs_shape={:?},\
                 rhs_stride={:?}\
+                m={m:?},\
+                k={k:?},\
+                n={n:?},\
                 ",
             lhs_shape, lhs_stride, rhs_shape, rhs_stride,
         );
@@ -154,10 +160,10 @@ pub fn gemm_config<T>(
 
     let lhs_stride = lhs_layout.1;
     let (transb, ldb) = match lhs_stride {
-        [.., m_stride, 1] | [m_stride, 1] if *m_stride == m => {
+        [.., m_stride, 1] | [m_stride, 1] if *m_stride == k => {
             (sys::cublasOperation_t::CUBLAS_OP_N, k)
         }
-        [.., 1, m_stride] | [1, m_stride] if *m_stride == m => {
+        [.., 1, m_stride] | [1, m_stride] if *m_stride == k => {
             (sys::cublasOperation_t::CUBLAS_OP_T, m)
         }
         // Todo: return an non-contiguous error.
@@ -303,3 +309,36 @@ mod test {
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }
 }
+
+/*
+
+       x = [
+           [ a, b, c],
+           [ d, e, f],
+           ];
+
+
+
+
+   shape = [ 2, 3 ]
+   stride = [ 3, 1 ]
+   mem = [a, b, c, d, e, f]
+
+   0*3 + 2*1 = 2
+   1*3 + 1*1 = 4
+
+
+   x' = [
+           [ a, d],
+           [ b, e],
+           [ c, f],
+       ]
+
+      shape = [3, 2]
+      stride = [1, 3]
+      mem = [a, b, c, d, e, f]
+
+       0*1 + 1*3 = 3
+       1*1 + 0*3 = 1
+       1*1 + 1*3 = 4
+*/

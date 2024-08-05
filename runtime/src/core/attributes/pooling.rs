@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use log::warn;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
@@ -37,7 +38,9 @@ impl MaxPoolAttributes {
         }
 
         if attrs.get("dilations").is_some() {
-            return Err(Error::UnsupportedAttribute);
+            // Todo: how do we add support for this?
+            warn!("unsupported attributes");
+            // return Err(Error::UnsupportedAttribute);
         }
 
         if let Some(attr) = attrs.get("pads") {

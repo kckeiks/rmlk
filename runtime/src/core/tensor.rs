@@ -74,6 +74,7 @@ impl<T> Tensor<T> {
         let dims = self.shape.len();
         let mut stride = vec![0usize; dims];
         utils::calculate_stride(self.shape.as_slice(), &mut stride.as_mut_slice());
+        self.stride = stride;
     }
 
     pub fn stride(&self) -> &Vec<usize> {

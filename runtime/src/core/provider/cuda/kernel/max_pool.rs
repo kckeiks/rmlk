@@ -4,6 +4,7 @@ use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use crate::core::utils;
 use cudarc::driver::CudaDevice;
+use log::debug;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -36,6 +37,19 @@ impl MaxPoolKernel {
 
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
+
+        println!(
+            "x_shape={x_shape:?},\
+            x_stride={x_stride:?},\
+            kernel_shape={:?},\
+            pads={:?},\
+            strides={:?}\
+            y_shape={y_shape:?}\
+            y_stride={y_stride:?}",
+            attrs.kernel_shape(),
+            attrs.pads(),
+            attrs.strides()
+        );
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x

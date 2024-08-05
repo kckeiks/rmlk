@@ -18,9 +18,10 @@ impl GemmKernel {
 
     pub fn compute(self, ctx: &mut Context<CudaData>) -> Result<()> {
         let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(0)?;
+        let rhs = ctx.get_input(1)?;
 
         let attrs = GemmAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
+
         let op = GemmOp::new(
             lhs.shape(),
             lhs.stride(),
@@ -30,6 +31,23 @@ impl GemmKernel {
             attrs.trans_b(),
         );
         let output_size = op.calculate_output_shape().iter().product();
+
+        println!(
+            "lhs_dtype={:?},\
+            lhs_shape={:?},\
+            lhs_stride={:?},\
+            rhs_shape={:?},\
+            rhs_stride={:?},\
+            trans_a={:?},\
+            trans_b={:?}",
+            lhs.dtype(),
+            lhs.shape(),
+            lhs.stride(),
+            rhs.shape(),
+            rhs.stride(),
+            attrs.trans_a(),
+            attrs.trans_b(),
+        );
 
         if matches!(lhs.dtype(), DataType::Float) {
             let lhs_data = lhs
@@ -48,7 +66,7 @@ impl GemmKernel {
 
             let config = op
                 .strided_batch_config((attrs.alpha(), attrs.beta()))
-                .map_err(|_| Error::ComputingPlanFailed)?;
+                .unwrap();
 
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
                 .map_err(|_| Error::ComputationFailed)?;

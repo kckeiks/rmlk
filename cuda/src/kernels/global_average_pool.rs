@@ -21,7 +21,7 @@ pub fn compute_output_shape<T: Num + Copy + AddAssign>(
     }
 
     for i in 0..2 {
-        y_shape[i] = x_shape[1];
+        y_shape[i] = x_shape[i];
     }
 
     // For reference, see https://github.com/onnx/onnx/blob/main/docs/Operators.md#outputs-59.
@@ -53,7 +53,7 @@ where
     let pads = x_shape[2..].iter().map(|_| 0).collect::<Box<[i32]>>();
     let strides = x_shape[2..].iter().map(|_| 1).collect::<Box<[i32]>>();
 
-    debug!(
+    println!(
         "x_shape={x_shape:?},\
         kernel_shape={kernel_shape:?},\
         pads={pads:?},\
