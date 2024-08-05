@@ -1,21 +1,21 @@
-use crate::core::error::{Error, Result};
-use crate::core::kernel::Kernel;
-use crate::core::ops::flatten::FlattenOp;
-use crate::core::provider::cuda::activation::ActivationKernel;
-use crate::core::provider::cuda::conv::ConvKernel;
-use crate::core::provider::cuda::data::CudaData;
-use crate::core::provider::cuda::gemm::GemmKernel;
-use crate::core::provider::cuda::global_average_pool::GlobalAveragePoolKernel;
-use crate::core::provider::cuda::kernel::add::AddKernel;
-use crate::core::provider::cuda::kernel::CudaKernel;
-use crate::core::provider::cuda::max_pool::MaxPoolKernel;
-use crate::core::provider::ExecutionProvider;
-use crate::core::tensor;
-use crate::core::tensor::Tensor;
+use crate::core::{Error, Result};
+
+use crate::core::ExecutionProvider;
+use crate::core::Kernel;
+use crate::core::Tensor;
+use crate::ops::flatten::FlattenOp;
+use crate::provider::cuda::activation::ActivationKernel;
+use crate::provider::cuda::conv::ConvKernel;
+use crate::provider::cuda::data::CudaData;
+use crate::provider::cuda::gemm::GemmKernel;
+use crate::provider::cuda::global_average_pool::GlobalAveragePoolKernel;
+use crate::provider::cuda::kernel::add::AddKernel;
+use crate::provider::cuda::max_pool::MaxPoolKernel;
+use crate::provider::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct CudaProvider {
@@ -60,7 +60,7 @@ impl ExecutionProvider for CudaProvider {
     fn allocate_execution_state(
         &mut self,
         graph: &Graph,
-        plan: &[usize],
+        _plan: &[usize],
     ) -> Result<(
         HashMap<usize, usize>,
         Box<[Option<Tensor<<Self::Kernel as Kernel>::Data>>]>,

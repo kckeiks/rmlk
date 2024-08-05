@@ -1,11 +1,11 @@
-use crate::core::error::{Error, Result};
+use crate::core::{Error, Result};
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
 pub struct ConvAttributes {
     dilations: Box<[i32]>,
     group: i32,
-    kernel_shape: Option<Box<[i32]>>,
+    _kernel_shape: Option<Box<[i32]>>,
     pads: Box<[i32]>,
     strides: Box<[i32]>,
     kernel_dims: usize,
@@ -63,7 +63,7 @@ impl ConvAttributes {
         Ok(Self {
             dilations: dilations.unwrap_or_else(|| vec![1; kernel_dims].into_boxed_slice()),
             group: group.unwrap_or(1),
-            kernel_shape,
+            _kernel_shape: kernel_shape,
             pads: pads.unwrap_or_else(|| vec![0; kernel_dims].into_boxed_slice()),
             strides: strides.unwrap_or_else(|| vec![1; kernel_dims].into_boxed_slice()),
             kernel_dims,
@@ -87,7 +87,7 @@ impl ConvAttributes {
         self.group
     }
 
-    pub fn kernel_shape(&self) -> Option<&Box<[i32]>> {
-        self.kernel_shape.as_ref()
+    pub fn _kernel_shape(&self) -> Option<&Box<[i32]>> {
+        self._kernel_shape.as_ref()
     }
 }

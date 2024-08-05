@@ -1,12 +1,7 @@
 use crate::core::session_state::SessionState;
 use crate::core::tensor::Tensor;
 use rmlk_graph::Node;
-use std::collections::HashMap;
 use std::sync::Arc;
-
-pub struct NodeIdToValueMap<T> {
-    inner: HashMap<usize, Tensor<T>>,
-}
 
 /// The execution context.
 ///
@@ -80,11 +75,11 @@ impl<T> ExecutionState<T> {
         self.node_tensors.get(node_index).copied()
     }
 
-    pub fn get_tensors(&self) -> &[Option<Tensor<T>>] {
+    pub fn _get_tensors(&self) -> &[Option<Tensor<T>>] {
         self.all_tensors.as_ref()
     }
 
-    pub fn get_node_tensors(&self) -> &[usize] {
+    pub fn _get_node_tensors(&self) -> &[usize] {
         self.node_tensors.as_ref()
     }
 }

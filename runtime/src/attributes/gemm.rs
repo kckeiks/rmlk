@@ -1,4 +1,4 @@
-use crate::core::error::{Error, Result};
+use crate::core::{Error, Result};
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 

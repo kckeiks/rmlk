@@ -1,5 +1,5 @@
-use crate::core::context::Context;
-use crate::core::error::{Error, Result};
+use crate::core::Context;
+use crate::core::{Error, Result};
 
 pub struct FlattenOp(());
 

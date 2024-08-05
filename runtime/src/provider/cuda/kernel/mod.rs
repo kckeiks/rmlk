@@ -5,17 +5,17 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 
-use crate::core::context::Context;
-use crate::core::error::Result;
-use crate::core::kernel::Kernel;
-use crate::core::ops::flatten::FlattenOp;
-use crate::core::provider::cuda::data::CudaData;
-use crate::core::provider::cuda::kernel::activation::ActivationKernel;
-use crate::core::provider::cuda::kernel::add::AddKernel;
-use crate::core::provider::cuda::kernel::conv::ConvKernel;
-use crate::core::provider::cuda::kernel::gemm::GemmKernel;
-use crate::core::provider::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
-use crate::core::provider::cuda::kernel::max_pool::MaxPoolKernel;
+use crate::core::Context;
+use crate::core::Kernel;
+use crate::core::Result;
+use crate::ops::flatten::FlattenOp;
+use crate::provider::cuda::data::CudaData;
+use crate::provider::cuda::kernel::activation::ActivationKernel;
+use crate::provider::cuda::kernel::add::AddKernel;
+use crate::provider::cuda::kernel::conv::ConvKernel;
+use crate::provider::cuda::kernel::gemm::GemmKernel;
+use crate::provider::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
+use crate::provider::cuda::kernel::max_pool::MaxPoolKernel;
 
 pub enum CudaKernel {
     Add(AddKernel),

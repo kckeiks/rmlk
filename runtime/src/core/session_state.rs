@@ -3,7 +3,7 @@ use rmlk_graph::Graph;
 use std::sync::Arc;
 
 pub struct SessionState {
-    plan: Box<[usize]>,
+    _plan: Box<[usize]>,
     graph: Arc<Graph>,
     provider: Box<[Provider]>,
 }
@@ -11,7 +11,7 @@ pub struct SessionState {
 impl SessionState {
     pub fn new(plan: Box<[usize]>, graph: Graph, provider: Box<[Provider]>) -> Self {
         Self {
-            plan,
+            _plan: plan,
             provider,
             graph: Arc::new(graph),
         }
@@ -21,8 +21,8 @@ impl SessionState {
         self.provider.iter()
     }
 
-    pub fn plan(&self) -> impl Iterator<Item = usize> + '_ {
-        self.plan.iter().copied()
+    pub fn _plan(&self) -> impl Iterator<Item = usize> + '_ {
+        self._plan.iter().copied()
     }
 
     pub fn graph(&self) -> &Arc<Graph> {

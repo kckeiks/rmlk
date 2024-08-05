@@ -1,9 +1,6 @@
-pub mod cuda;
-
-use crate::core::error::Result;
 use crate::core::kernel::Kernel;
 use crate::core::tensor::Tensor;
-use cuda::CudaProvider;
+use crate::provider::cuda::CudaProvider;
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
@@ -14,12 +11,12 @@ pub trait ExecutionProvider {
         &mut self,
         graph: &Graph,
         plan: &[usize],
-    ) -> Result<(
+    ) -> crate::Result<(
         HashMap<usize, usize>,
         Box<[Option<Tensor<<Self::Kernel as Kernel>::Data>>]>,
         Box<[usize]>,
     )>;
-    fn get_kernel(&self, op: Op, dtype: DataType) -> Result<Self::Kernel>;
+    fn get_kernel(&self, op: Op, dtype: DataType) -> crate::Result<Self::Kernel>;
 }
 
 #[allow(unused)]

@@ -1,4 +1,3 @@
-use log::warn;
 use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{DataType, Graph, Op};
 

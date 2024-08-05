@@ -1,7 +1,7 @@
-use crate::core::attributes::gemm::GemmAttributes;
-use crate::core::context::Context;
-use crate::core::error::{Error, Result};
-use crate::core::provider::cuda::data::CudaData;
+use crate::attributes::gemm::GemmAttributes;
+use crate::core::Context;
+use crate::core::{Error, Result};
+use crate::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_cuda::kernels::gemm::GemmOp;
@@ -60,9 +60,7 @@ impl GemmKernel {
                 .and_then(|data| data.f32())
                 .ok_or(Error::MissingData)?;
 
-            let mut out_slice = self
-                .device
-                .alloc_zeros(output_size)?;
+            let mut out_slice = self.device.alloc_zeros(output_size)?;
 
             let config = op
                 .strided_batch_config((attrs.alpha(), attrs.beta()))

@@ -1,4 +1,3 @@
-use crate::error::Error;
 use crate::error::Result;
 use crate::ptx::BINARY_ADD;
 use cudarc::cudnn::CudnnDataType;

@@ -1,8 +1,8 @@
-use crate::core::attributes::conv::ConvAttributes;
-use crate::core::context::Context;
-use crate::core::error::{Error, Result};
-use crate::core::provider::cuda::data::CudaData;
-use crate::core::utils;
+use crate::attributes::conv::ConvAttributes;
+use crate::core::Context;
+use crate::core::{Error, Result};
+use crate::provider::cuda::data::CudaData;
+use crate::utils;
 use cudarc::driver::{CudaDevice, DeviceSlice};
 use log::trace;
 use rmlk_cuda::kernels::conv::BiasInput;

@@ -1,16 +1,18 @@
-mod attributes;
 mod context;
 mod error;
 mod execution_state;
 mod kernel;
-mod ops;
 mod provider;
 mod session;
 mod session_state;
 mod tensor;
 #[cfg(test)]
 mod test_utils;
-mod utils;
 
+pub use context::Context;
 pub use error::{Error, Result};
+pub use execution_state::ExecutionState;
+pub use kernel::Kernel;
+pub use provider::ExecutionProvider;
 pub use session::{Builder, Session};
+pub use tensor::Tensor;

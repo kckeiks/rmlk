@@ -1,6 +1,6 @@
-use crate::core::context::Context;
-use crate::core::error::{Error, Result};
-use crate::core::provider::cuda::data::CudaData;
+use crate::core::Context;
+use crate::core::{Error, Result};
+use crate::provider::cuda::data::CudaData;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::DataType;
 use std::sync::Arc;

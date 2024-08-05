@@ -1,4 +1,4 @@
-use crate::core::utils;
+use crate::utils;
 use rmlk_ir::DataType;
 
 /// Tensor.

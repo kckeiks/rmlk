@@ -1,8 +1,8 @@
-use crate::core::attributes::pooling::MaxPoolAttributes;
-use crate::core::context::Context;
-use crate::core::error::{Error, Result};
-use crate::core::provider::cuda::data::CudaData;
-use crate::core::utils;
+use crate::attributes::pooling::MaxPoolAttributes;
+use crate::core::Context;
+use crate::core::{Error, Result};
+use crate::provider::cuda::data::CudaData;
+use crate::utils;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_ir::DataType;

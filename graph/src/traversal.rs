@@ -1,6 +1,5 @@
 use crate::graph::{GraphError, Result};
 use crate::Node;
-use bit_set::BitSet;
 use rmlk_ir::Op;
 use std::collections::HashSet;
 
@@ -16,6 +15,7 @@ pub fn compute_order(nodes: &[Node], outputs: &[usize]) -> Result<(Vec<usize>, V
     // Todo: We cannot configure the allocator in bitset.
     let mut on_path = HashSet::with_capacity(nodes.len());
 
+    // Todo: use BitSet?
     let mut already_seen = HashSet::new();
 
     for output in outputs {

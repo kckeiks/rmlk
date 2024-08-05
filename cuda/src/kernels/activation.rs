@@ -1,4 +1,3 @@
-use crate::error::Error;
 use crate::error::Result;
 use cudarc::cudnn::{sys, ActivationForward, Cudnn, CudnnDataType};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
