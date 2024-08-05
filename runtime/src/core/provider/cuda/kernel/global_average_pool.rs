@@ -25,7 +25,7 @@ impl GlobalAveragePoolKernel {
             &x_shape,
             y_shape.as_mut_slice(),
         )
-        .unwrap();
+        .map_err(|_| Error::ComputationFailed)?;
 
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
@@ -38,8 +38,7 @@ impl GlobalAveragePoolKernel {
 
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-                .unwrap();
+                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())?;
 
             rmlk_cuda::kernels::global_average_pool::compute::<f32>(
                 self.device,
@@ -58,7 +57,7 @@ impl GlobalAveragePoolKernel {
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);
         } else {
-            todo!()
+            return Err(Error::UnsupportedDataType);
         }
 
         Ok(())

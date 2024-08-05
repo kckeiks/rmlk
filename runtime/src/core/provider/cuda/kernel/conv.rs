@@ -3,7 +3,8 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use crate::core::utils;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::{CudaDevice, DeviceSlice};
+use log::trace;
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_ir::DataType;
 use std::sync::Arc;
@@ -48,7 +49,8 @@ impl ConvKernel {
             attrs.dilations(),
             &mut y_shape,
         )
-        .unwrap();
+        .map_err(|_| Error::ComputationFailed)?;
+
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
 
@@ -56,21 +58,40 @@ impl ConvKernel {
             let x_data = x
                 .data()
                 .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)
-                .unwrap();
+                .ok_or(Error::MissingData)?;
             let w_data = w
                 .data()
                 .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)
-                .unwrap();
+                .ok_or(Error::MissingData)?;
 
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-                .unwrap();
+                .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())?;
 
             match ctx.get_input(2).ok() {
                 None => {
+                    trace!(
+                        "x_data_len={:?},\
+                        x_shape={x_shape:?},\
+                        x_stride={x_stride:?},\
+                        w_data_len={:?},\
+                        w_shape={w_shape:?},\
+                        pads={:?},\
+                        strides={:?},\
+                        dilations={:?},\
+                        group={:?},\
+                        y_data_len={:?},\
+                        y_shape={y_shape:?},\
+                        y_stride={y_stride:?}",
+                        x_data.len(),
+                        w_data.len(),
+                        attrs.pads(),
+                        attrs.strides(),
+                        attrs.dilations(),
+                        attrs.group(),
+                        y_data.len(),
+                    );
+
                     rmlk_cuda::kernels::conv::compute::<f32>(
                         self.device,
                         (1.0, 0.0),
@@ -92,27 +113,40 @@ impl ConvKernel {
                 }
                 Some(bias) => {
                     let mut bias_shape = vec![1i32; x_shape.len()];
+                    // Todo: Urgent. We need to make this generic.
                     bias_shape[1] = bias.shape()[0] as i32;
-
-                    // let bias_shape = bias
-                    //     .shape()
-                    //     .iter()
-                    //     .map(|d| *d as i32)
-                    //     .collect::<Box<[i32]>>();
 
                     let mut bias_stride = vec![0i32; x_shape.len()];
                     utils::calculate_stride(&bias_shape, &mut bias_stride);
-
-                    // let bias_stride = bias
-                    //     .stride()
-                    //     .iter()
-                    //     .map(|d| *d as i32)
-                    //     .collect::<Box<[i32]>>();
 
                     let bias_data = bias
                         .data()
                         .and_then(|data| data.f32())
                         .ok_or(Error::MissingData)?;
+
+                    trace!(
+                        "x_data_len={:?},\
+                        x_shape={x_shape:?},\
+                        x_stride={x_stride:?},\
+                        w_data_len={:?},\
+                        w_shape={w_shape:?},\
+                        pads={:?},\
+                        strides={:?},\
+                        dilations={:?},\
+                        group={:?},\
+                        y_data_len={:?},\
+                        y_shape={y_shape:?},\
+                        y_stride={y_stride:?}\
+                        bias_shape={bias_shape:?},\
+                        bias_stride={bias_stride:?}",
+                        x_data.len(),
+                        w_data.len(),
+                        attrs.pads(),
+                        attrs.strides(),
+                        attrs.dilations(),
+                        attrs.group(),
+                        y_data.len(),
+                    );
 
                     let bias = BiasInput {
                         data: bias_data,
@@ -141,12 +175,12 @@ impl ConvKernel {
                 }
             }
 
-            let output = ctx.get_output_mut(0).unwrap();
+            let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);
         } else {
-            todo!()
+            return Err(Error::UnsupportedDataType);
         }
 
         Ok(())

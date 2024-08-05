@@ -2,7 +2,7 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
-use log::debug;
+use log::trace;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -20,18 +20,15 @@ impl ActivationKernel {
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
+        trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
+
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x
                 .data()
                 .and_then(|data| data.f32())
                 .ok_or(Error::MissingData)?;
 
-            let mut y_data = self
-                .device
-                .alloc_zeros(x.shape().iter().product())
-                .map_err(|_| Error::MissingData)?;
-
-            println!("x_shape={x_shape:?},x_stride={x_stride:?}");
+            let mut y_data = self.device.alloc_zeros(x.shape().iter().product())?;
 
             rmlk_cuda::kernels::activation::compute(
                 self.device,
@@ -49,7 +46,7 @@ impl ActivationKernel {
             output._reshape(output_shape);
             output.set_dtype(DataType::Float);
         } else {
-            todo!()
+            return Err(Error::UnsupportedDataType);
         }
 
         Ok(())

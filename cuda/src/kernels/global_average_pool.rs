@@ -3,7 +3,7 @@ use crate::error::Result;
 use cudarc::cudnn;
 use cudarc::cudnn::{CudnnDataType, PoolingForward};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
-use log::debug;
+use log::trace;
 use num_traits::Num;
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ pub fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let cudnn = cudnn::Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
+    let cudnn = cudnn::Cudnn::new(device.clone())?;
 
     debug_assert!(x_shape.len() == 4 || x_shape.len() == 5);
 
@@ -53,7 +53,7 @@ where
     let pads = x_shape[2..].iter().map(|_| 0).collect::<Box<[i32]>>();
     let strides = x_shape[2..].iter().map(|_| 1).collect::<Box<[i32]>>();
 
-    println!(
+    trace!(
         "x_shape={x_shape:?},\
         kernel_shape={kernel_shape:?},\
         pads={pads:?},\
@@ -62,24 +62,17 @@ where
         out_stride={y_stride:?}"
     );
 
-    let x_desc = cudnn
-        .create_nd_tensor::<T>(x_shape, x_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
-    let pooling = cudnn
-        .create_poolingnd::<T>(
-            &kernel_shape,
-            &pads,
-            &strides,
-            cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
-            cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-        )
-        .map_err(|_| Error::CudnnInternal)
-        .unwrap();
+    let pooling = cudnn.create_poolingnd::<T>(
+        &kernel_shape,
+        &pads,
+        &strides,
+        cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
+        cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+    )?;
 
-    let out_desc = cudnn
-        .create_nd_tensor(y_shape, y_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let out_desc = cudnn.create_nd_tensor(y_shape, y_stride)?;
 
     let forward_f = PoolingForward {
         pooling: &pooling,
@@ -87,10 +80,7 @@ where
         y: &out_desc,
     };
 
-    forward_f
-        .launch((alpha, beta), x_data, y_data)
-        .map_err(|_| Error::CudnnInternal)
-        .unwrap();
+    forward_f.launch((alpha, beta), x_data, y_data)?;
 
     Ok(())
 }

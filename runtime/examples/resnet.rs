@@ -63,9 +63,7 @@ fn main() {
         .map(|(i, v)| (v, CLASSES[i]))
         .collect::<Vec<_>>();
     println!("{:?}", output);
-
 }
-
 
 pub const CLASSES: [&str; 1000] = [
     "tench, Tinca tinca",

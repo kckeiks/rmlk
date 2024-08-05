@@ -3,7 +3,7 @@ use crate::error::Result;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
-use log::debug;
+use log::trace;
 use std::sync::Arc;
 
 pub struct GemmOp {
@@ -40,9 +40,6 @@ impl GemmOp {
             }
         };
 
-        // let m = lhs_shape[lhs_shape.len() - 2];
-        // let k = lhs_shape[lhs_shape.len() - 1];
-        // let n = rhs_shape[rhs_shape.len() - 1];
         let n = match trans_b {
             true => rhs_shape[rhs_shape.len() - 1],
             false => rhs_shape[rhs_shape.len() - 2],
@@ -72,16 +69,14 @@ impl GemmOp {
             ),
         };
 
-        println!(
-            "lhs_shape={:?},\
-                lhs_stride={:?},\
-                rhs_shape={:?},\
-                rhs_stride={:?}\
-                m={m:?},\
-                k={k:?},\
-                n={n:?},\
-                ",
-            lhs_shape, lhs_stride, rhs_shape, rhs_stride,
+        trace!(
+            "lhs_shape={lhs_shape:?},\
+             lhs_stride={lhs_stride:?},\
+             rhs_shape={rhs_shape:?},\
+             rhs_stride={rhs_stride:?}\
+             m={m:?},\
+             k={k:?},\
+             n={n:?}",
         );
 
         Self {
@@ -121,7 +116,7 @@ impl GemmOp {
         out: &mut CudaSlice<f32>,
         config: StridedBatchedConfig<f32>,
     ) -> Result<()> {
-        let cublas = CudaBlas::new(device).unwrap();
+        let cublas = CudaBlas::new(device)?;
 
         unsafe {
             gemm_stride_batched_f32(
@@ -155,7 +150,7 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, k)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(Error::Unknown),
+        _ => return Err(Error::InvalidInputShapes),
     };
 
     let lhs_stride = lhs_layout.1;
@@ -167,7 +162,7 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, m)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(Error::Unknown),
+        _ => return Err(Error::InvalidInputShapes),
     };
 
     let gemm = GemmConfig {
@@ -227,7 +222,7 @@ pub unsafe fn gemm_stride_batched_f32(
         sys::cublasComputeType_t::CUBLAS_COMPUTE_32F,
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
-    .map_err(|_| Error::Unknown)
+    .map_err(Into::into)
 }
 
 pub unsafe fn _gemm_stride_batched_f16(
@@ -265,7 +260,7 @@ pub unsafe fn _gemm_stride_batched_f16(
         sys::cublasComputeType_t::CUBLAS_COMPUTE_16F,
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
-    .map_err(|_| Error::Unknown)
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

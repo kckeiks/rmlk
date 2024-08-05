@@ -15,23 +15,17 @@ pub fn compute<T: CudnnDataType>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let cudnn = Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
+    let cudnn = Cudnn::new(device.clone())?;
 
-    let x_desc = cudnn
-        .create_nd_tensor::<T>(x_shape, x_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
-    let y_desc = cudnn
-        .create_nd_tensor::<T>(x_shape, x_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let y_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
-    let activation_desc = cudnn
-        .create_activation::<T>(
-            sys::cudnnActivationMode_t::CUDNN_ACTIVATION_RELU,
-            sys::cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
-            f64::MAX,
-        )
-        .map_err(|_| Error::CudnnInternal)?;
+    let activation_desc = cudnn.create_activation::<T>(
+        sys::cudnnActivationMode_t::CUDNN_ACTIVATION_RELU,
+        sys::cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
+        f64::MAX,
+    )?;
 
     let op = ActivationForward {
         act: &activation_desc,
@@ -39,8 +33,7 @@ where
         y: &y_desc,
     };
 
-    op.launch((alpha, beta), x_data, y_data)
-        .map_err(|_| Error::CudnnInternal)?;
+    op.launch((alpha, beta), x_data, y_data)?;
 
     Ok(())
 }

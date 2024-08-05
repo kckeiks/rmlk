@@ -33,11 +33,7 @@ impl AddKernel {
                 .and_then(|data| data.f32())
                 .ok_or(Error::MissingData)?;
 
-            let mut out_slice = unsafe {
-                self.device
-                    .alloc::<f32>(elem_count)
-                    .map_err(|_| Error::AllocationFailed)?
-            };
+            let mut out_slice = unsafe { self.device.alloc::<f32>(elem_count)? };
 
             rmlk_cuda::kernels::add::compute::<f32>(
                 self.device,

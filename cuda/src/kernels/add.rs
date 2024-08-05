@@ -36,9 +36,7 @@ where
     info.extend(lhs_stride);
     info.extend(rhs_stride);
 
-    let info = device
-        .htod_copy(info.as_slice().to_vec())
-        .map_err(|_| Error::Unknown)?;
+    let info = device.htod_copy(info.as_slice().to_vec())?;
 
     let elem_count: usize = lhs_shape.iter().product();
     let num_threads = 128;
@@ -59,7 +57,7 @@ where
         out_data,
     );
 
-    unsafe { func.launch(config, params).map_err(|_| Error::Executor)? };
+    unsafe { func.launch(config, params)? };
 
     Ok(())
 }

@@ -3,6 +3,7 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
+use log::trace;
 use rmlk_cuda::kernels::gemm::GemmOp;
 use rmlk_ir::DataType;
 use std::sync::Arc;
@@ -32,7 +33,7 @@ impl GemmKernel {
         );
         let output_size = op.calculate_output_shape().iter().product();
 
-        println!(
+        trace!(
             "lhs_dtype={:?},\
             lhs_shape={:?},\
             lhs_stride={:?},\
@@ -61,12 +62,11 @@ impl GemmKernel {
 
             let mut out_slice = self
                 .device
-                .alloc_zeros(output_size)
-                .map_err(|_| Error::AllocationFailed)?;
+                .alloc_zeros(output_size)?;
 
             let config = op
                 .strided_batch_config((attrs.alpha(), attrs.beta()))
-                .unwrap();
+                .map_err(|_| Error::ComputationFailed)?;
 
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
                 .map_err(|_| Error::ComputationFailed)?;

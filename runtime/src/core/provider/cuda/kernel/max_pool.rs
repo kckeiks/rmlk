@@ -4,7 +4,7 @@ use crate::core::error::{Error, Result};
 use crate::core::provider::cuda::data::CudaData;
 use crate::core::utils;
 use cudarc::driver::CudaDevice;
-use log::debug;
+use log::trace;
 use rmlk_ir::DataType;
 use std::sync::Arc;
 
@@ -33,12 +33,12 @@ impl MaxPoolKernel {
             &mut y_shape,
             false,
         )
-        .unwrap();
+        .map_err(|_| Error::ComputationFailed)?;
 
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
 
-        println!(
+        trace!(
             "x_shape={x_shape:?},\
             x_stride={x_stride:?},\
             kernel_shape={:?},\
@@ -59,8 +59,7 @@ impl MaxPoolKernel {
 
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-                .map_err(|_| Error::AllocationFailed)?;
+                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())?;
 
             rmlk_cuda::kernels::max_pool::compute::<f32>(
                 self.device,

@@ -89,27 +89,20 @@ pub fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let cudnn = Cudnn::new(device.clone()).map_err(|_| Error::CudnnInternal)?;
+    let cudnn = Cudnn::new(device.clone())?;
 
-    let x_desc = cudnn
-        .create_nd_tensor::<T>(&x_shape, &x_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let x_desc = cudnn.create_nd_tensor::<T>(&x_shape, &x_stride)?;
 
-    let pooling = cudnn
-        .create_poolingnd::<T>(
-            kernel_shape,
-            // Todo: Let's preprocess pads.
-            pads,
-            strides,
-            cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_MAX,
-            cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-        )
-        .map_err(|_| Error::CudnnInternal)
-        .unwrap();
+    let pooling = cudnn.create_poolingnd::<T>(
+        kernel_shape,
+        // Todo: Let's preprocess pads.
+        pads,
+        strides,
+        cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_MAX,
+        cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+    )?;
 
-    let out_desc = cudnn
-        .create_nd_tensor(y_shape, y_stride)
-        .map_err(|_| Error::CudnnInternal)?;
+    let out_desc = cudnn.create_nd_tensor(y_shape, y_stride)?;
 
     let forward_f = PoolingForward {
         pooling: &pooling,
@@ -119,7 +112,7 @@ where
 
     forward_f
         .launch((alpha, beta), x_data, y_data)
-        .map_err(|_| Error::CudnnInternal)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]
