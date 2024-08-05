@@ -158,8 +158,6 @@ impl ExecutionProvider for CudaProvider {
             }
         }
 
-        println!("index_to_tensor_index={index_to_tensor_index:?}");
-        println!("node_tensors={node_tensors:?}");
         Ok((
             index_to_tensor_index,
             tensors.into_boxed_slice(),

@@ -6,6 +6,7 @@ use crate::core::provider::{ExecutionProvider, Provider};
 use crate::core::session_state::SessionState;
 use crate::provider::cuda::{CudaExecutionState, CudaProvider};
 use cudarc::driver::CudaDevice;
+use log::trace;
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Model, Op};
 use std::collections::HashMap;
@@ -33,10 +34,7 @@ impl Builder {
         // are required for computing the outputs.
         let (_, plan) =
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
-                .map_err(|e| {
-                    println!("{e:?}");
-                    Error::ComputingPlanFailed
-                })?;
+                .map_err(|_| Error::ComputingPlanFailed)?;
 
         let mut provider = CudaProvider::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
 
@@ -144,8 +142,8 @@ impl Session {
                         let mut ctx =
                             Context::new(&mut self.execution_state, &self.node_tensor_index_map, i)
                                 .unwrap();
-                        println!(
-                            "-- {i} {:?} {:?} inputs={:?}",
+                        trace!(
+                            "{i} {:?} {:?} inputs={:?}",
                             node.op(),
                             node.def().node.as_ref().unwrap().name,
                             node.inputs()

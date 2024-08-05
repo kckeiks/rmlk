@@ -30,29 +30,21 @@ fn main() {
         input[[0, 2, y, x]] = (b as f32) / 255.;
     }
 
+    // Read onnx file from disk.
     let model = fs::read("/home/mmeier/Downloads/resnet34.onnx").expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    // println!(
-    //     "{:?}",
-    //     &model_proto.graph.as_ref().unwrap().initializer[0]
-    //         .raw_data
-    //         .as_ref()
-    //         .unwrap()
-    //         .len()
-    // );
+
+    // Convert onnx graph to a rmlk IR graph.
     let rmlk_model: Model = model_proto.try_into().unwrap();
     let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap()).unwrap();
 
-    // for (id, node) in graph.nodes().enumerate() {
-    //     println!("id={id}, node={:?}", node.op());
-    // }
-
+    // Build engine graph.
     let builder = Builder::new(graph);
     let mut session = builder.build().unwrap();
-    let mut output = session.run(input.into_raw_vec()).unwrap();
-    println!("output len: {:?}", output[0].len());
 
+    // Run inference.
+    let mut output = session.run(input.into_raw_vec()).unwrap();
     let mut output = output.remove(0).into_iter().enumerate().collect::<Vec<_>>();
     output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());
 

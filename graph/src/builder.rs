@@ -1,5 +1,6 @@
 use crate::graph::{Graph, GraphError};
 use crate::node::Node;
+use log::trace;
 use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, GraphError>;
@@ -76,8 +77,11 @@ impl GraphBuilder {
         for (id, n) in self.nodes.iter().enumerate() {
             let inputs = n.inputs();
             let outputs = n.outputs();
-            println!(
-                "{id} {:?} inputs={inputs:?},outputs={outputs:?}",
+            trace!(
+                "node_id={id},\
+                node_name={:?},\
+                inputs={inputs:?},\
+                outputs={outputs:?}",
                 n.def().name
             );
         }

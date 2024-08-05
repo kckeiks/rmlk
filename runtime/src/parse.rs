@@ -33,8 +33,7 @@ pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
                 name: value_info.name.clone(),
             },
         );
-        let node_id = builder.add_input(node).expect("TODO");
-        println!("{node_id} {:?}", value_info.name);
+        let node_id = builder.add_input(node).unwrap();
 
         if let Some(old_id) = builder.insert_name_to_id(value_info.name, node_id) {
             // Todo: Rename name.
