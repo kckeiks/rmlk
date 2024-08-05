@@ -10,6 +10,7 @@ use crate::core::provider::cuda::kernel::add::AddKernel;
 use crate::core::provider::cuda::kernel::CudaKernel;
 use crate::core::provider::cuda::max_pool::MaxPoolKernel;
 use crate::core::provider::ExecutionProvider;
+use crate::core::tensor;
 use crate::core::tensor::Tensor;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_graph::Graph;
@@ -62,7 +63,7 @@ impl ExecutionProvider for CudaProvider {
         plan: &[usize],
     ) -> Result<(
         HashMap<usize, usize>,
-        Box<[Tensor<<Self::Kernel as Kernel>::Data>]>,
+        Box<[Option<Tensor<<Self::Kernel as Kernel>::Data>>]>,
         Box<[usize]>,
     )> {
         // Todo: We might need the max id of the graph instead.
@@ -71,7 +72,7 @@ impl ExecutionProvider for CudaProvider {
 
         let mut tensors = Vec::with_capacity(node_count);
         for _ in 0..node_count {
-            tensors.push(Tensor::new(DataType::Undefined));
+            tensors.push(None);
         }
 
         let mut node_tensors = Vec::with_capacity(3 * graph.nodes().count());
@@ -88,7 +89,7 @@ impl ExecutionProvider for CudaProvider {
 
             let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
             tensor.init(CudaData::F32(ptr));
-            tensors[*node_id] = tensor;
+            tensors[*node_id].replace(tensor);
         }
 
         for node_id in graph.inputs() {
@@ -100,7 +101,7 @@ impl ExecutionProvider for CudaProvider {
                     } else {
                         Tensor::new_with_shape(def.dtype, def.shape.clone())
                     };
-                    tensors[node_id] = tensor;
+                    tensors[node_id].replace(tensor);
                 }
                 None => return Err(Error::MissingNode),
             }
@@ -115,7 +116,7 @@ impl ExecutionProvider for CudaProvider {
                     } else {
                         Tensor::new_with_shape(def.dtype, def.shape.clone())
                     };
-                    tensors[node_id] = tensor;
+                    tensors[node_id].replace(tensor);
                 }
                 None => return Err(Error::MissingNode),
             }
@@ -136,6 +137,8 @@ impl ExecutionProvider for CudaProvider {
             for input in node.inputs() {
                 match graph.get_node(*input) {
                     Some(_) => {
+                        debug_assert!(tensors.get(*input).map(Option::as_ref).flatten().is_some());
+
                         node_tensors.push(*input);
                     }
                     None => return Err(Error::MissingNode),
@@ -145,6 +148,9 @@ impl ExecutionProvider for CudaProvider {
             for output in node.outputs() {
                 match graph.get_node(*output) {
                     Some(_) => {
+                        if tensors.get(*output).ok_or(Error::MissingNode)?.is_none() {
+                            tensors[*output].replace(Tensor::new(DataType::Undefined));
+                        }
                         node_tensors.push(*output);
                     }
                     None => return Err(Error::MissingNode),

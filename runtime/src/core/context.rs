@@ -78,10 +78,12 @@ impl<'a, T> Context<'a, T> {
     }
 
     pub fn get_output_mut(&mut self, index: usize) -> Result<&mut Tensor<T>> {
+        println!("index={index}");
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_tensors < node_index {
             return Err(Error::ContextError);
         }
+        println!("node_index={node_index}");
 
         self.execution_state
             .get_tensor_mut(node_index)

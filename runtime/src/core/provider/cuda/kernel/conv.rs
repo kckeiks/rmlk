@@ -141,7 +141,7 @@ impl ConvKernel {
                 }
             }
 
-            let output = ctx.get_output_mut(0)?;
+            let output = ctx.get_output_mut(0).unwrap();
             output.init(CudaData::F32(y_data));
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);

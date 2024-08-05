@@ -1,7 +1,12 @@
 use crate::core::session_state::SessionState;
 use crate::core::tensor::Tensor;
 use rmlk_graph::Node;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+pub struct NodeIdToValueMap<T> {
+    inner: HashMap<usize, Tensor<T>>,
+}
 
 /// The execution context.
 ///
@@ -12,7 +17,7 @@ pub struct ExecutionState<T> {
     ///
     /// This includes the inputs, outputs and
     /// intermediate values of the entire graph.
-    all_tensors: Box<[Tensor<T>]>,
+    all_tensors: Box<[Option<Tensor<T>>]>,
     /// Indices for all of a node's tensors.
     ///
     /// The order is inputs, optional inputs and outputs.
@@ -24,7 +29,7 @@ pub struct ExecutionState<T> {
 impl<T> ExecutionState<T> {
     pub fn new(
         session_state: Arc<SessionState>,
-        tensors: Box<[Tensor<T>]>,
+        tensors: Box<[Option<Tensor<T>>]>,
         node_tensors: Box<[usize]>,
     ) -> ExecutionState<T> {
         Self {
@@ -50,23 +55,32 @@ impl<T> ExecutionState<T> {
 
     pub fn get_tensor(&self, node_index: usize) -> Option<&Tensor<T>> {
         let tensor_index = self.get_tensor_index(node_index)?;
-        self.all_tensors.get(tensor_index)
+        self.all_tensors
+            .get(tensor_index)
+            .map(Option::as_ref)
+            .flatten()
     }
 
     pub fn get_tensor_mut(&mut self, node_index: usize) -> Option<&mut Tensor<T>> {
         let tensor_index = self.get_tensor_index(node_index)?;
-        self.all_tensors.get_mut(tensor_index)
+        self.all_tensors
+            .get_mut(tensor_index)
+            .map(Option::as_mut)
+            .flatten()
     }
 
     pub fn get_value(&mut self, node_index: usize) -> Option<&mut Tensor<T>> {
-        self.all_tensors.get_mut(node_index)
+        self.all_tensors
+            .get_mut(node_index)
+            .map(Option::as_mut)
+            .flatten()
     }
 
     fn get_tensor_index(&self, node_index: usize) -> Option<usize> {
         self.node_tensors.get(node_index).copied()
     }
 
-    pub fn get_tensors(&self) -> &[Tensor<T>] {
+    pub fn get_tensors(&self) -> &[Option<Tensor<T>>] {
         self.all_tensors.as_ref()
     }
 

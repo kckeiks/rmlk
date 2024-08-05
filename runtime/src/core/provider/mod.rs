@@ -16,7 +16,7 @@ pub trait ExecutionProvider {
         plan: &[usize],
     ) -> Result<(
         HashMap<usize, usize>,
-        Box<[Tensor<<Self::Kernel as Kernel>::Data>]>,
+        Box<[Option<Tensor<<Self::Kernel as Kernel>::Data>>]>,
         Box<[usize]>,
     )>;
     fn get_kernel(&self, op: Op, dtype: DataType) -> Result<Self::Kernel>;
