@@ -4,7 +4,7 @@ use crate::core::execution_state::ExecutionState;
 use crate::core::kernel::Kernel;
 use crate::core::provider::{ExecutionProvider, Provider};
 use crate::core::session_state::SessionState;
-use crate::provider::cuda::{CudaExecutionState, CudaProvider};
+use crate::providers::cuda::{CudaExecutionState, CudaProvider};
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;

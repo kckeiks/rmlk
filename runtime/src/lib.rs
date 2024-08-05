@@ -1,9 +1,8 @@
+mod attributes;
 mod core;
 mod ops;
 pub mod parse;
-mod provider;
-
-mod attributes;
+mod providers;
 #[cfg(test)]
 mod test_utils;
 mod utils;

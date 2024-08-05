@@ -1,7 +1,7 @@
 use crate::attributes::conv::ConvAttributes;
 use crate::core::Context;
 use crate::core::{Error, Result};
-use crate::provider::cuda::data::CudaData;
+use crate::providers::cuda::data::CudaData;
 use crate::utils;
 use cudarc::driver::{CudaDevice, DeviceSlice};
 use log::trace;
@@ -190,8 +190,8 @@ impl ConvKernel {
 #[cfg(test)]
 mod test {
     use crate::core::Context;
-    use crate::provider::cuda::data::CudaData;
-    use crate::provider::cuda::kernel::conv::ConvKernel;
+    use crate::providers::cuda::data::CudaData;
+    use crate::providers::cuda::kernel::conv::ConvKernel;
     use crate::test_utils;
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;

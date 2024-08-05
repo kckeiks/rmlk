@@ -1,6 +1,6 @@
 use crate::core::Context;
 use crate::core::{Error, Result};
-use crate::provider::cuda::data::CudaData;
+use crate::providers::cuda::data::CudaData;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_ir::DataType;
@@ -56,8 +56,8 @@ impl ActivationKernel {
 #[cfg(test)]
 mod test {
     use crate::core::Context;
-    use crate::provider::cuda::data::CudaData;
-    use crate::provider::cuda::kernel::activation::ActivationKernel;
+    use crate::providers::cuda::data::CudaData;
+    use crate::providers::cuda::kernel::activation::ActivationKernel;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;

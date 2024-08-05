@@ -9,13 +9,13 @@ use crate::core::Context;
 use crate::core::Kernel;
 use crate::core::Result;
 use crate::ops::flatten::FlattenOp;
-use crate::provider::cuda::data::CudaData;
-use crate::provider::cuda::kernel::activation::ActivationKernel;
-use crate::provider::cuda::kernel::add::AddKernel;
-use crate::provider::cuda::kernel::conv::ConvKernel;
-use crate::provider::cuda::kernel::gemm::GemmKernel;
-use crate::provider::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
-use crate::provider::cuda::kernel::max_pool::MaxPoolKernel;
+use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::kernel::activation::ActivationKernel;
+use crate::providers::cuda::kernel::add::AddKernel;
+use crate::providers::cuda::kernel::conv::ConvKernel;
+use crate::providers::cuda::kernel::gemm::GemmKernel;
+use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
+use crate::providers::cuda::kernel::max_pool::MaxPoolKernel;
 
 pub enum CudaKernel {
     Add(AddKernel),

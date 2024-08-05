@@ -1,6 +1,6 @@
 use crate::core::kernel::Kernel;
 use crate::core::tensor::Tensor;
-use crate::provider::cuda::CudaProvider;
+use crate::providers::cuda::CudaProvider;
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
