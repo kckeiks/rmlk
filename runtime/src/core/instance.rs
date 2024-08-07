@@ -46,7 +46,7 @@ impl Builder {
 
         Ok(ModelInstance {
             execution_state: Box::new([ExecutionState::new(instance_state.clone(), values)?]),
-            session_state: instance_state,
+            instance_state,
         })
     }
 }
@@ -56,7 +56,7 @@ impl Builder {
 /// This object represents the model instantiated in the
 /// runtime.
 pub struct ModelInstance<D: DeviceService> {
-    session_state: Arc<ModelInstanceState<D>>,
+    instance_state: Arc<ModelInstanceState<D>>,
     execution_state: Box<[ExecutionState<D>]>,
 }
 
@@ -65,15 +65,15 @@ where
     D: DeviceService,
 {
     fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
-        let mut inputs = self.session_state.graph().inputs();
+        let mut inputs = self.instance_state.graph().inputs();
 
         let provider = self
-            .session_state
+            .instance_state
             ._plan()
             .device(0)
             .expect("We always have one device");
         let input = inputs.next().ok_or(Error::MissingData)?;
-        match self.session_state.graph().get_node(input) {
+        match self.instance_state.graph().get_node(input) {
             None => Err(Error::MissingData),
             Some(_) => {
                 // Todo: Improve API for loading input values.
@@ -92,14 +92,14 @@ where
 
     fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
         let provider = self
-            .session_state
+            .instance_state
             ._plan()
             .device(0)
             .expect("We always have one device");
 
         let mut result = Vec::new();
-        for output in self.session_state.graph().outputs() {
-            match self.session_state.graph().get_node(output) {
+        for output in self.instance_state.graph().outputs() {
+            match self.instance_state.graph().get_node(output) {
                 None => return Err(Error::MissingData),
                 Some(_) => {
                     // Todo: Improve API for loading input values.
@@ -123,13 +123,13 @@ where
         self.load_input(input)?;
 
         let provider = self
-            .session_state
+            .instance_state
             ._plan()
             .device(0)
             .expect("We always have one device");
 
         // Remove allocation.
-        for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {
+        for (i, node) in self.instance_state.graph().nodes_slice().iter().enumerate() {
             // Todo: We might want to separate the load operation because at this point we don't know the type.
             if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
                 continue;
