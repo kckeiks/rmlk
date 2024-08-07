@@ -3,6 +3,10 @@ use crate::core::DeviceService;
 use rmlk_graph::Graph;
 use std::sync::Arc;
 
+/// The state of the model instance.
+///
+/// This object is used internally by the runtime to
+/// hold the state of its corresponding model instance.
 pub struct ModelInstanceState<D> {
     graph: Arc<Graph>,
     _plan: Plan<D>,

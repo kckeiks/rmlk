@@ -13,6 +13,7 @@ use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Model, Op};
 use std::sync::Arc;
 
+/// Model instance builder.
 pub struct Builder {
     graph: Graph,
 }
@@ -50,6 +51,10 @@ impl Builder {
     }
 }
 
+/// A model instance.
+///
+/// This object represents the model instantiated in the
+/// runtime.
 pub struct ModelInstance<D: DeviceService> {
     session_state: Arc<ModelInstanceState<D>>,
     execution_state: Box<[ExecutionState<D>]>,
@@ -76,7 +81,7 @@ where
                     .execution_state
                     .get_mut(0)
                     .expect("Provider is hardcoded")
-                    .get_value(input)
+                    .get_value_from_node_id_mut(input)
                     .ok_or(Error::MissingData)?;
                 tensor.init(provider.htod_float(data)?);
 
@@ -102,7 +107,7 @@ where
                         .execution_state
                         .get_mut(0)
                         .expect("Provider is hardcoded")
-                        .get_value(output)
+                        .get_value_from_node_id_mut(output)
                         .ok_or(Error::MissingData)?;
                     let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
                     let data = provider.dtoh_float(ptr)?;

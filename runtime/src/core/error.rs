@@ -2,6 +2,7 @@ use cudarc::driver::DriverError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+// Todo: Fix.
 #[derive(Debug)]
 pub enum Error {
     FailedToLoadKernel,

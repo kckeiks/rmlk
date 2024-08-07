@@ -3,6 +3,9 @@ use crate::{Error, Result};
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Op};
 
+/// Tensor values.
+///
+/// All the values for a computational graph.
 pub struct Values<T> {
     inner: Box<[Option<Tensor<T>>]>,
 }
@@ -90,11 +93,6 @@ impl<T> Values<T> {
         Ok(Values {
             inner: tensors.into_boxed_slice(),
         })
-    }
-
-    #[cfg(test)]
-    pub fn test_new(inner: Box<[Option<Tensor<T>>]>) -> Self {
-        Self { inner }
     }
 
     pub fn get(&self, id: usize) -> Option<&Tensor<T>> {

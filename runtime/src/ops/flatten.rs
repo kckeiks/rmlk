@@ -43,7 +43,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
 
     // Todo: This tensor needs to point to data in input, x.
     // This way we can avoid making a copy of the same data.
-    let x = ctx._get_input_mut(0)?;
+    let x = ctx.get_input_mut(0)?;
     let y_dtype = *x.dtype();
     let data = x._take_data().ok_or(Error::MissingData)?;
     let y = ctx.get_output_mut(0)?;
