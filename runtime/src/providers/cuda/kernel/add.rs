@@ -72,7 +72,6 @@ mod test {
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use std::collections::HashMap;
 
     #[test]
     fn test_add_f32() {
@@ -109,8 +108,7 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-        let map = HashMap::from([(1, 1), (2, 2)]);
-        let mut context = Context::new(&mut state, &map, 2).unwrap();
+        let mut context = Context::new(&mut state, 3).unwrap();
 
         let f = rmlk_cuda::load_kernel(&device, Op::Add, DataType::Float).unwrap();
         let cuda_kernel = AddKernel::new(device.clone(), f);

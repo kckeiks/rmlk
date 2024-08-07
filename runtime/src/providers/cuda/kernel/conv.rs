@@ -198,7 +198,6 @@ mod test {
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use std::collections::HashMap;
 
     #[test]
     fn test_conv_f32_2d_bias() {
@@ -253,8 +252,7 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-        let map = HashMap::from([(1, 1), (2, 2), (3, 3), (4, 4)]);
-        let mut context = Context::new(&mut state, &map, 3).unwrap();
+        let mut context = Context::new(&mut state, 4).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
@@ -323,8 +321,7 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-        let map = HashMap::from([(1, 1), (2, 2), (3, 3)]);
-        let mut context = Context::new(&mut state, &map, 2).unwrap();
+        let mut context = Context::new(&mut state, 3).unwrap();
 
         let cuda_kernel = ConvKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();

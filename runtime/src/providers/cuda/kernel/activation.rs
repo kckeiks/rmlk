@@ -64,7 +64,6 @@ mod test {
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
     use rmlk_ir::{DataType, Op};
-    use std::collections::HashMap;
 
     #[test]
     fn test_relu_f32() {
@@ -94,8 +93,7 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-        let map = HashMap::from([(1, 1)]);
-        let mut context = Context::new(&mut state, &map, 1).unwrap();
+        let mut context = Context::new(&mut state, 2).unwrap();
 
         let cuda_kernel = ActivationKernel::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();

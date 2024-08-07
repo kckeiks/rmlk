@@ -80,6 +80,21 @@ where
         })
     }
 
+    #[cfg(test)]
+    pub fn test_new(
+        values: Values<T::Data>,
+        node_values: Box<[usize]>,
+        node_to_index_map: HashMap<usize, usize>,
+        instance_state: Arc<ModelInstanceState<T>>,
+    ) -> Self {
+        Self {
+            values,
+            node_values,
+            node_to_index_map,
+            instance_state,
+        }
+    }
+
     pub fn get_node(&self, node_id: usize) -> Option<&Node> {
         self.instance_state.graph().get_node(node_id)
     }

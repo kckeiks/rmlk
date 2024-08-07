@@ -38,7 +38,7 @@ impl Builder {
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
                 .map_err(|_| Error::ComputingPlanFailed)?;
 
-        let provider = Cuda::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
+        let provider = Cuda::new(CudaDevice::new(0)?);
         let values = Values::new(&provider, &self.graph)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(plan, self.graph));

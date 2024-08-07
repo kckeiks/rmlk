@@ -21,3 +21,5 @@ pub use kernel::Kernel;
 #[cfg(test)]
 pub use plan::Plan;
 pub use tensor::Tensor;
+#[cfg(test)]
+pub use values::Values;

@@ -60,7 +60,6 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{MockProvider, TestNode, TestParams};
     use rmlk_ir::{DataType, Op};
-    use std::collections::HashMap;
 
     #[test]
     fn test_flatten_f32() {
@@ -87,8 +86,7 @@ mod test {
         };
 
         let mut state = test_utils::build_graph_and_state(MockProvider::new(), params);
-        let map = HashMap::from([(1, 1)]);
-        let mut context = Context::new(&mut state, &map, 1).unwrap();
+        let mut context = Context::new(&mut state, 2).unwrap();
 
         _compute(&mut context).unwrap();
 

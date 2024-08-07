@@ -1,7 +1,7 @@
-use crate::core::Tensor;
 use crate::core::{Context, Kernel, ModelInstanceState};
 use crate::core::{DeviceService, ExecutionState, Plan};
-use rmlk_graph::{Definition, Graph, GraphBuilder, Node};
+use crate::core::{Tensor, Values};
+use rmlk_graph::{Definition, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -53,18 +53,6 @@ impl<T> DeviceService for MockProvider<T> {
     type Data = Vec<T>;
     type Kernel = MockKernel<T>;
 
-    fn allocate_execution_state(
-        &mut self,
-        _: &Graph,
-        _: &[usize],
-    ) -> crate::Result<(
-        HashMap<usize, usize>,
-        Box<[Option<Tensor<Self::Data>>]>,
-        Box<[usize]>,
-    )> {
-        todo!()
-    }
-
     fn get_kernel(&self, _: Op, _: DataType) -> crate::Result<Self::Kernel> {
         todo!()
     }
@@ -111,13 +99,23 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
         out_node.add_attr(attr.name.clone().into_boxed_str(), attr);
     }
 
-    for input in params.inputs {
-        let input_node = Node::new(Op::NoOp, Definition::default());
+    let mut inputs = Vec::new();
+    for (index, input) in params.inputs.into_iter().enumerate() {
+        let input_node = Node::new(
+            Op::NoOp,
+            Definition {
+                shape: input.shape.clone(),
+                dtype: input.dtype,
+                node: None,
+                name: format!("{index}-input"),
+            },
+        );
         let node_id = builder.add_input(input_node).unwrap();
         out_node.add_input(node_id);
 
-        let mut tensor = Tensor::new_with_shape(input.dtype, input.shape.clone());
-        tensor.init(input.data.unwrap());
+        let tensor: Tensor<T> = Tensor::new_with_shape(input.dtype, input.shape.clone());
+        // tensor.init(input.data.clone().unwrap());
+        inputs.push((node_id, input.data.unwrap()));
 
         let current_index = all_tensors.len();
         all_tensors.push(Some(tensor));
@@ -129,6 +127,11 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
         let tensor_index = node_to_tensor_index.get(input).unwrap();
         node_tensors.push(*tensor_index);
     }
+
+    let output = Node::new(Op::NoOp, Definition::default());
+    let output_id = builder.add_node(output).unwrap();
+
+    out_node.add_output(output_id);
 
     builder.add_node(out_node).unwrap();
 
@@ -144,20 +147,22 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
     all_tensors.push(Some(out_tensor));
     node_tensors.push(current_index);
 
+    let mut values = Values::new(&provider, &graph).unwrap();
+
+    for (node_id, data) in inputs {
+        // println!("node_id={node_id}");
+        let tt = values.get_mut(node_id).unwrap();
+        tt.init(data);
+    }
+
     // Todo: finish.
-    let session_state = ModelInstanceState::new(
+    let instance_state = ModelInstanceState::new(
         // Todo: finish.
         Plan::new(Box::new([provider])),
         graph,
     );
 
-    let state = ExecutionState::new(
-        Arc::new(session_state),
-        all_tensors.into_boxed_slice(),
-        // Todo: Update.
-        node_tensors.into_boxed_slice(),
-    );
-    state
+    ExecutionState::new(Arc::new(instance_state), values).unwrap()
 }
 
 pub fn create_conv_attributes(conv_attrs: TestConvAttributes) -> Vec<Attribute> {

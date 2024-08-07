@@ -23,7 +23,13 @@ impl<T> Values<T> {
         for (node_id, ir_tensor) in graph.initializers() {
             debug_assert_eq!(graph.get_node(*node_id).map(|n| n.op()), Some(Op::Const));
 
-            let data = to_float_vec(ir_tensor.raw_data.as_ref().ok_or(Error::MissingData)?);
+            let data = match ir_tensor.float_data.is_empty() {
+                true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or(Error::MissingData)?),
+                false => {
+                    // Todo: remove allocation.
+                    ir_tensor.float_data.clone()
+                }
+            };
             let data = provider
                 .htod_float(data)
                 .map_err(|_| Error::AllocationFailed)?;
@@ -84,6 +90,11 @@ impl<T> Values<T> {
         Ok(Values {
             inner: tensors.into_boxed_slice(),
         })
+    }
+
+    #[cfg(test)]
+    pub fn test_new(inner: Box<[Option<Tensor<T>>]>) -> Self {
+        Self { inner }
     }
 
     pub fn get(&self, id: usize) -> Option<&Tensor<T>> {
