@@ -41,10 +41,10 @@ fn main() {
 
     // Build engine graph.
     let builder = Builder::new(graph);
-    let mut session = builder.build().unwrap();
+    let mut model_instance = builder.build().unwrap();
 
     // Run inference.
-    let mut output = session.run(input.into_raw_vec()).unwrap();
+    let mut output = model_instance.run(input.into_raw_vec()).unwrap();
     let mut output = output.remove(0).into_iter().enumerate().collect::<Vec<_>>();
     output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());
 

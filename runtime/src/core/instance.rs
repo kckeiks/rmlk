@@ -5,12 +5,12 @@ use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
 use crate::core::plan::Plan;
+use crate::core::values::Values;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;
 use rmlk_ir::{DataType, Model, Op};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct Builder {
@@ -33,28 +33,19 @@ impl Builder {
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         // Check for cycles and return ids of nodes that
         // are required for computing the outputs.
-        let (_, plan) =
+        // Todo: Implement plan.
+        let (_, _plan) =
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
                 .map_err(|_| Error::ComputingPlanFailed)?;
 
-        let mut provider = Cuda::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
-
-        let graph = self.graph;
-        let (node_to_tensor_set_index, tensors, node_tensors) =
-            provider.allocate_execution_state(&graph, &plan)?;
-
+        let provider = Cuda::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
+        let values = Values::new(&provider, &self.graph)?;
         let plan = Plan::new(Box::new([provider]));
-
-        let session_state = Arc::new(ModelInstanceState::new(plan, graph));
+        let instance_state = Arc::new(ModelInstanceState::new(plan, self.graph));
 
         Ok(ModelInstance {
-            execution_state: Box::new([ExecutionState::new(
-                session_state.clone(),
-                tensors,
-                node_tensors,
-            )]),
-            session_state,
-            node_tensor_index_map: node_to_tensor_set_index,
+            execution_state: Box::new([ExecutionState::new(instance_state.clone(), values)?]),
+            session_state: instance_state,
         })
     }
 }
@@ -62,7 +53,6 @@ impl Builder {
 pub struct ModelInstance<D: DeviceService> {
     session_state: Arc<ModelInstanceState<D>>,
     execution_state: Box<[ExecutionState<D>]>,
-    node_tensor_index_map: HashMap<usize, usize>,
 }
 
 impl<D> ModelInstance<D>
@@ -72,25 +62,22 @@ where
     fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
         let mut inputs = self.session_state.graph().inputs();
 
-        let provider = self.session_state._plan().device(0).unwrap();
-
+        let provider = self
+            .session_state
+            ._plan()
+            .device(0)
+            .expect("We always have one device");
         let input = inputs.next().ok_or(Error::MissingData)?;
         match self.session_state.graph().get_node(input) {
             None => Err(Error::MissingData),
             Some(_) => {
-                // let node_tensor_index = self
-                //     .node_tensor_index_map
-                //     .get(&input)
-                //     .ok_or(Error::MissingData).unwrap();
-
                 // Todo: Improve API for loading input values.
                 let tensor = self
                     .execution_state
                     .get_mut(0)
                     .expect("Provider is hardcoded")
                     .get_value(input)
-                    .ok_or(Error::MissingData)
-                    .unwrap();
+                    .ok_or(Error::MissingData)?;
                 tensor.init(provider.htod_float(data)?);
 
                 Ok(())
@@ -99,18 +86,17 @@ where
     }
 
     fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
-        let provider = self.session_state._plan().device(0).unwrap();
+        let provider = self
+            .session_state
+            ._plan()
+            .device(0)
+            .expect("We always have one device");
 
         let mut result = Vec::new();
         for output in self.session_state.graph().outputs() {
             match self.session_state.graph().get_node(output) {
                 None => return Err(Error::MissingData),
                 Some(_) => {
-                    // let node_tensor_index = self
-                    //     .node_tensor_index_map
-                    //     .get(&output)
-                    //     .ok_or(Error::MissingData)?;
-
                     // Todo: Improve API for loading input values.
                     let tensor = self
                         .execution_state
@@ -129,13 +115,16 @@ where
     }
 
     pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
-        self.load_input(input).unwrap();
+        self.load_input(input)?;
 
-        let provider = self.session_state._plan().device(0).unwrap();
+        let provider = self
+            .session_state
+            ._plan()
+            .device(0)
+            .expect("We always have one device");
 
         // Remove allocation.
         for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {
-            // let node = graph.get_node(i).ok_or(Error::MissingNode)?;
             // Todo: We might want to separate the load operation because at this point we don't know the type.
             if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
                 continue;
@@ -144,20 +133,19 @@ where
 
             let mut ctx = Context::new(
                 self.execution_state.get_mut(0).ok_or(Error::MissingData)?,
-                &self.node_tensor_index_map,
                 i,
-            )
-            .unwrap();
+            )?;
+
             trace!(
                 "{i} {:?} {:?} inputs={:?}",
                 node.op(),
                 node.def().node.as_ref().unwrap().name,
                 node.inputs()
             );
+
             kernel.compute(&mut ctx)?;
         }
 
-        Ok(self.load_output().unwrap())
-        // Ok(Vec::new())
+        self.load_output()
     }
 }

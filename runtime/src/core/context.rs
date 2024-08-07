@@ -18,13 +18,9 @@ impl<'a, D> Context<'a, D>
 where
     D: DeviceService,
 {
-    pub fn new(
-        execution_state: &'a mut ExecutionState<D>,
-        node_tensor_map: &HashMap<usize, usize>,
-        index: usize,
-    ) -> Result<Self> {
-        let node_index = *node_tensor_map
-            .get(&index)
+    pub fn new(execution_state: &'a mut ExecutionState<D>, index: usize) -> Result<Self> {
+        let node_index = execution_state
+            .get_value_index(&index)
             .ok_or(Error::MissingData)
             .unwrap();
 

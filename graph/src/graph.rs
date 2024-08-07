@@ -40,6 +40,10 @@ impl Graph {
         self.nodes.iter()
     }
 
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn nodes_slice(&self) -> &[Node] {
         self.nodes.as_slice()
     }

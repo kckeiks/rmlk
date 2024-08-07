@@ -7,6 +7,7 @@ mod instance_state;
 mod kernel;
 mod plan;
 mod tensor;
+mod values;
 
 pub use context::Context;
 pub use device_service::DeviceService;
