@@ -1,3 +1,4 @@
+// Copied from https://github.com/coreylowman/dfdx.
 #include "cuda_fp16.h"
 
 // Table showing which features are supported on which compute capability

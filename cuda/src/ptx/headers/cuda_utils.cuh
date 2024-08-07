@@ -1,3 +1,4 @@
+// Copied from https://github.com/coreylowman/dfdx.
 #include "cuda_fp16.h"
 #include "compatibility.cuh"
 

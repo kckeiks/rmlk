@@ -1,3 +1,4 @@
+// Copied from https://github.com/coreylowman/dfdx.
 #include "binary_op_macros.cuh"
 
 struct BinaryAddOp {};
