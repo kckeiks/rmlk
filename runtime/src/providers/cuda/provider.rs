@@ -1,7 +1,6 @@
 use crate::core::{Error, Result};
 
 use crate::core::ExecutionProvider;
-use crate::core::Kernel;
 use crate::core::Tensor;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
@@ -55,6 +54,7 @@ impl CudaProvider {
 }
 
 impl ExecutionProvider for CudaProvider {
+    type Data = CudaData;
     type Kernel = CudaKernel;
 
     fn allocate_execution_state(
@@ -63,7 +63,7 @@ impl ExecutionProvider for CudaProvider {
         _plan: &[usize],
     ) -> Result<(
         HashMap<usize, usize>,
-        Box<[Option<Tensor<<Self::Kernel as Kernel>::Data>>]>,
+        Box<[Option<Tensor<Self::Data>>]>,
         Box<[usize]>,
     )> {
         // Todo: We might need the max id of the graph instead.
@@ -184,6 +184,14 @@ impl ExecutionProvider for CudaProvider {
         };
 
         Ok(kernel)
+    }
+
+    fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
+        self.htod_float(data)
+    }
+
+    fn dtoh_float(&self, data: &mut CudaData) -> Result<Vec<f32>> {
+        self.dtoh_float(data)
     }
 }
 

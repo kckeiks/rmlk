@@ -1,28 +1,26 @@
-use crate::core::provider::Provider;
+use crate::core::plan::Plan;
+use crate::core::ExecutionProvider;
 use rmlk_graph::Graph;
 use std::sync::Arc;
 
-pub struct SessionState {
-    _plan: Box<[usize]>,
+pub struct ModelInstanceState<P> {
     graph: Arc<Graph>,
-    provider: Box<[Provider]>,
+    _plan: Plan<P>,
 }
 
-impl SessionState {
-    pub fn new(plan: Box<[usize]>, graph: Graph, provider: Box<[Provider]>) -> Self {
+impl<P> ModelInstanceState<P>
+where
+    P: ExecutionProvider,
+{
+    pub fn new(plan: Plan<P>, graph: Graph) -> Self {
         Self {
             _plan: plan,
-            provider,
             graph: Arc::new(graph),
         }
     }
 
-    pub fn providers(&self) -> impl Iterator<Item = &Provider> {
-        self.provider.iter()
-    }
-
-    pub fn _plan(&self) -> impl Iterator<Item = usize> + '_ {
-        self._plan.iter().copied()
+    pub fn _plan(&self) -> &Plan<P> {
+        &self._plan
     }
 
     pub fn graph(&self) -> &Arc<Graph> {

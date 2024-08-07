@@ -1,9 +1,10 @@
-use crate::core::ExecutionState;
-use crate::core::SessionState;
 use crate::core::Tensor;
-use rmlk_graph::{Definition, GraphBuilder, Node};
+use crate::core::{Context, Kernel, ModelInstanceState};
+use crate::core::{ExecutionProvider, ExecutionState, Plan};
+use rmlk_graph::{Definition, Graph, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub struct TestConvAttributes {
@@ -36,7 +37,63 @@ pub struct TestParams<T> {
     pub op: Op,
 }
 
-pub fn build_graph_and_state<T>(params: TestParams<T>) -> ExecutionState<T> {
+pub struct MockProvider<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> MockProvider<T> {
+    pub fn new() -> Self {
+        MockProvider {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> ExecutionProvider for MockProvider<T> {
+    type Data = Vec<T>;
+    type Kernel = MockKernel<T>;
+
+    fn allocate_execution_state(
+        &mut self,
+        _: &Graph,
+        _: &[usize],
+    ) -> crate::Result<(
+        HashMap<usize, usize>,
+        Box<[Option<Tensor<Self::Data>>]>,
+        Box<[usize]>,
+    )> {
+        todo!()
+    }
+
+    fn get_kernel(&self, _: Op, _: DataType) -> crate::Result<Self::Kernel> {
+        todo!()
+    }
+
+    fn htod_float(&self, _: Vec<f32>) -> crate::Result<Self::Data> {
+        todo!()
+    }
+
+    fn dtoh_float(&self, _: &mut Self::Data) -> crate::Result<Vec<f32>> {
+        todo!()
+    }
+}
+
+pub struct MockKernel<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> Kernel for MockKernel<T> {
+    type Provider = MockProvider<T>;
+
+    fn compute(self, _: &mut Context<Self::Provider>) -> crate::Result<()> {
+        todo!()
+    }
+}
+
+pub fn build_graph_and_state<T, P: ExecutionProvider<Data = T>>(
+    provider: P,
+    params: TestParams<T>,
+) -> ExecutionState<P> {
     let mut builder = GraphBuilder::new();
 
     let mut out_node = Node::new(params.op, Definition::default());
@@ -88,11 +145,10 @@ pub fn build_graph_and_state<T>(params: TestParams<T>) -> ExecutionState<T> {
     node_tensors.push(current_index);
 
     // Todo: finish.
-    let session_state = SessionState::new(
-        Box::new([]),
+    let session_state = ModelInstanceState::new(
+        // Todo: finish.
+        Plan::new(Box::new([provider])),
         graph,
-        // Todo: Fix
-        Box::new([]),
     );
 
     let state = ExecutionState::new(

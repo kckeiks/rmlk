@@ -2,9 +2,10 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
 use crate::core::kernel::Kernel;
-use crate::core::provider::{ExecutionProvider, Provider};
-use crate::core::session_state::SessionState;
-use crate::providers::cuda::{CudaExecutionState, CudaProvider};
+use crate::core::plan::Plan;
+use crate::core::provider::ExecutionProvider;
+use crate::core::session_state::ModelInstanceState;
+use crate::providers::cuda::CudaProvider;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;
@@ -29,7 +30,7 @@ impl Builder {
         Ok(Self { graph })
     }
 
-    pub fn build(self) -> Result<Session> {
+    pub fn build(self) -> Result<Session<CudaProvider>> {
         // Check for cycles and return ids of nodes that
         // are required for computing the outputs.
         let (_, plan) =
@@ -42,34 +43,36 @@ impl Builder {
         let (node_to_tensor_set_index, tensors, node_tensors) =
             provider.allocate_execution_state(&graph, &plan)?;
 
-        let session_state = Arc::new(SessionState::new(
-            plan.into_boxed_slice(),
-            graph,
-            Box::new([Provider::Cuda(provider)]),
-        ));
+        let plan = Plan::new(Box::new([provider]));
+
+        let session_state = Arc::new(ModelInstanceState::new(plan, graph));
 
         Ok(Session {
-            execution_state: ExecutionState::new(session_state.clone(), tensors, node_tensors),
+            execution_state: Box::new([ExecutionState::new(
+                session_state.clone(),
+                tensors,
+                node_tensors,
+            )]),
             session_state,
             node_tensor_index_map: node_to_tensor_set_index,
         })
     }
 }
 
-pub struct Session {
-    session_state: Arc<SessionState>,
-    execution_state: CudaExecutionState,
+pub struct Session<P: ExecutionProvider> {
+    session_state: Arc<ModelInstanceState<P>>,
+    execution_state: Box<[ExecutionState<P>]>,
     node_tensor_index_map: HashMap<usize, usize>,
 }
 
-impl Session {
+impl<P> Session<P>
+where
+    P: ExecutionProvider,
+{
     fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
         let mut inputs = self.session_state.graph().inputs();
 
-        let provider = match self.session_state.providers().next().unwrap() {
-            Provider::Cuda(provider) => provider,
-            _ => return Err(Error::NotSupported),
-        };
+        let provider = self.session_state._plan().provider(0).unwrap();
 
         let input = inputs.next().ok_or(Error::MissingData)?;
         match self.session_state.graph().get_node(input) {
@@ -83,6 +86,8 @@ impl Session {
                 // Todo: Improve API for loading input values.
                 let tensor = self
                     .execution_state
+                    .get_mut(0)
+                    .expect("Provider is hardcoded")
                     .get_value(input)
                     .ok_or(Error::MissingData)
                     .unwrap();
@@ -94,10 +99,7 @@ impl Session {
     }
 
     fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
-        let provider = match self.session_state.providers().next().unwrap() {
-            Provider::Cuda(provider) => provider,
-            _ => return Err(Error::NotSupported),
-        };
+        let provider = self.session_state._plan().provider(0).unwrap();
 
         let mut result = Vec::new();
         for output in self.session_state.graph().outputs() {
@@ -112,6 +114,8 @@ impl Session {
                     // Todo: Improve API for loading input values.
                     let tensor = self
                         .execution_state
+                        .get_mut(0)
+                        .expect("Provider is hardcoded")
                         .get_value(output)
                         .ok_or(Error::MissingData)?;
                     let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
@@ -127,34 +131,30 @@ impl Session {
     pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
         self.load_input(input).unwrap();
 
-        for provider in self.session_state.providers() {
-            match provider {
-                Provider::Cuda(provider) => {
-                    // Remove allocation.
-                    for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {
-                        // let node = graph.get_node(i).ok_or(Error::MissingNode)?;
-                        // Todo: We might want to separate the load operation because at this point we don't know the type.
-                        if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
-                            continue;
-                        }
-                        let kernel = provider.get_kernel(node.op(), DataType::Float)?;
+        let provider = self.session_state._plan().provider(0).unwrap();
 
-                        let mut ctx =
-                            Context::new(&mut self.execution_state, &self.node_tensor_index_map, i)
-                                .unwrap();
-                        trace!(
-                            "{i} {:?} {:?} inputs={:?}",
-                            node.op(),
-                            node.def().node.as_ref().unwrap().name,
-                            node.inputs()
-                        );
-                        kernel.compute(&mut ctx)?;
-                    }
-                }
-                Provider::Cpu => {
-                    return Err(Error::NotSupported);
-                }
+        // Remove allocation.
+        for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {
+            // let node = graph.get_node(i).ok_or(Error::MissingNode)?;
+            // Todo: We might want to separate the load operation because at this point we don't know the type.
+            if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
+                continue;
             }
+            let kernel = provider.get_kernel(node.op(), DataType::Float)?;
+
+            let mut ctx = Context::new(
+                self.execution_state.get_mut(0).ok_or(Error::MissingData)?,
+                &self.node_tensor_index_map,
+                i,
+            )
+            .unwrap();
+            trace!(
+                "{i} {:?} {:?} inputs={:?}",
+                node.op(),
+                node.def().node.as_ref().unwrap().name,
+                node.inputs()
+            );
+            kernel.compute(&mut ctx)?;
         }
 
         Ok(self.load_output().unwrap())

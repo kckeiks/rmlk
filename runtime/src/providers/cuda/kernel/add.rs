@@ -1,6 +1,7 @@
 use crate::core::Context;
 use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::CudaProvider;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_ir::DataType;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ impl AddKernel {
         Self { device, f }
     }
 
-    pub fn compute(self, ctx: &mut Context<CudaData>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<CudaProvider>) -> Result<()> {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 
@@ -66,6 +67,7 @@ mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
     use crate::providers::cuda::kernel::add::AddKernel;
+    use crate::providers::cuda::CudaProvider;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
@@ -106,7 +108,8 @@ mod test {
             op: Op::Add,
         };
 
-        let mut state = test_utils::build_graph_and_state(params);
+        let mut state =
+            test_utils::build_graph_and_state(CudaProvider::new(device.clone()), params);
         let map = HashMap::from([(1, 1), (2, 2)]);
         let mut context = Context::new(&mut state, &map, 2).unwrap();
 

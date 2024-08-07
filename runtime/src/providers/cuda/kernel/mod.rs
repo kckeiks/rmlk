@@ -9,13 +9,13 @@ use crate::core::Context;
 use crate::core::Kernel;
 use crate::core::Result;
 use crate::ops::flatten::FlattenOp;
-use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::kernel::activation::ActivationKernel;
 use crate::providers::cuda::kernel::add::AddKernel;
 use crate::providers::cuda::kernel::conv::ConvKernel;
 use crate::providers::cuda::kernel::gemm::GemmKernel;
 use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
 use crate::providers::cuda::kernel::max_pool::MaxPoolKernel;
+use crate::providers::cuda::CudaProvider;
 
 pub enum CudaKernel {
     Add(AddKernel),
@@ -28,9 +28,9 @@ pub enum CudaKernel {
 }
 
 impl Kernel for CudaKernel {
-    type Data = CudaData;
+    type Provider = CudaProvider;
 
-    fn compute(self, ctx: &mut Context<Self::Data>) -> Result<()> {
+    fn compute(self, ctx: &mut Context<Self::Provider>) -> Result<()> {
         match self {
             CudaKernel::Add(kernel) => kernel.compute(ctx),
             CudaKernel::Relu(kernel) => kernel.compute(ctx),
