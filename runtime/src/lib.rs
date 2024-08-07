@@ -7,4 +7,4 @@ mod providers;
 mod test_utils;
 mod utils;
 
-pub use core::{Builder, Error, Result, Session};
+pub use core::{Builder, Error, ModelInstance, Result};

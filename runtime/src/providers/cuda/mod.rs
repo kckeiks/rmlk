@@ -1,6 +1,6 @@
 mod data;
+mod device_service;
 mod kernel;
-mod provider;
 
+pub use device_service::Cuda;
 pub use kernel::*;
-pub use provider::CudaProvider;

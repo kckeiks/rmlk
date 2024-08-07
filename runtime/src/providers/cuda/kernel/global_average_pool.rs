@@ -1,7 +1,7 @@
 use crate::core::Context;
 use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::CudaProvider;
+use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::driver::CudaDevice;
 use rmlk_ir::DataType;
@@ -16,7 +16,7 @@ impl GlobalAveragePoolKernel {
         Self { device }
     }
 
-    pub fn compute(self, ctx: &mut Context<CudaProvider>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
@@ -70,7 +70,7 @@ mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
     use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
-    use crate::providers::cuda::CudaProvider;
+    use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
@@ -106,8 +106,7 @@ mod test {
             op: Op::GlobalAveragePool,
         };
 
-        let mut state =
-            test_utils::build_graph_and_state(CudaProvider::new(device.clone()), params);
+        let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let map = HashMap::from([(1, 1), (2, 2)]);
         let mut context = Context::new(&mut state, &map, 1).unwrap();
 

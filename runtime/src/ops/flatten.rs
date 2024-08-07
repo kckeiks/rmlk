@@ -1,4 +1,4 @@
-use crate::core::{Context, ExecutionProvider};
+use crate::core::{Context, DeviceService};
 use crate::core::{Error, Result};
 
 pub struct FlattenOp(());
@@ -7,12 +7,12 @@ impl FlattenOp {
     pub fn new() -> Self {
         Self(())
     }
-    pub fn compute<T: ExecutionProvider>(self, ctx: &mut Context<T>) -> Result<()> {
+    pub fn compute<T: DeviceService>(self, ctx: &mut Context<T>) -> Result<()> {
         _compute(ctx)
     }
 }
 
-pub fn _compute<T: ExecutionProvider>(ctx: &mut Context<T>) -> Result<()> {
+pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {

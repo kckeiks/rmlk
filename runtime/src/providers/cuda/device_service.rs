@@ -1,6 +1,6 @@
 use crate::core::{Error, Result};
 
-use crate::core::ExecutionProvider;
+use crate::core::DeviceService;
 use crate::core::Tensor;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
@@ -17,11 +17,11 @@ use rmlk_ir::{DataType, Op};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub struct CudaProvider {
+pub struct Cuda {
     device: Arc<CudaDevice>,
 }
 
-impl CudaProvider {
+impl Cuda {
     pub fn new(device: Arc<CudaDevice>) -> Self {
         Self { device }
     }
@@ -53,7 +53,7 @@ impl CudaProvider {
     }
 }
 
-impl ExecutionProvider for CudaProvider {
+impl DeviceService for Cuda {
     type Data = CudaData;
     type Kernel = CudaKernel;
 

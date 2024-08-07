@@ -15,7 +15,7 @@ use crate::providers::cuda::kernel::conv::ConvKernel;
 use crate::providers::cuda::kernel::gemm::GemmKernel;
 use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
 use crate::providers::cuda::kernel::max_pool::MaxPoolKernel;
-use crate::providers::cuda::CudaProvider;
+use crate::providers::cuda::Cuda;
 
 pub enum CudaKernel {
     Add(AddKernel),
@@ -28,9 +28,9 @@ pub enum CudaKernel {
 }
 
 impl Kernel for CudaKernel {
-    type Provider = CudaProvider;
+    type Device = Cuda;
 
-    fn compute(self, ctx: &mut Context<Self::Provider>) -> Result<()> {
+    fn compute(self, ctx: &mut Context<Self::Device>) -> Result<()> {
         match self {
             CudaKernel::Add(kernel) => kernel.compute(ctx),
             CudaKernel::Relu(kernel) => kernel.compute(ctx),

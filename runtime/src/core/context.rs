@@ -1,12 +1,12 @@
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
 use crate::core::tensor::Tensor;
-use crate::core::ExecutionProvider;
+use crate::core::DeviceService;
 use rmlk_ir::Attribute;
 use std::collections::HashMap;
 
-pub struct Context<'a, P: ExecutionProvider> {
-    execution_state: &'a mut ExecutionState<P>,
+pub struct Context<'a, D: DeviceService> {
+    execution_state: &'a mut ExecutionState<D>,
     input_start_index: usize,
     max_tensors: usize,
     output_start_index: usize,
@@ -14,12 +14,12 @@ pub struct Context<'a, P: ExecutionProvider> {
     original_node_id: usize,
 }
 
-impl<'a, P> Context<'a, P>
+impl<'a, D> Context<'a, D>
 where
-    P: ExecutionProvider,
+    D: DeviceService,
 {
     pub fn new(
-        execution_state: &'a mut ExecutionState<P>,
+        execution_state: &'a mut ExecutionState<D>,
         node_tensor_map: &HashMap<usize, usize>,
         index: usize,
     ) -> Result<Self> {
@@ -45,7 +45,7 @@ where
         })
     }
 
-    pub fn get_input(&self, index: usize) -> Result<&Tensor<P::Data>> {
+    pub fn get_input(&self, index: usize) -> Result<&Tensor<D::Data>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
             return Err(Error::ContextError);
@@ -56,7 +56,7 @@ where
             .ok_or(Error::ContextError)
     }
 
-    pub fn _get_input_mut(&mut self, index: usize) -> Result<&mut Tensor<P::Data>> {
+    pub fn _get_input_mut(&mut self, index: usize) -> Result<&mut Tensor<D::Data>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
             return Err(Error::ContextError);
@@ -68,7 +68,7 @@ where
     }
 
     #[cfg(test)]
-    pub fn get_output(&self, index: usize) -> Result<&Tensor<P::Data>> {
+    pub fn get_output(&self, index: usize) -> Result<&Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_tensors < node_index {
             return Err(Error::ContextError);
@@ -79,7 +79,7 @@ where
             .ok_or(Error::ContextError)
     }
 
-    pub fn get_output_mut(&mut self, index: usize) -> Result<&mut Tensor<P::Data>> {
+    pub fn get_output_mut(&mut self, index: usize) -> Result<&mut Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_tensors < node_index {
             return Err(Error::ContextError);

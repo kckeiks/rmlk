@@ -1,6 +1,6 @@
 use crate::core::Tensor;
 use crate::core::{Context, Kernel, ModelInstanceState};
-use crate::core::{ExecutionProvider, ExecutionState, Plan};
+use crate::core::{DeviceService, ExecutionState, Plan};
 use rmlk_graph::{Definition, Graph, GraphBuilder, Node};
 use rmlk_ir::{Attribute, AttributeType, DataType, Op};
 use std::collections::HashMap;
@@ -49,7 +49,7 @@ impl<T> MockProvider<T> {
     }
 }
 
-impl<T> ExecutionProvider for MockProvider<T> {
+impl<T> DeviceService for MockProvider<T> {
     type Data = Vec<T>;
     type Kernel = MockKernel<T>;
 
@@ -83,14 +83,14 @@ pub struct MockKernel<T> {
 }
 
 impl<T> Kernel for MockKernel<T> {
-    type Provider = MockProvider<T>;
+    type Device = MockProvider<T>;
 
-    fn compute(self, _: &mut Context<Self::Provider>) -> crate::Result<()> {
+    fn compute(self, _: &mut Context<Self::Device>) -> crate::Result<()> {
         todo!()
     }
 }
 
-pub fn build_graph_and_state<T, P: ExecutionProvider<Data = T>>(
+pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
     provider: P,
     params: TestParams<T>,
 ) -> ExecutionState<P> {

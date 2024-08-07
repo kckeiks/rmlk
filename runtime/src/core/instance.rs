@@ -1,11 +1,11 @@
 use crate::core::context::Context;
+use crate::core::device_service::DeviceService;
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
+use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
 use crate::core::plan::Plan;
-use crate::core::provider::ExecutionProvider;
-use crate::core::session_state::ModelInstanceState;
-use crate::providers::cuda::CudaProvider;
+use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;
@@ -30,14 +30,14 @@ impl Builder {
         Ok(Self { graph })
     }
 
-    pub fn build(self) -> Result<Session<CudaProvider>> {
+    pub fn build(self) -> Result<ModelInstance<Cuda>> {
         // Check for cycles and return ids of nodes that
         // are required for computing the outputs.
         let (_, plan) =
             rmlk_graph::compute_order(self.graph.nodes_slice(), self.graph.outputs_slice())
                 .map_err(|_| Error::ComputingPlanFailed)?;
 
-        let mut provider = CudaProvider::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
+        let mut provider = Cuda::new(CudaDevice::new(0).map_err(|_| Error::Unknown)?);
 
         let graph = self.graph;
         let (node_to_tensor_set_index, tensors, node_tensors) =
@@ -47,7 +47,7 @@ impl Builder {
 
         let session_state = Arc::new(ModelInstanceState::new(plan, graph));
 
-        Ok(Session {
+        Ok(ModelInstance {
             execution_state: Box::new([ExecutionState::new(
                 session_state.clone(),
                 tensors,
@@ -59,20 +59,20 @@ impl Builder {
     }
 }
 
-pub struct Session<P: ExecutionProvider> {
-    session_state: Arc<ModelInstanceState<P>>,
-    execution_state: Box<[ExecutionState<P>]>,
+pub struct ModelInstance<D: DeviceService> {
+    session_state: Arc<ModelInstanceState<D>>,
+    execution_state: Box<[ExecutionState<D>]>,
     node_tensor_index_map: HashMap<usize, usize>,
 }
 
-impl<P> Session<P>
+impl<D> ModelInstance<D>
 where
-    P: ExecutionProvider,
+    D: DeviceService,
 {
     fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
         let mut inputs = self.session_state.graph().inputs();
 
-        let provider = self.session_state._plan().provider(0).unwrap();
+        let provider = self.session_state._plan().device(0).unwrap();
 
         let input = inputs.next().ok_or(Error::MissingData)?;
         match self.session_state.graph().get_node(input) {
@@ -99,7 +99,7 @@ where
     }
 
     fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
-        let provider = self.session_state._plan().provider(0).unwrap();
+        let provider = self.session_state._plan().device(0).unwrap();
 
         let mut result = Vec::new();
         for output in self.session_state.graph().outputs() {
@@ -131,7 +131,7 @@ where
     pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
         self.load_input(input).unwrap();
 
-        let provider = self.session_state._plan().provider(0).unwrap();
+        let provider = self.session_state._plan().device(0).unwrap();
 
         // Remove allocation.
         for (i, node) in self.session_state.graph().nodes_slice().iter().enumerate() {

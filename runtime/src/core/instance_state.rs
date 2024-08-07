@@ -1,25 +1,25 @@
 use crate::core::plan::Plan;
-use crate::core::ExecutionProvider;
+use crate::core::DeviceService;
 use rmlk_graph::Graph;
 use std::sync::Arc;
 
-pub struct ModelInstanceState<P> {
+pub struct ModelInstanceState<D> {
     graph: Arc<Graph>,
-    _plan: Plan<P>,
+    _plan: Plan<D>,
 }
 
-impl<P> ModelInstanceState<P>
+impl<D> ModelInstanceState<D>
 where
-    P: ExecutionProvider,
+    D: DeviceService,
 {
-    pub fn new(plan: Plan<P>, graph: Graph) -> Self {
+    pub fn new(plan: Plan<D>, graph: Graph) -> Self {
         Self {
             _plan: plan,
             graph: Arc::new(graph),
         }
     }
 
-    pub fn _plan(&self) -> &Plan<P> {
+    pub fn _plan(&self) -> &Plan<D> {
         &self._plan
     }
 

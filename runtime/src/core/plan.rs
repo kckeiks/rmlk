@@ -1,18 +1,18 @@
-use crate::core::ExecutionProvider;
+use crate::core::DeviceService;
 
-pub struct Plan<P> {
-    providers: Box<[P]>,
+pub struct Plan<D> {
+    devices: Box<[D]>,
 }
 
-impl<P> Plan<P>
+impl<D> Plan<D>
 where
-    P: ExecutionProvider,
+    D: DeviceService,
 {
-    pub fn new(providers: Box<[P]>) -> Self {
-        Self { providers }
+    pub fn new(devices: Box<[D]>) -> Self {
+        Self { devices }
     }
 
-    pub fn provider(&self, id: usize) -> Option<&P> {
-        self.providers.get(id)
+    pub fn device(&self, id: usize) -> Option<&D> {
+        self.devices.get(id)
     }
 }
