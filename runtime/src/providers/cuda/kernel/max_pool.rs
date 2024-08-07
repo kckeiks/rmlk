@@ -119,12 +119,6 @@ mod test {
             )),
         };
 
-        let node_c = TestNode {
-            shape: vec![1, 1, 2, 2],
-            dtype,
-            data: None,
-        };
-
         let attributes = test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
             dilations: None,
             kernel_shape: Some(Box::new([2, 2])),
@@ -136,7 +130,6 @@ mod test {
 
         let params = TestParams {
             inputs: vec![node_a],
-            outputs: vec![node_c],
             attributes,
             op: Op::MaxPool,
         };

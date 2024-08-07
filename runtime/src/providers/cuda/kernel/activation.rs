@@ -79,15 +79,8 @@ mod test {
             )),
         };
 
-        let node_c = TestNode {
-            shape: vec![1, 1, 2, 2],
-            dtype,
-            data: None,
-        };
-
         let params = TestParams {
             inputs: vec![node_a],
-            outputs: vec![node_c],
             attributes: Vec::new(),
             op: Op::Relu,
         };

@@ -230,12 +230,6 @@ mod test {
             data: Some(CudaData::F32(device.htod_copy(vec![1.0; 1]).unwrap())),
         };
 
-        let node_output = TestNode {
-            shape,
-            dtype,
-            data: None,
-        };
-
         let attributes = test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
@@ -246,7 +240,6 @@ mod test {
 
         let params = TestParams {
             inputs: vec![node_a, node_b, node_c],
-            outputs: vec![node_output],
             attributes,
             op: Op::Conv,
         };
@@ -299,12 +292,6 @@ mod test {
             data: Some(CudaData::F32(device.htod_copy(vec![1.0; 9]).unwrap())),
         };
 
-        let node_c = TestNode {
-            shape,
-            dtype,
-            data: None,
-        };
-
         let attributes = test_utils::create_conv_attributes(TestConvAttributes {
             dilations: Some(Box::new([1, 1])),
             group: Some(1),
@@ -315,7 +302,6 @@ mod test {
 
         let params = TestParams {
             inputs: vec![node_a, node_b],
-            outputs: vec![node_c],
             attributes,
             op: Op::Conv,
         };

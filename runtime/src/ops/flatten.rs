@@ -72,15 +72,8 @@ mod test {
             data: Some(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
         };
 
-        let node_c = TestNode {
-            shape: vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            dtype,
-            data: None,
-        };
-
         let params = TestParams {
             inputs: vec![node_a],
-            outputs: vec![node_c],
             attributes: Vec::new(),
             op: Op::Flatten,
         };
