@@ -48,25 +48,25 @@ impl FromStr for Op {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let op = match s {
-            "Add" => Self::Add, // Resnet.
+            "Add" => Self::Add,                             // Done.
             "Cast" => Self::Cast,
             "Concat" => Self::Concat,
-            "Conv" => Self::Conv, // Resnet.
-            "Constant" => Self::Const,
+            "Conv" => Self::Conv,                           // Done.
+            "Constant" => Self::Const,                      // Done.
             "ConstantOfShape" => Self::ConstantOfShape,
             "Div" => Self::Div,
             "Equal" => Self::Equal,
             "Expand" => Self::Expand,
-            "Flatten" => Self::Flatten, // Resnet.
+            "Flatten" => Self::Flatten,                     // Done.
             "Gather" => Self::Gather,
-            "Gemm" => Self::Gemm,                           // Resnet.
-            "GlobalAveragePool" => Self::GlobalAveragePool, // Resnet.
-            "MaxPool" => Self::MaxPool,                     // Resnet.
-            "MatMul" => Self::MatMul,                       // Do not need for resnet.
-            "Mul" => Self::Mul,                             // Do not need for resnet.
+            "Gemm" => Self::Gemm,                           // Done.
+            "GlobalAveragePool" => Self::GlobalAveragePool, // Done.
+            "MaxPool" => Self::MaxPool,                     // Done.
+            "MatMul" => Self::MatMul,
+            "Mul" => Self::Mul,                             // Done.
             "Pow" => Self::Pow,
             "Range" => Self::Range,
-            "Relu" => Self::Relu, // Resnet.
+            "Relu" => Self::Relu,                           // Done.
             "ReduceMean" => Self::ReduceMean,
             "Reshape" => Self::Reshape,
             "ScatterND" => Self::ScatterND,
@@ -75,7 +75,7 @@ impl FromStr for Op {
             "Slice" => Self::Slice,
             "Softmax" => Self::Softmax,
             "Sqrt" => Self::Sqrt,
-            "Sub" => Self::Sub, // Do not need for resnet.
+            "Sub" => Self::Sub,
             "Transpose" => Self::Transpose,
             "Unsqueeze" => Self::Unsqueeze,
             "Where" => Self::Where,
