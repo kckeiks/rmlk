@@ -1,0 +1,8 @@
+[package]
+name = "rmlk-fonnx"
+version = "0.0.0"
+edition = "2021"
+authors = ["M. Meier <mi9uel9@gmail.com>"]
+
+[dependencies]
+

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["cuda", "graph", "runtime", "ir"]
+members = ["cuda", "fonnx", "graph", "runtime", "ir"]
 
 [workspace.dependencies]
 criterion = { version = "0.5", default-features = false }
