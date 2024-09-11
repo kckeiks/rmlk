@@ -73,7 +73,7 @@ impl GraphBuilder {
     }
 
     pub fn build(self) -> Result<Graph> {
-        // let (_, _plan) = traversal::compute_order(self.nodes.as_slice(), self.outputs.as_slice())?;
+        // Todo: create a plan here.
         for (id, n) in self.nodes.iter().enumerate() {
             let inputs = n.inputs();
             let outputs = n.outputs();

@@ -58,3 +58,8 @@ pub fn compute_order(nodes: &[Node], outputs: &[usize]) -> Result<(Vec<usize>, V
 
     Ok((sinks, operations))
 }
+
+#[cfg(test)]
+mod test {
+
+}

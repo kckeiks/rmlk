@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::onnx::mod_TypeProto::OneOfvalue;
+use crate::onnx::ty_proto::OneOfvalue;
 use crate::onnx::TypeProto;
 use crate::tensor::TensorShape;
 use crate::{onnx, DataType, DimensionValue};
@@ -98,7 +98,7 @@ impl TryFrom<TypeProto<'_>> for Type {
     fn try_from(value: TypeProto) -> Result<Self, Self::Error> {
         let ty = match value.value {
             OneOfvalue::tensor_type(tensor) => {
-                if tensor.elem_type == Some(onnx::mod_TensorProto::DataType::UNDEFINED as i32) {
+                if tensor.elem_type == Some(onnx::tensor_proto::DataType::UNDEFINED as i32) {
                     return Err(Error::InvalidValue {
                         field: "Type::value".to_string(),
                         value: "UNDEFINED is not valid".to_string(),
@@ -151,7 +151,7 @@ impl TryFrom<TypeProto<'_>> for Type {
             }
             OneOfvalue::sparse_tensor_type(sparse_tensor) => {
                 if sparse_tensor.elem_type
-                    == Some(onnx::mod_TensorProto::DataType::UNDEFINED as i32)
+                    == Some(onnx::tensor_proto::DataType::UNDEFINED as i32)
                 {
                     return Err(Error::InvalidValue {
                         field: "Type::value".to_string(),

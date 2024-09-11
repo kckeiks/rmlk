@@ -57,24 +57,24 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
         let attribute_ty = match value.type_pb.ok_or(Error::MissingField {
             name: "Attribute::type".to_string(),
         })? {
-            onnx::mod_AttributeProto::AttributeType::UNDEFINED => {
+            onnx::attributte_proto::AttributeType::UNDEFINED => {
                 return Err(Error::InvalidValue {
                     field: "Attribute::type".to_string(),
                     value: "undefined".to_string(),
                 });
             }
-            onnx::mod_AttributeProto::AttributeType::FLOAT => {
+            onnx::attributte_proto::AttributeType::FLOAT => {
                 AttributeType::Float(value.f.ok_or(Error::MissingField {
                     name: "Attribute::f".to_string(),
                 })?)
             }
             // Todo: Address casting.
-            onnx::mod_AttributeProto::AttributeType::INT => {
+            onnx::attributte_proto::AttributeType::INT => {
                 AttributeType::Int(value.i.ok_or(Error::MissingField {
                     name: "Attribute::i".to_string(),
                 })? as i32)
             }
-            onnx::mod_AttributeProto::AttributeType::STRING => AttributeType::String(
+            onnx::attributte_proto::AttributeType::STRING => AttributeType::String(
                 value
                     .s
                     .ok_or(Error::MissingField {
@@ -82,12 +82,12 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .to_vec(),
             ),
-            onnx::mod_AttributeProto::AttributeType::TENSOR => AttributeType::Tensor(
+            onnx::attributte_proto::AttributeType::TENSOR => AttributeType::Tensor(
                 Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
                     name: "Attribute::t".to_string(),
                 })?)?,
             ),
-            onnx::mod_AttributeProto::AttributeType::GRAPH => AttributeType::Graph(
+            onnx::attributte_proto::AttributeType::GRAPH => AttributeType::Graph(
                 value
                     .g
                     .ok_or(Error::MissingField {
@@ -95,7 +95,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .try_into()?,
             ),
-            onnx::mod_AttributeProto::AttributeType::SPARSE_TENSOR => AttributeType::SparseTensor(
+            onnx::attributte_proto::AttributeType::SPARSE_TENSOR => AttributeType::SparseTensor(
                 value
                     .sparse_tensor
                     .ok_or(Error::MissingField {
@@ -103,7 +103,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .try_into()?,
             ),
-            onnx::mod_AttributeProto::AttributeType::TYPE_PROTO => AttributeType::Type(
+            onnx::attributte_proto::AttributeType::TYPE_PROTO => AttributeType::Type(
                 value
                     .tp
                     .ok_or(Error::MissingField {
@@ -111,36 +111,36 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .try_into()?,
             ),
-            onnx::mod_AttributeProto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
+            onnx::attributte_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
             // Todo: Address casting.
-            onnx::mod_AttributeProto::AttributeType::INTS => {
+            onnx::attributte_proto::AttributeType::INTS => {
                 AttributeType::Ints(value.ints.iter().map(|num| *num as i32).collect())
             }
-            onnx::mod_AttributeProto::AttributeType::STRINGS => {
+            onnx::attributte_proto::AttributeType::STRINGS => {
                 AttributeType::Strings(value.strings.into_iter().map(|s| s.to_vec()).collect())
             }
-            onnx::mod_AttributeProto::AttributeType::TENSORS => {
+            onnx::attributte_proto::AttributeType::TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.tensors.into_iter() {
                     tensors.push(Tensor::from_onnx_tensor(tensor_proto)?);
                 }
                 AttributeType::Tensors(tensors)
             }
-            onnx::mod_AttributeProto::AttributeType::GRAPHS => {
+            onnx::attributte_proto::AttributeType::GRAPHS => {
                 let mut graphs = Vec::new();
                 for graph_proto in value.graphs.into_iter() {
                     graphs.push(graph_proto.try_into()?);
                 }
                 AttributeType::Graphs(graphs)
             }
-            onnx::mod_AttributeProto::AttributeType::SPARSE_TENSORS => {
+            onnx::attributte_proto::AttributeType::SPARSE_TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.sparse_tensors.into_iter() {
                     tensors.push(tensor_proto.try_into()?);
                 }
                 AttributeType::SparseTensors(tensors)
             }
-            onnx::mod_AttributeProto::AttributeType::TYPE_PROTOS => {
+            onnx::attributte_proto::AttributeType::TYPE_PROTOS => {
                 let mut types = Vec::new();
                 for type_proto in value.type_protos.into_iter() {
                     types.push(type_proto.try_into()?);

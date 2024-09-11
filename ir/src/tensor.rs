@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx;
-use crate::onnx::mod_TensorProto::DataLocation;
-use crate::onnx::mod_TensorShapeProto::mod_Dimension::OneOfvalue;
+use crate::onnx::tensor_proto::DataLocation;
+use crate::onnx::dimension_proto::OneOfvalue;
 use crate::onnx::{TensorProto, TensorShapeProto};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -366,32 +366,32 @@ impl TryFrom<i32> for DataType {
     }
 }
 
-impl From<onnx::mod_TensorProto::DataType> for DataType {
-    fn from(value: onnx::mod_TensorProto::DataType) -> Self {
+impl From<onnx::tensor_proto::DataType> for DataType {
+    fn from(value: onnx::tensor_proto::DataType) -> Self {
         match value {
-            onnx::mod_TensorProto::DataType::UNDEFINED => DataType::Undefined,
-            onnx::mod_TensorProto::DataType::FLOAT => DataType::Float,
-            onnx::mod_TensorProto::DataType::UINT8 => DataType::Uint8,
-            onnx::mod_TensorProto::DataType::INT8 => DataType::Int8,
-            onnx::mod_TensorProto::DataType::UINT16 => DataType::Uint16,
-            onnx::mod_TensorProto::DataType::INT16 => DataType::Int16,
-            onnx::mod_TensorProto::DataType::INT32 => DataType::Int32,
-            onnx::mod_TensorProto::DataType::INT64 => DataType::Int64,
-            onnx::mod_TensorProto::DataType::STRING => DataType::String,
-            onnx::mod_TensorProto::DataType::BOOL => DataType::Bool,
-            onnx::mod_TensorProto::DataType::FLOAT16 => DataType::Float16,
-            onnx::mod_TensorProto::DataType::DOUBLE => DataType::Double,
-            onnx::mod_TensorProto::DataType::UINT32 => DataType::Uint32,
-            onnx::mod_TensorProto::DataType::UINT64 => DataType::Uint64,
-            onnx::mod_TensorProto::DataType::COMPLEX64 => DataType::Complex64,
-            onnx::mod_TensorProto::DataType::COMPLEX128 => DataType::Complex128,
-            onnx::mod_TensorProto::DataType::BFLOAT16 => DataType::Bfloat16,
-            onnx::mod_TensorProto::DataType::FLOAT8E4M3FN => DataType::Float8E4M3FN,
-            onnx::mod_TensorProto::DataType::FLOAT8E4M3FNUZ => DataType::Float8E4M3FNUZ,
-            onnx::mod_TensorProto::DataType::FLOAT8E5M2 => DataType::Float8E5M2,
-            onnx::mod_TensorProto::DataType::FLOAT8E5M2FNUZ => DataType::Float8E5M2FNUZ,
-            onnx::mod_TensorProto::DataType::UINT4 => DataType::Uint4,
-            onnx::mod_TensorProto::DataType::INT4 => DataType::Int4,
+            onnx::tensor_proto::DataType::UNDEFINED => DataType::Undefined,
+            onnx::tensor_proto::DataType::FLOAT => DataType::Float,
+            onnx::tensor_proto::DataType::UINT8 => DataType::Uint8,
+            onnx::tensor_proto::DataType::INT8 => DataType::Int8,
+            onnx::tensor_proto::DataType::UINT16 => DataType::Uint16,
+            onnx::tensor_proto::DataType::INT16 => DataType::Int16,
+            onnx::tensor_proto::DataType::INT32 => DataType::Int32,
+            onnx::tensor_proto::DataType::INT64 => DataType::Int64,
+            onnx::tensor_proto::DataType::STRING => DataType::String,
+            onnx::tensor_proto::DataType::BOOL => DataType::Bool,
+            onnx::tensor_proto::DataType::FLOAT16 => DataType::Float16,
+            onnx::tensor_proto::DataType::DOUBLE => DataType::Double,
+            onnx::tensor_proto::DataType::UINT32 => DataType::Uint32,
+            onnx::tensor_proto::DataType::UINT64 => DataType::Uint64,
+            onnx::tensor_proto::DataType::COMPLEX64 => DataType::Complex64,
+            onnx::tensor_proto::DataType::COMPLEX128 => DataType::Complex128,
+            onnx::tensor_proto::DataType::BFLOAT16 => DataType::Bfloat16,
+            onnx::tensor_proto::DataType::FLOAT8E4M3FN => DataType::Float8E4M3FN,
+            onnx::tensor_proto::DataType::FLOAT8E4M3FNUZ => DataType::Float8E4M3FNUZ,
+            onnx::tensor_proto::DataType::FLOAT8E5M2 => DataType::Float8E5M2,
+            onnx::tensor_proto::DataType::FLOAT8E5M2FNUZ => DataType::Float8E5M2FNUZ,
+            onnx::tensor_proto::DataType::UINT4 => DataType::Uint4,
+            onnx::tensor_proto::DataType::INT4 => DataType::Int4,
         }
     }
 }
@@ -402,8 +402,8 @@ pub struct Segment {
     pub end: Option<i64>,
 }
 
-impl From<onnx::mod_TensorProto::Segment> for Segment {
-    fn from(value: onnx::mod_TensorProto::Segment) -> Self {
+impl From<onnx::tensor_proto::Segment> for Segment {
+    fn from(value: onnx::tensor_proto::Segment) -> Self {
         Self {
             begin: value.begin,
             end: value.end,
@@ -447,10 +447,10 @@ pub struct Dimension {
     pub denotation: Option<String>,
 }
 
-impl TryFrom<onnx::mod_TensorShapeProto::Dimension<'_>> for Dimension {
+impl TryFrom<onnx::tensor_shape_proto::Dimension<'_>> for Dimension {
     type Error = Error;
 
-    fn try_from(value: onnx::mod_TensorShapeProto::Dimension) -> Result<Self, Self::Error> {
+    fn try_from(value: onnx::tensor_shape_proto::Dimension) -> Result<Self, Self::Error> {
         let dim_val = match value.value {
             OneOfvalue::dim_value(value) => Some(DimensionValue::Value(value)),
             OneOfvalue::dim_param(param) => Some(DimensionValue::String(param.to_string())),
