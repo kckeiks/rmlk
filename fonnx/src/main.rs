@@ -1,4 +1,4 @@
-use crate::args::Args;
+use crate::args::{Args, Command};
 use crate::onnx::{Category, NodeInfo, NodeWithMetadata};
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
@@ -10,16 +10,93 @@ mod onnx;
 
 fn main() {
     let args = Args::parse();
-    let path = args.path;
+    let path = match args.cmd {
+        Command::Find { path, target } => {
+            let model = fs::read(path).expect("bad");
+            let mut reader = BytesReader::from_bytes(&model);
+            let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
+            let mut traverser = FindNode {
+                target: target.as_ref(),
+                node: None,
+            };
 
-    let model = fs::read(path).expect("bad");
-    let mut reader = BytesReader::from_bytes(&model);
-    let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    let node = display_node(model_proto.graph.unwrap(), "/layer1/layer1.0/conv1/Conv").unwrap();
+            visit(model_proto.graph.unwrap(), &mut traverser).unwrap();
 
-    println!("{:?}", node);
-    // Todo: add function instead of implementing TryInto.
-    // let model: Model = model_proto.try_into().unwrap();
+            // let node = display_node(model_proto.graph.unwrap(), "/layer1/layer1.0/conv1/Conv").unwrap();
+
+            println!("{:?}", traverser.node.unwrap());
+            // Todo: add function instead of implementing TryInto.
+            // let model: Model = model_proto.try_into().unwrap();
+        }
+    };
+}
+
+pub struct FindNode<'a> {
+    pub target: &'a str,
+    pub node: Option<NodeWithMetadata<'a>>,
+}
+
+impl<'a> OnnxGraphTraverser<'a> for FindNode<'a> {
+    fn check_node(&mut self, node: NodeWithMetadata<'a>) -> anyhow::Result<bool> {
+        match &node.node.name {
+            Some(name) if name == self.target => {
+                self.node = Some(node);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+}
+
+pub trait OnnxGraphTraverser<'a> {
+    fn check_node(&mut self, node: NodeWithMetadata<'a>) -> anyhow::Result<bool>;
+}
+
+fn visit<'a, T>(graph_proto: GraphProto<'a>, traverser: &mut T) -> anyhow::Result<()>
+where
+    T: OnnxGraphTraverser<'a>,
+{
+    for initializer in graph_proto.initializer {
+        let node = NodeInfo::try_from(initializer)?;
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Initializer,
+            node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for input in graph_proto.input {
+        let node = NodeInfo::try_from(input)?;
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Input,
+            node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for output in graph_proto.output {
+        let node = NodeInfo::try_from(output)?;
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Output,
+            node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for node in graph_proto.node {
+        let node = NodeInfo::from(node);
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::InnerNode,
+            node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    Ok(())
 }
 
 fn display_node<'a>(
