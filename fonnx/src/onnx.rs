@@ -1,4 +1,4 @@
-use rmlk_ir::{dimension_proto, tensor_proto, ty_proto, ValueInfoProto};
+use rmlk_ir::{dimension_proto, tensor_proto, TensorProto, ty_proto, ValueInfoProto};
 use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
@@ -51,6 +51,23 @@ impl<'a> TryFrom<ValueInfoProto<'a>> for NodeInfo<'a> {
         Ok(Self {
             name: value.name,
             tensor: tensor_info,
+        })
+    }
+}
+
+impl<'a> TryFrom<TensorProto<'a>> for NodeInfo<'a> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TensorProto<'a>) -> Result<Self, Self::Error> {
+        let dtype = tensor_proto::DataType::try_from(value.data_type.unwrap_or(0))?;
+        let tensor = TensorInfo {
+            dtype,
+            dims: value.dims,
+        };
+
+        Ok(NodeInfo {
+            name: value.name,
+            tensor: Some(tensor),
         })
     }
 }

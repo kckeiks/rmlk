@@ -15,7 +15,7 @@ fn main() {
     let model = fs::read(path).expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    let node = display_node(model_proto.graph.unwrap(), "input").unwrap();
+    let node = display_node(model_proto.graph.unwrap(), "onnx::Conv_345").unwrap();
 
     println!(
         "{:?}",
@@ -32,6 +32,30 @@ fn display_node<'a>(graph_proto: GraphProto<'a>, name: &str) -> anyhow::Result<O
                 let node = NodeInfo::try_from(input)?;
                 return Ok(Some(NodeWithMetadata {
                     category: Category::Input,
+                    node,
+                }));
+            }
+        }
+    }
+
+    for tensor_proto in graph_proto.initializer {
+        if let Some(initializer_name) = &tensor_proto.name {
+            if initializer_name == name {
+                let node = NodeInfo::try_from(tensor_proto)?;
+                return Ok(Some(NodeWithMetadata {
+                    category: Category::Initializer,
+                    node,
+                }));
+            }
+        }
+    }
+
+    for output in graph_proto.output {
+        if let Some(output_name) = &output.name {
+            if output_name == name {
+                let node = NodeInfo::try_from(output)?;
+                return Ok(Some(NodeWithMetadata {
+                    category: Category::Output,
                     node,
                 }));
             }
