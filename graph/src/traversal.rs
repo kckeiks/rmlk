@@ -1,7 +1,13 @@
 use crate::graph::{GraphError, Result};
 use crate::Node;
-use rmlk_ir::Op;
+use rmlk_ir::{Category, NodeWithMetadata, NodeWithValue};
+use rmlk_ir::{GraphProto, Op};
 use std::collections::HashSet;
+
+#[derive(Debug)]
+pub enum TraversalError {
+    Unknown,
+}
 
 // Todo: we should think about making the graph traversal deterministic here and anywhere else.
 // Depth-first search.
@@ -59,5 +65,63 @@ pub fn compute_order(nodes: &[Node], outputs: &[usize]) -> Result<(Vec<usize>, V
     Ok((sinks, operations))
 }
 
-#[cfg(test)]
-mod test {}
+pub trait OnnxGraphTraverser<'a> {
+    fn check_node(
+        &mut self,
+        node: NodeWithMetadata<'a>,
+    ) -> std::result::Result<bool, TraversalError>;
+}
+
+pub fn visit<'a, T>(
+    graph_proto: GraphProto<'a>,
+    traverser: &mut T,
+) -> std::result::Result<(), TraversalError>
+where
+    T: OnnxGraphTraverser<'a>,
+{
+    for initializer in graph_proto.initializer {
+        let node = NodeWithValue::try_from(initializer)
+            .map_err(|_| GraphError::LoopDetected)
+            .unwrap();
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Initializer,
+            node_with_value: node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for input in graph_proto.input {
+        let node = NodeWithValue::from(input);
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Input,
+            node_with_value: node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for output in graph_proto.output {
+        let node = NodeWithValue::from(output);
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::Output,
+            node_with_value: node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    for node in graph_proto.node {
+        let node = NodeWithValue::try_from(node)
+            .map_err(|_| GraphError::LoopDetected)
+            .unwrap();
+        if traverser.check_node(NodeWithMetadata {
+            category: Category::InnerNode,
+            node_with_value: node,
+        })? {
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}

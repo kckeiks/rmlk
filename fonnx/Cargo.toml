@@ -8,4 +8,5 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "string"] }
 rmlk-ir = { path = "../ir" }
+rmlk-graph = { path = "../graph" }
 quick-protobuf = "0.8"
