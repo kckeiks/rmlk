@@ -1,8 +1,8 @@
 use crate::args::Args;
-use crate::onnx::{Category, Node, NodeInfo};
+use crate::onnx::{Category, NodeInfo, NodeWithMetadata};
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_ir::{DataType, Graph, GraphProto, Model, ModelProto};
+use rmlk_ir::{GraphProto, ModelProto};
 use std::fs;
 
 mod args;
@@ -15,28 +15,30 @@ fn main() {
     let model = fs::read(path).expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    display_node(model_proto.graph.unwrap(), "input").unwrap();
+    let node = display_node(model_proto.graph.unwrap(), "input").unwrap();
 
+    println!(
+        "{:?}",
+        node
+    );
     // Todo: add function instead of implementing TryInto.
     // let model: Model = model_proto.try_into().unwrap();
 }
 
-fn display_node(graph_proto: GraphProto, name: &str) -> anyhow::Result<()> {
+fn display_node<'a>(graph_proto: GraphProto<'a>, name: &str) -> anyhow::Result<Option<NodeWithMetadata<'a>>> {
     for input in graph_proto.input {
         if let Some(input_name) = &input.name {
             if input_name == name {
-                let node = Node::try_from(input)?;
-                println!(
-                    "{:?}",
-                    NodeInfo {
-                        category: Category::Input,
-                        node
-                    }
-                );
+                let node = NodeInfo::try_from(input)?;
+                return Ok(Some(NodeWithMetadata {
+                    category: Category::Input,
+                    node,
+                }));
             }
         }
     }
-    Ok(())
+
+    Ok(None)
 }
 
 // // 1.

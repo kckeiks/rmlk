@@ -9,52 +9,55 @@ pub enum Category {
     Initializer,
 }
 
-pub struct Node<'a> {
+pub struct NodeInfo<'a> {
     pub name: Option<Cow<'a, str>>,
     pub tensor: Option<TensorInfo>,
 }
 
-impl<'a> TryFrom<ValueInfoProto<'a>> for Node<'a> {
+impl<'a> TryFrom<ValueInfoProto<'a>> for NodeInfo<'a> {
     type Error = anyhow::Error;
     fn try_from(value: ValueInfoProto<'a>) -> Result<Self, Self::Error> {
-        let mut tensor = None;
-        if let Some(type_pb) = value.type_pb {
-            let tensor_info = match type_pb.value {
-                ty_proto::OneOfvalue::tensor_type(ty_proto::Tensor { elem_type, shape }) => {
-                    let dtype = tensor_proto::DataType::try_from(elem_type.unwrap_or(0))?;
-                    let mut dims = Vec::new();
-                    if let Some(tensor_shape_proto) = shape {
-                        for dimension in tensor_shape_proto.dim {
-                            match dimension.value {
-                                dimension_proto::OneOfvalue::dim_value(val) => {
-                                    dims.push(val);
+        let tensor_info = match value.type_pb {
+            Some(type_pb) => {
+                let info = match type_pb.value {
+                    ty_proto::OneOfvalue::tensor_type(ty_proto::Tensor { elem_type, shape }) => {
+                        let dtype = tensor_proto::DataType::try_from(elem_type.unwrap_or(0))?;
+                        let mut dims = Vec::new();
+                        if let Some(tensor_shape_proto) = shape {
+                            for dimension in tensor_shape_proto.dim {
+                                match dimension.value {
+                                    dimension_proto::OneOfvalue::dim_value(val) => {
+                                        dims.push(val);
+                                    }
+                                    dimension_proto::OneOfvalue::dim_param(_) => {}
+                                    dimension_proto::OneOfvalue::None => {}
                                 }
-                                dimension_proto::OneOfvalue::dim_param(_) => {}
-                                dimension_proto::OneOfvalue::None => {}
                             }
                         }
+                        TensorInfo { dims, dtype }
                     }
-                    TensorInfo { dims, dtype }
-                }
-                ty_proto::OneOfvalue::sequence_type(_) => unimplemented!(),
-                ty_proto::OneOfvalue::map_type(_) => unimplemented!(),
-                ty_proto::OneOfvalue::optional_type(_) => unimplemented!(),
-                ty_proto::OneOfvalue::sparse_tensor_type(_) => unimplemented!(),
-                ty_proto::OneOfvalue::None => unimplemented!(),
-            };
-            tensor = Some(tensor_info);
-        }
+                    ty_proto::OneOfvalue::sequence_type(_) => unimplemented!(),
+                    ty_proto::OneOfvalue::map_type(_) => unimplemented!(),
+                    ty_proto::OneOfvalue::optional_type(_) => unimplemented!(),
+                    ty_proto::OneOfvalue::sparse_tensor_type(_) => unimplemented!(),
+                    ty_proto::OneOfvalue::None => unimplemented!(),
+                };
+
+                Some(info)
+            }
+            _ => None,
+        };
 
         Ok(Self {
             name: value.name,
-            tensor,
+            tensor: tensor_info,
         })
     }
 }
 
-impl Debug for NodeInfo<'_> {
+impl Debug for NodeWithMetadata<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut debug_struct = f.debug_struct("NodeInfo");
+        let mut debug_struct = f.debug_struct("NodeWithMetadata");
         debug_struct.field("category", &self.category);
 
         if let Some(name) = &self.node.name {
@@ -72,9 +75,9 @@ impl Debug for NodeInfo<'_> {
     }
 }
 
-pub struct NodeInfo<'a> {
+pub struct NodeWithMetadata<'a> {
     pub category: Category,
-    pub node: Node<'a>,
+    pub node: NodeInfo<'a>,
 }
 
 #[derive(Debug)]
