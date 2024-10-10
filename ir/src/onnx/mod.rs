@@ -1,6 +1,10 @@
 mod pb;
 
-pub use pb::onnx::{NodeProto, ValueInfoProto, TypeProto, Version, OperatorStatus, OperatorSetIdProto, StringStringEntryProto, TensorProto, TensorShapeProto, GraphProto, ModelProto, SparseTensorProto, FunctionProto, AttributeProto, TensorAnnotation};
+pub use pb::onnx::{
+    AttributeProto, FunctionProto, GraphProto, ModelProto, NodeProto, OperatorSetIdProto,
+    OperatorStatus, SparseTensorProto, StringStringEntryProto, TensorAnnotation, TensorProto,
+    TensorShapeProto, TypeProto, ValueInfoProto, Version,
+};
 
 pub mod tensor_proto {
     pub use super::pb::onnx::mod_TensorProto::*;

@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx;
-use crate::onnx::tensor_proto::DataLocation;
 use crate::onnx::dimension_proto::OneOfvalue;
+use crate::onnx::tensor_proto::DataLocation;
 use crate::onnx::{TensorProto, TensorShapeProto};
 use serde::{Deserialize, Serialize};
 use std::fs::File;

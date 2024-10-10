@@ -150,9 +150,7 @@ impl TryFrom<TypeProto<'_>> for Type {
                 })
             }
             OneOfvalue::sparse_tensor_type(sparse_tensor) => {
-                if sparse_tensor.elem_type
-                    == Some(onnx::tensor_proto::DataType::UNDEFINED as i32)
-                {
+                if sparse_tensor.elem_type == Some(onnx::tensor_proto::DataType::UNDEFINED as i32) {
                     return Err(Error::InvalidValue {
                         field: "Type::value".to_string(),
                         value: "UNDEFINED is not valid".to_string(),

@@ -48,25 +48,25 @@ impl FromStr for Op {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let op = match s {
-            "Add" => Self::Add,                             // Done.
+            "Add" => Self::Add, // Done.
             "Cast" => Self::Cast,
             "Concat" => Self::Concat,
-            "Conv" => Self::Conv,                           // Done.
-            "Constant" => Self::Const,                      // Done.
+            "Conv" => Self::Conv,      // Done.
+            "Constant" => Self::Const, // Done.
             "ConstantOfShape" => Self::ConstantOfShape,
             "Div" => Self::Div,
             "Equal" => Self::Equal,
             "Expand" => Self::Expand,
-            "Flatten" => Self::Flatten,                     // Done.
+            "Flatten" => Self::Flatten, // Done.
             "Gather" => Self::Gather,
             "Gemm" => Self::Gemm,                           // Done.
             "GlobalAveragePool" => Self::GlobalAveragePool, // Done.
             "MaxPool" => Self::MaxPool,                     // Done.
             "MatMul" => Self::MatMul,
-            "Mul" => Self::Mul,                             // Done.
+            "Mul" => Self::Mul, // Done.
             "Pow" => Self::Pow,
             "Range" => Self::Range,
-            "Relu" => Self::Relu,                           // Done.
+            "Relu" => Self::Relu, // Done.
             "ReduceMean" => Self::ReduceMean,
             "Reshape" => Self::Reshape,
             "ScatterND" => Self::ScatterND,

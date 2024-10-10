@@ -1,4 +1,4 @@
-use rmlk_ir::{dimension_proto, tensor_proto, TensorProto, ty_proto, ValueInfoProto};
+use rmlk_ir::{dimension_proto, tensor_proto, ty_proto, NodeProto, TensorProto, ValueInfoProto};
 use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
@@ -7,11 +7,20 @@ pub enum Category {
     Input,
     Output,
     Initializer,
+    InnerNode,
 }
 
 pub struct NodeInfo<'a> {
     pub name: Option<Cow<'a, str>>,
     pub tensor: Option<TensorInfo>,
+    pub input: Option<Vec<Cow<'a, str>>>,
+    pub output: Option<Vec<Cow<'a, str>>>,
+    pub op_type: Option<Cow<'a, str>>,
+    pub domain: Option<Cow<'a, str>>,
+    pub overload: Option<Cow<'a, str>>,
+    // pub attribute: Vec<AttributeProto<'a>>,
+    pub doc_string: Option<Cow<'a, str>>,
+    // pub metadata_props: Vec<StringStringEntryProto<'a>>,
 }
 
 impl<'a> TryFrom<ValueInfoProto<'a>> for NodeInfo<'a> {
@@ -51,6 +60,12 @@ impl<'a> TryFrom<ValueInfoProto<'a>> for NodeInfo<'a> {
         Ok(Self {
             name: value.name,
             tensor: tensor_info,
+            input: None,
+            output: None,
+            op_type: None,
+            domain: None,
+            overload: None,
+            doc_string: None,
         })
     }
 }
@@ -68,6 +83,12 @@ impl<'a> TryFrom<TensorProto<'a>> for NodeInfo<'a> {
         Ok(NodeInfo {
             name: value.name,
             tensor: Some(tensor),
+            input: None,
+            output: None,
+            op_type: None,
+            domain: None,
+            overload: None,
+            doc_string: None,
         })
     }
 }
@@ -88,7 +109,30 @@ impl Debug for NodeWithMetadata<'_> {
             debug_struct.field("dimensions", &tensor_info.dims);
         }
 
+        if let Some(input) = &self.node.input {
+            debug_struct.field("input", input);
+        }
+
+        if let Some(output) = &self.node.output {
+            debug_struct.field("output", output);
+        }
+
         debug_struct.finish()
+    }
+}
+
+impl<'a> From<NodeProto<'a>> for NodeInfo<'a> {
+    fn from(value: NodeProto<'a>) -> Self {
+        NodeInfo {
+            name: value.name,
+            tensor: None,
+            input: Some(value.input),
+            output: Some(value.output),
+            op_type: None,
+            domain: None,
+            overload: None,
+            doc_string: None,
+        }
     }
 }
 

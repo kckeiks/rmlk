@@ -15,17 +15,29 @@ fn main() {
     let model = fs::read(path).expect("bad");
     let mut reader = BytesReader::from_bytes(&model);
     let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    let node = display_node(model_proto.graph.unwrap(), "onnx::Conv_345").unwrap();
+    let node = display_node(model_proto.graph.unwrap(), "/layer1/layer1.0/conv1/Conv").unwrap();
 
-    println!(
-        "{:?}",
-        node
-    );
+    println!("{:?}", node);
     // Todo: add function instead of implementing TryInto.
     // let model: Model = model_proto.try_into().unwrap();
 }
 
-fn display_node<'a>(graph_proto: GraphProto<'a>, name: &str) -> anyhow::Result<Option<NodeWithMetadata<'a>>> {
+fn display_node<'a>(
+    graph_proto: GraphProto<'a>,
+    name: &str,
+) -> anyhow::Result<Option<NodeWithMetadata<'a>>> {
+    for initializer in graph_proto.initializer {
+        if let Some(initializer_name) = &initializer.name {
+            if initializer_name == name {
+                let node = NodeInfo::try_from(initializer)?;
+                return Ok(Some(NodeWithMetadata {
+                    category: Category::Initializer,
+                    node,
+                }));
+            }
+        }
+    }
+
     for input in graph_proto.input {
         if let Some(input_name) = &input.name {
             if input_name == name {
@@ -38,24 +50,24 @@ fn display_node<'a>(graph_proto: GraphProto<'a>, name: &str) -> anyhow::Result<O
         }
     }
 
-    for tensor_proto in graph_proto.initializer {
-        if let Some(initializer_name) = &tensor_proto.name {
-            if initializer_name == name {
-                let node = NodeInfo::try_from(tensor_proto)?;
-                return Ok(Some(NodeWithMetadata {
-                    category: Category::Initializer,
-                    node,
-                }));
-            }
-        }
-    }
-
     for output in graph_proto.output {
         if let Some(output_name) = &output.name {
             if output_name == name {
                 let node = NodeInfo::try_from(output)?;
                 return Ok(Some(NodeWithMetadata {
                     category: Category::Output,
+                    node,
+                }));
+            }
+        }
+    }
+
+    for node in graph_proto.node {
+        if let Some(node_name) = &node.name {
+            if node_name == name {
+                let node = NodeInfo::from(node);
+                return Ok(Some(NodeWithMetadata {
+                    category: Category::InnerNode,
                     node,
                 }));
             }

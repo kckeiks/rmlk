@@ -60,6 +60,4 @@ pub fn compute_order(nodes: &[Node], outputs: &[usize]) -> Result<(Vec<usize>, V
 }
 
 #[cfg(test)]
-mod test {
-
-}
+mod test {}
