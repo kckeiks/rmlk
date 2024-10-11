@@ -105,7 +105,7 @@ impl NodeWithMetadata<'_> {
             .as_ref()
             .map(|node| node.name.as_ref())
             .flatten()
-            .map(|name| name.as_str());
+            .map(|name| name.as_ref());
 
         if name_from_node.is_some() {
             name_from_node
@@ -175,7 +175,7 @@ impl Debug for NodeWithMetadata<'_> {
 }
 
 pub struct NodeWithValue<'a> {
-    node: Option<Node>,
+    node: Option<NodeProto<'a>>,
     tensor: Option<TensorProto<'a>>,
     value: Option<ValueInfoProto<'a>>,
 }
@@ -185,7 +185,7 @@ impl<'a> TryFrom<NodeProto<'a>> for NodeWithValue<'a> {
 
     fn try_from(value: NodeProto<'a>) -> Result<Self, Self::Error> {
         Ok(NodeWithValue {
-            node: Some(Node::try_from(value)?),
+            node: Some(value),
             tensor: None,
             value: None,
         })
