@@ -1,4 +1,5 @@
 use crate::args::{Args, Command};
+use anyhow::anyhow;
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_graph::{OnnxGraphTraverser, TraversalError};
@@ -8,22 +9,32 @@ use std::fs;
 
 mod args;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     match args.cmd {
         Command::Find { path, target } => {
-            let model = fs::read(path).expect("bad");
+            let model = fs::read(path)?;
             let mut reader = BytesReader::from_bytes(&model);
-            let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
+            let model_proto = ModelProto::from_reader(&mut reader, &model)?;
             let mut traverser = FindNode {
                 target: target.as_ref(),
                 node: None,
             };
-            rmlk_graph::visit(model_proto.graph.unwrap(), &mut traverser).unwrap();
-
-            println!("{:?}", traverser.node.unwrap());
+            rmlk_graph::visit_onnx(
+                model_proto
+                    .graph
+                    .ok_or(anyhow!("the model does not have a graph"))?,
+                &mut traverser,
+            )
+            .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
+            match traverser.node {
+                Some(node) => println!("{:?}", node),
+                None => println!("we did not find a node with the name `{target}`"),
+            }
         }
     }
+
+    Ok(())
 }
 
 pub struct FindNode<'a> {

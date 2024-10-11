@@ -72,7 +72,7 @@ pub trait OnnxGraphTraverser<'a> {
     ) -> std::result::Result<bool, TraversalError>;
 }
 
-pub fn visit<'a, T>(
+pub fn visit_onnx<'a, T>(
     graph_proto: GraphProto<'a>,
     traverser: &mut T,
 ) -> std::result::Result<(), TraversalError>
