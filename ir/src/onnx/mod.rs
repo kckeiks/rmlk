@@ -1,3 +1,4 @@
+mod node;
 mod pb;
 
 pub use pb::onnx::{
@@ -25,3 +26,5 @@ pub mod dimension_proto {
 pub mod attributte_proto {
     pub use super::pb::onnx::mod_AttributeProto::*;
 }
+
+pub use node::{Category, NodeWithMetadata, NodeWithValue, ValueInfo};
