@@ -2,11 +2,8 @@ use crate::attributes::Attribute;
 use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
-use crate::{dimension_proto, tensor_proto, ty_proto, TensorProto, ValueInfoProto};
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::fmt::{Debug, Formatter};
-use std::task::Poll::Pending;
+use std::fmt::{Debug};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Node {
