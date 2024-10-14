@@ -15,7 +15,8 @@ pub use node::*;
 // Todo: wrap these in an onnx mod.
 pub use onnx::{
     dimension_proto, tensor_proto, tensor_shape_proto, ty_proto, Category, GraphProto, ModelProto,
-    NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, TypeProto, ValueInfo, ValueInfoProto,
+    NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, TypeProto, ValueInfoProto,
+    ValueInfoV2,
 };
 pub use op::*;
 pub use tensor::*;

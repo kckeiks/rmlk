@@ -64,7 +64,7 @@ impl Debug for NodeWithMetadata<'_> {
             if let Some(value_info_proto) = &self.node_with_value.value {
                 // Todo: let's compute this once because this is expensive.
                 let tensor_info =
-                    ValueInfo::try_from(value_info_proto).map_err(|_| std::fmt::Error)?;
+                    ValueInfoV2::try_from(value_info_proto).map_err(|_| std::fmt::Error)?;
                 debug_struct.field("dtype", &tensor_info.dtype);
                 debug_struct.field("dimensions", &tensor_info.dims);
             }
@@ -131,12 +131,12 @@ impl<'a> From<ValueInfoProto<'a>> for NodeWithValue<'a> {
 }
 
 #[derive(Debug)]
-pub struct ValueInfo {
+pub struct ValueInfoV2 {
     pub dims: Vec<i64>,
     pub dtype: tensor_proto::DataType,
 }
 
-impl TryFrom<&ValueInfoProto<'_>> for ValueInfo {
+impl TryFrom<&ValueInfoProto<'_>> for ValueInfoV2 {
     type Error = Error;
 
     fn try_from(value: &ValueInfoProto<'_>) -> Result<Self, Self::Error> {
@@ -160,7 +160,7 @@ impl TryFrom<&ValueInfoProto<'_>> for ValueInfo {
                         }
                     }
                 }
-                ValueInfo { dims, dtype }
+                ValueInfoV2 { dims, dtype }
             }
             ty_proto::OneOfvalue::sequence_type(_) => unimplemented!(),
             ty_proto::OneOfvalue::map_type(_) => unimplemented!(),

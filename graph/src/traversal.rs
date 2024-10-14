@@ -8,7 +8,7 @@ use std::collections::HashSet;
 pub enum TraversalError {
     Unknown,
     MissingValue,
-    TransformationFailed
+    TransformationFailed,
 }
 
 // Todo: we should think about making the graph traversal deterministic here and anywhere else.

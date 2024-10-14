@@ -43,6 +43,23 @@ pub struct Graph {
     pub metadata_props: Vec<StringStringEntryProto>,
 }
 
+impl Default for Graph {
+    fn default() -> Self {
+        Self {
+            node: vec![],
+            name: None,
+            initializer: vec![],
+            sparse_initializer: vec![],
+            doc_string: None,
+            input: vec![],
+            output: vec![],
+            value_info: vec![],
+            quantization_annotation: vec![],
+            metadata_props: vec![],
+        }
+    }
+}
+
 impl TryFrom<GraphProto<'_>> for Graph {
     type Error = Error;
 
