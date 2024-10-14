@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
 use serde::{Deserialize, Serialize};
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Node {

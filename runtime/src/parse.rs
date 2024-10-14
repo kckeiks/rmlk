@@ -1,4 +1,5 @@
-use rmlk_graph::{Definition, GraphBuilder, Node};
+use crate::traverse::ExecutionGraphBuilder;
+use rmlk_graph::{visit_graph, Definition, GraphBuilder, Node};
 use rmlk_ir::{DataType, Graph, Op};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -8,6 +9,13 @@ pub enum Error {
     Device,
     MissingInputNode,
     Unknown,
+}
+
+pub fn parse_ir_graph_v2(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
+    let mut builder = ExecutionGraphBuilder::new();
+    visit_graph(graph_schema, &mut builder)?;
+    let graph = builder.build();
+    Ok(graph)
 }
 
 pub fn parse_ir_graph(graph_schema: Graph) -> Result<rmlk_graph::Graph> {

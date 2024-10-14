@@ -3,8 +3,8 @@ mod pb;
 
 pub use pb::onnx::{
     AttributeProto, FunctionProto, GraphProto, ModelProto, NodeProto, OperatorSetIdProto,
-    SparseTensorProto, StringStringEntryProto, TensorAnnotation, TensorProto,
-    TensorShapeProto, TypeProto, ValueInfoProto,
+    SparseTensorProto, StringStringEntryProto, TensorAnnotation, TensorProto, TensorShapeProto,
+    TypeProto, ValueInfoProto,
 };
 
 pub mod tensor_proto {

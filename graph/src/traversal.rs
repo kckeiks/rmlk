@@ -1,5 +1,5 @@
 use crate::graph::{GraphError, Result};
-use crate::{Node};
+use crate::Node;
 use rmlk_ir::{Category, Graph, NodeWithMetadata, NodeWithValue};
 use rmlk_ir::{GraphProto, Op};
 use std::collections::HashSet;
@@ -132,18 +132,28 @@ where
 }
 
 pub trait GraphTraverser {
-    fn check_input(&mut self, input: rmlk_ir::ValueInfo) -> std::result::Result<bool, TraversalError>;
-    fn check_output(&mut self, output: rmlk_ir::ValueInfo) -> std::result::Result<bool, TraversalError>;
-    fn check_initializer(&mut self, initializer: rmlk_ir::Tensor) -> std::result::Result<bool, TraversalError>;
-    fn check_inner_node(&mut self, node: rmlk_ir::Node) -> std::result::Result<bool, TraversalError>;
+    fn check_input(
+        &mut self,
+        input: rmlk_ir::ValueInfo,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_output(
+        &mut self,
+        output: rmlk_ir::ValueInfo,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_initializer(
+        &mut self,
+        initializer: rmlk_ir::Tensor,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_inner_node(
+        &mut self,
+        node: rmlk_ir::Node,
+    ) -> std::result::Result<bool, TraversalError>;
 }
 
-pub fn visit_graph<T>(
-    graph: Graph,
-    traverser: &mut T,
-) -> std::result::Result<(), TraversalError>
+pub fn visit_graph<T>(graph: Graph, traverser: &mut T) -> std::result::Result<(), TraversalError>
 where
-    T: GraphTraverser {
+    T: GraphTraverser,
+{
     for initializer in graph.initializer {
         if traverser.check_initializer(initializer)? {
             return Ok(());

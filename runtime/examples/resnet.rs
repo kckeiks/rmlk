@@ -37,7 +37,7 @@ fn main() {
 
     // Convert onnx graph to a rmlk IR graph.
     let rmlk_model: Model = model_proto.try_into().unwrap();
-    let graph = rmlk_runtime::parse::parse_ir_graph(rmlk_model.graph.unwrap()).unwrap();
+    let graph = rmlk_runtime::parse::parse_ir_graph_v2(rmlk_model.graph.unwrap()).unwrap();
 
     // Build engine graph.
     let builder = Builder::new(graph);
