@@ -8,6 +8,7 @@ use rmlk_ir::NodeWithMetadata;
 use std::fs;
 
 mod args;
+mod transform;
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();

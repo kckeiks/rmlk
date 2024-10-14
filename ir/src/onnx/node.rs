@@ -93,9 +93,9 @@ impl Debug for NodeWithMetadata<'_> {
 }
 
 pub struct NodeWithValue<'a> {
-    node: Option<NodeProto<'a>>,
-    tensor: Option<TensorProto<'a>>,
-    value: Option<ValueInfoProto<'a>>,
+    pub node: Option<NodeProto<'a>>,
+    pub tensor: Option<TensorProto<'a>>,
+    pub value: Option<ValueInfoProto<'a>>,
 }
 
 impl<'a> TryFrom<NodeProto<'a>> for NodeWithValue<'a> {
@@ -132,8 +132,8 @@ impl<'a> From<ValueInfoProto<'a>> for NodeWithValue<'a> {
 
 #[derive(Debug)]
 pub struct ValueInfo {
-    dims: Vec<i64>,
-    dtype: tensor_proto::DataType,
+    pub dims: Vec<i64>,
+    pub dtype: tensor_proto::DataType,
 }
 
 impl TryFrom<&ValueInfoProto<'_>> for ValueInfo {
