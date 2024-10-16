@@ -1,6 +1,5 @@
 use rmlk_graph::{
-    GraphBuilder, GraphTraverser, Node, NodeDefinition, OnnxGraphTraverser, TensorHeader,
-    TraversalError,
+    Definition, GraphBuilder, GraphTraverser, Node, OnnxGraphTraverser, TraversalError,
 };
 use rmlk_ir::{Category, Graph, NodeWithMetadata, Op, Tensor, ValueInfo};
 
@@ -122,8 +121,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         // Todo: remove clone.
         let name = input.name.clone();
 
-        let mut def = NodeDefinition::default();
-        def.set_value(input);
+        let def = Definition::value(input);
 
         let final_node = Node::new(Op::NoOp, def);
         let node_id = self.builder.add_input(final_node).unwrap();
@@ -140,8 +138,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         // Todo: remove clone.
         let name = output.name.clone();
 
-        let mut def = NodeDefinition::default();
-        def.set_value(output);
+        let def = Definition::value(output);
 
         let node = Node::new(Op::NoOp, def);
         let node_id = self.builder.add_output_node(node).expect("TODO");
@@ -160,13 +157,12 @@ impl GraphTraverser for ExecutionGraphBuilder {
             .clone()
             .ok_or(TraversalError::InvalidTensor)?;
 
-        let mut def = NodeDefinition::default();
-        def.set_tensor(TensorHeader {
-            name: name.clone(),
-            dtype: initializer.data_type,
+        let def = Definition::tensor(
+            name.clone(),
+            initializer.data_type,
             // Todo: remove clone.
-            dims: initializer.dims.clone(),
-        });
+            initializer.dims.clone(),
+        );
         let node = Node::new(Op::Const, def);
 
         let node_id = self.builder.add_node(node).expect("TODO");
@@ -195,8 +191,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         // Todo: circle back here.
         let node_attr = std::mem::take(&mut node.attribute);
 
-        let mut def = NodeDefinition::default();
-        def.set_node(node);
+        let def = Definition::node(node);
 
         let mut res_node = Node::new(op, def);
 
@@ -224,8 +219,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         for name in node_output {
             match self.builder.get_node_id(&name) {
                 None => {
-                    let mut def = NodeDefinition::default();
-                    def.set_value(ValueInfo {
+                    let def = Definition::value(ValueInfo {
                         name: name.clone(),
                         ty: None,
                         doc_string: None,

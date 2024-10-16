@@ -1,6 +1,10 @@
 use rmlk_ir::{Attribute, DataType, Op, ValueInfo};
 use std::collections::HashMap;
 
+// Todo: Sometimes we dont want to keep all of a Definition specially in release
+// because we only need certain things and do not need the metadata.
+// Let's solve it.
+
 pub struct Node {
     /// The node's Provider.
     ///
@@ -21,25 +25,13 @@ pub struct Node {
     /// an initial tensor.
     outputs: Vec<usize>,
     /// The node's definition.
-    _definition: NodeDefinition,
-    // _definition: Definition,
+    _definition: Definition,
     /// Attributes.
     attributes: HashMap<Box<str>, Attribute>,
 }
 
 impl Node {
-    // pub fn new(op: Op, definition: Definition) -> Self {
-    //     Self {
-    //         op,
-    //         _provider: None,
-    //         inputs: Vec::new(),
-    //         outputs: Vec::new(),
-    //         _definition: definition,
-    //         attributes: HashMap::new(),
-    //     }
-    // }
-
-    pub fn new(op: Op, definition: NodeDefinition) -> Self {
+    pub fn new(op: Op, definition: Definition) -> Self {
         Self {
             op,
             _provider: None,
@@ -78,48 +70,51 @@ impl Node {
         self.attributes.insert(name, attr);
     }
 
-    pub fn def(&self) -> &NodeDefinition {
+    pub fn def(&self) -> &Definition {
         &self._definition
     }
 }
 
-/// The definition for this node's inputs and outputs.
-pub struct Definition {
-    pub shape: Vec<usize>,
-    pub dtype: DataType,
-    pub node: Option<rmlk_ir::Node>,
-    pub name: String,
-}
-
-impl Default for Definition {
-    fn default() -> Self {
-        Self {
-            shape: Vec::new(),
-            dtype: DataType::Undefined,
-            node: None,
-            name: "".to_string(),
-        }
-    }
-}
-
 #[derive(Default)]
-pub struct NodeDefinition {
+pub struct Definition {
     value: Option<ValueInfo>,
     node: Option<rmlk_ir::Node>,
-    tensor: Option<TensorHeader>,
+    header: Option<TensorHeader>,
 }
 
-impl NodeDefinition {
+impl Definition {
+    pub fn tensor(name: String, dtype: DataType, dims: Vec<usize>) -> Self {
+        Self {
+            header: Some(TensorHeader {
+                // Todo: remove clone.
+                name,
+                dtype,
+                dims,
+            }),
+            ..Default::default()
+        }
+    }
+
+    pub fn value(value: ValueInfo) -> Self {
+        Self {
+            value: Some(value),
+            ..Default::default()
+        }
+    }
+
+    pub fn node(node: rmlk_ir::Node) -> Self {
+        Self {
+            node: Some(node),
+            ..Default::default()
+        }
+    }
+
     pub fn set_value(&mut self, value: ValueInfo) -> Option<ValueInfo> {
         self.value.replace(value)
     }
 
     pub fn set_node(&mut self, node: rmlk_ir::Node) -> Option<rmlk_ir::Node> {
         self.node.replace(node)
-    }
-
-    pub fn set_tensor(&mut self, tensor: TensorHeader) -> Option<TensorHeader> {
-        self.tensor.replace(tensor)
     }
 
     // Todo: remove clones in this method.
@@ -131,7 +126,7 @@ impl NodeDefinition {
             return dims;
         }
 
-        if let Some(tensor) = self.tensor.as_ref() {
+        if let Some(tensor) = self.header.as_ref() {
             return Some(tensor.dims.clone());
         }
 
@@ -152,7 +147,7 @@ impl NodeDefinition {
             return Some(dtype);
         }
 
-        if let Some(tensor) = self.tensor.as_ref() {
+        if let Some(tensor) = self.header.as_ref() {
             return Some(tensor.dtype);
         }
 
@@ -170,7 +165,7 @@ impl NodeDefinition {
             return Some(value.name.as_str());
         }
 
-        if let Some(tensor) = self.tensor.as_ref() {
+        if let Some(tensor) = self.header.as_ref() {
             return Some(tensor.name.as_str());
         }
 
@@ -184,7 +179,7 @@ impl NodeDefinition {
     }
 }
 
-pub struct TensorHeader {
+struct TensorHeader {
     pub name: String,
     pub dtype: DataType,
     pub dims: Vec<usize>,
