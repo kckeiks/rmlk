@@ -1,4 +1,4 @@
-use rmlk_ir::{Attribute, DataType, Op};
+use rmlk_ir::{Attribute, DataType, Op, ValueInfo};
 use std::collections::HashMap;
 
 pub struct Node {
@@ -21,13 +21,25 @@ pub struct Node {
     /// an initial tensor.
     outputs: Vec<usize>,
     /// The node's definition.
-    _definition: Definition,
+    _definition: NodeDefinition,
+    // _definition: Definition,
     /// Attributes.
     attributes: HashMap<Box<str>, Attribute>,
 }
 
 impl Node {
-    pub fn new(op: Op, definition: Definition) -> Self {
+    // pub fn new(op: Op, definition: Definition) -> Self {
+    //     Self {
+    //         op,
+    //         _provider: None,
+    //         inputs: Vec::new(),
+    //         outputs: Vec::new(),
+    //         _definition: definition,
+    //         attributes: HashMap::new(),
+    //     }
+    // }
+
+    pub fn new(op: Op, definition: NodeDefinition) -> Self {
         Self {
             op,
             _provider: None,
@@ -66,7 +78,7 @@ impl Node {
         self.attributes.insert(name, attr);
     }
 
-    pub fn def(&self) -> &Definition {
+    pub fn def(&self) -> &NodeDefinition {
         &self._definition
     }
 }
@@ -88,4 +100,92 @@ impl Default for Definition {
             name: "".to_string(),
         }
     }
+}
+
+#[derive(Default)]
+pub struct NodeDefinition {
+    value: Option<ValueInfo>,
+    node: Option<rmlk_ir::Node>,
+    tensor: Option<TensorHeader>,
+}
+
+impl NodeDefinition {
+    pub fn set_value(&mut self, value: ValueInfo) -> Option<ValueInfo> {
+        self.value.replace(value)
+    }
+
+    pub fn set_node(&mut self, node: rmlk_ir::Node) -> Option<rmlk_ir::Node> {
+        self.node.replace(node)
+    }
+
+    pub fn set_tensor(&mut self, tensor: TensorHeader) -> Option<TensorHeader> {
+        self.tensor.replace(tensor)
+    }
+
+    // Todo: remove clones in this method.
+    pub fn shape(&self) -> Option<Vec<usize>> {
+        if let Some(value) = self.value.as_ref() {
+            // Todo: `get_tensor_info` should not return None at this point.
+            // Consider dynamic size tensors.
+            let (_, dims) = value.ty.as_ref()?.get_tensor_info()?;
+            return dims;
+        }
+
+        if let Some(tensor) = self.tensor.as_ref() {
+            return Some(tensor.dims.clone());
+        }
+
+        // Todo: circle back.
+        // This is an inner node and we don't get that information from schema.
+        if self.node.is_some() {
+            return None;
+        }
+
+        None
+    }
+
+    pub fn dtype(&self) -> Option<DataType> {
+        if let Some(value) = self.value.as_ref() {
+            // Todo: `get_tensor_info` should not return None at this point.
+            // Consider dynamic size tensors.
+            let (dtype, _) = value.ty.as_ref()?.get_tensor_info()?;
+            return Some(dtype);
+        }
+
+        if let Some(tensor) = self.tensor.as_ref() {
+            return Some(tensor.dtype);
+        }
+
+        // Todo: circle back.
+        // This is an inner node and we don't get that information from schema.
+        if self.node.is_some() {
+            return Some(DataType::Undefined);
+        }
+
+        Some(DataType::Undefined)
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        if let Some(value) = self.value.as_ref() {
+            return Some(value.name.as_str());
+        }
+
+        if let Some(tensor) = self.tensor.as_ref() {
+            return Some(tensor.name.as_str());
+        }
+
+        // Todo: circle back.
+        // This is an inner node and we don't get that information from schema.
+        if self.node.is_some() {
+            unreachable!("value should exist for nodes");
+        }
+
+        None
+    }
+}
+
+pub struct TensorHeader {
+    pub name: String,
+    pub dtype: DataType,
+    pub dims: Vec<usize>,
 }

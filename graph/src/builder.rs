@@ -82,7 +82,7 @@ impl GraphBuilder {
                 node_name={:?},\
                 inputs={inputs:?},\
                 outputs={outputs:?}",
-                n.def().name
+                n.def().name()
             );
         }
         Ok(Graph::new(

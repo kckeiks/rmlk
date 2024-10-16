@@ -1,5 +1,7 @@
-use rmlk_graph::{Definition, Graph, GraphBuilder, GraphTraverser, Node, TraversalError};
-use rmlk_ir::{DataType, Op, Tensor, ValueInfo};
+use rmlk_graph::{
+    Graph, GraphBuilder, GraphTraverser, Node, NodeDefinition, TensorHeader, TraversalError,
+};
+use rmlk_ir::{Op, Tensor, ValueInfo};
 
 pub struct ExecutionGraphBuilder {
     builder: GraphBuilder,
@@ -19,24 +21,15 @@ impl ExecutionGraphBuilder {
 
 impl GraphTraverser for ExecutionGraphBuilder {
     fn check_input(&mut self, input: ValueInfo) -> Result<bool, TraversalError> {
-        let (dtype, dims) = input
-            .ty
-            .ok_or(TraversalError::MissingValue)?
-            .get_tensor_info()
-            .ok_or(TraversalError::MissingValue)?;
+        let name = input.name.clone();
 
-        let final_node = Node::new(
-            Op::NoOp,
-            Definition {
-                shape: dims.ok_or(TraversalError::MissingValue)?,
-                dtype,
-                node: None,
-                name: input.name.clone(),
-            },
-        );
+        let mut def = NodeDefinition::default();
+        def.set_value(input);
+
+        let final_node = Node::new(Op::NoOp, def);
         let node_id = self.builder.add_input(final_node).unwrap();
 
-        if let Some(old_id) = self.builder.insert_name_to_id(input.name, node_id) {
+        if let Some(old_id) = self.builder.insert_name_to_id(name, node_id) {
             // Todo: Rename name.
             println!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
@@ -45,27 +38,15 @@ impl GraphTraverser for ExecutionGraphBuilder {
     }
 
     fn check_output(&mut self, output: ValueInfo) -> Result<bool, TraversalError> {
-        let ty = output.ty.ok_or(TraversalError::MissingType)?;
-        // Todo: Should we support other types such as maps, sparse tensors, etc.
-        let (elem_ty, shape) = ty.get_tensor_info().ok_or(TraversalError::Unknown)?;
+        let name = output.name.clone();
 
-        let mut shape_ = Vec::new();
-        if let Some(s) = shape {
-            shape_.extend(s);
-        }
+        let mut def = NodeDefinition::default();
+        def.set_value(output);
 
-        let node = Node::new(
-            Op::NoOp,
-            Definition {
-                shape: shape_,
-                dtype: elem_ty,
-                node: None,
-                name: output.name.clone(),
-            },
-        );
+        let node = Node::new(Op::NoOp, def);
         let node_id = self.builder.add_output_node(node).expect("TODO");
 
-        if let Some(old_id) = self.builder.insert_name_to_id(output.name, node_id) {
+        if let Some(old_id) = self.builder.insert_name_to_id(name, node_id) {
             // Todo: Rename name.
             println!("found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]");
         }
@@ -74,25 +55,19 @@ impl GraphTraverser for ExecutionGraphBuilder {
     }
 
     fn check_initializer(&mut self, initializer: Tensor) -> Result<bool, TraversalError> {
-        let elem_ty = initializer
-            .data_type
-            .try_into()
-            .map_err(|_| TraversalError::InvalidInnerNode)?;
         let name = initializer
             .name
             .clone()
             .ok_or(TraversalError::InvalidTensor)?;
 
-        let node = Node::new(
-            Op::Const,
-            Definition {
-                // Todo: we need to read the dimensions.
-                shape: initializer.dims.clone(),
-                dtype: elem_ty,
-                node: None,
-                name: name.clone(),
-            },
-        );
+        let mut def = NodeDefinition::default();
+        def.set_tensor(TensorHeader {
+            name: name.clone(),
+            dtype: initializer.data_type,
+            // Todo: remove clone.
+            dims: initializer.dims.clone(),
+        });
+        let node = Node::new(Op::Const, def);
 
         let node_id = self.builder.add_node(node).expect("TODO");
         self.builder.add_initial_tensor(node_id, initializer);
@@ -105,7 +80,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         Ok(false)
     }
 
-    fn check_inner_node(&mut self, node: rmlk_ir::Node) -> Result<bool, TraversalError> {
+    fn check_inner_node(&mut self, mut node: rmlk_ir::Node) -> Result<bool, TraversalError> {
         let op = node
             .op_type
             .as_ref()
@@ -113,25 +88,27 @@ impl GraphTraverser for ExecutionGraphBuilder {
             .ok_or(TraversalError::InvalidInnerNode)?
             .map_err(|_| TraversalError::InvalidInnerNode)?;
 
-        let mut res_node = Node::new(
-            op,
-            Definition {
-                shape: Vec::new(),
-                dtype: DataType::Undefined,
-                node: Some(node.clone()),
-                name: node.name.clone().unwrap_or("".to_string()),
-            },
-        );
+        // Todo: remove this heavy clone.
+        let node_input = node.input.clone();
+        let node_output = node.output.clone();
+
+        // Todo: circle back here.
+        let node_attr = std::mem::take(&mut node.attribute);
+
+        let mut def = NodeDefinition::default();
+        def.set_node(node);
+
+        let mut res_node = Node::new(op, def);
 
         // Add attributes.
-        for attr in node.attribute {
+        for attr in node_attr {
             // Todo: Let's avoid the copy.
             // Maybe we can define some type of object that we agree to never drop
             // and then we can leak the string.
             res_node.add_attr(attr.name.clone().into_boxed_str(), attr);
         }
 
-        for name in node.input.iter() {
+        for name in node_input.iter() {
             // Todo: Mapping one name to a single node id, we lose information,
             // because a single node might have two outputs, how do we differentiate?
             let input_node_id = self
@@ -144,16 +121,18 @@ impl GraphTraverser for ExecutionGraphBuilder {
         let node_id = self.builder.add_node(res_node).expect("TODO");
 
         let mut output_node_ids = Vec::new();
-        for name in node.output {
+        for name in node_output {
             match self.builder.get_node_id(&name) {
                 None => {
-                    let mut output_node = Node::new(
-                        Op::NoOp,
-                        Definition {
-                            name: name.clone(),
-                            ..Default::default()
-                        },
-                    );
+                    let mut def = NodeDefinition::default();
+                    def.set_value(ValueInfo {
+                        name: name.clone(),
+                        ty: None,
+                        doc_string: None,
+                        // Todo: remove this allocation.
+                        metadata_props: vec![],
+                    });
+                    let mut output_node = Node::new(Op::NoOp, def);
                     output_node.add_input(node_id);
 
                     let output_node_id = self

@@ -5,7 +5,7 @@ mod traversal;
 
 pub use builder::GraphBuilder;
 pub use graph::Graph;
-pub use node::{Definition, Node};
+pub use node::{Definition, Node, NodeDefinition, TensorHeader};
 pub use traversal::{
     compute_order, visit_graph, visit_onnx, GraphTraverser, OnnxGraphTraverser, TraversalError,
 };

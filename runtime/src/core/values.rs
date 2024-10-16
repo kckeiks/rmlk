@@ -46,10 +46,13 @@ impl<T> Values<T> {
             match graph.get_node(node_id) {
                 Some(node) => {
                     let def = node.def();
-                    let tensor = if def.shape.is_empty() {
-                        Tensor::new(def.dtype)
+                    // Todo: Throw an error instead.
+                    let dtype = def.dtype().expect("Input should have a data type defined");
+                    let tensor = if let Some(shape) = def.shape() {
+                        // Todo: Remove clone.
+                        Tensor::new_with_shape(dtype, shape.clone())
                     } else {
-                        Tensor::new_with_shape(def.dtype, def.shape.clone())
+                        Tensor::new(dtype)
                     };
                     tensors[node_id].replace(tensor);
                 }
@@ -61,10 +64,13 @@ impl<T> Values<T> {
             match graph.get_node(node_id) {
                 Some(node) => {
                     let def = node.def();
-                    let tensor = if def.shape.is_empty() {
-                        Tensor::new(def.dtype)
+                    // Todo: Throw an error instead.
+                    let dtype = def.dtype().expect("Input should have a data type defined");
+                    let tensor = if let Some(shape) = def.shape() {
+                        // Todo: Remove clone.
+                        Tensor::new_with_shape(dtype, shape.clone())
                     } else {
-                        Tensor::new_with_shape(def.dtype, def.shape.clone())
+                        Tensor::new(dtype)
                     };
                     tensors[node_id].replace(tensor);
                 }
