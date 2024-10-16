@@ -1,6 +1,4 @@
-use rmlk_graph::{
-    Definition, Graph, GraphBuilder, GraphTraverser, Node, TensorInfo, TraversalError,
-};
+use rmlk_graph::{Definition, Graph, GraphBuilder, GraphTraverser, Node, TraversalError};
 use rmlk_ir::{Op, Tensor, ValueInfo};
 
 pub struct ExecutionGraphBuilder {
