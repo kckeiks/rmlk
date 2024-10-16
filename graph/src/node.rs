@@ -26,8 +26,6 @@ pub struct Node {
     outputs: Vec<usize>,
     /// The node's definition.
     _definition: Definition,
-    /// Attributes.
-    attributes: HashMap<Box<str>, Attribute>,
 }
 
 impl Node {
@@ -38,7 +36,6 @@ impl Node {
             inputs: Vec::new(),
             outputs: Vec::new(),
             _definition: definition,
-            attributes: HashMap::new(),
         }
     }
 
@@ -54,6 +51,10 @@ impl Node {
         self.inputs.push(node_id);
     }
 
+    pub fn set_input(&mut self, inputs: Vec<usize>) {
+        self.inputs = inputs;
+    }
+
     pub fn outputs(&self) -> &[usize] {
         self.outputs.as_slice()
     }
@@ -62,12 +63,8 @@ impl Node {
         self.outputs.push(node_id);
     }
 
-    pub fn attrs(&self) -> &HashMap<Box<str>, Attribute> {
-        &self.attributes
-    }
-
-    pub fn add_attr(&mut self, name: Box<str>, attr: Attribute) {
-        self.attributes.insert(name, attr);
+    pub fn set_output(&mut self, outputs: Vec<usize>) {
+        self.outputs = outputs;
     }
 
     pub fn def(&self) -> &Definition {
@@ -80,6 +77,7 @@ pub struct Definition {
     value: Option<ValueInfo>,
     node: Option<rmlk_ir::Node>,
     header: Option<TensorHeader>,
+    attributes: Option<HashMap<Box<str>, Attribute>>,
 }
 
 impl Definition {
@@ -102,9 +100,24 @@ impl Definition {
         }
     }
 
-    pub fn node(node: rmlk_ir::Node) -> Self {
+    pub fn node(mut node: rmlk_ir::Node) -> Self {
+        let mut attributes = None;
+
+        if !node.attribute.is_empty() {
+            // Add attributes.
+            let mut attrs = HashMap::new();
+            for attr in std::mem::take(&mut node.attribute) {
+                // Todo: Let's avoid the copy.
+                // Maybe we can define some type of object that we agree to never drop
+                // and then we can leak the string.
+                attrs.insert(attr.name.clone().into_boxed_str(), attr);
+            }
+            attributes = Some(attrs);
+        }
+
         Self {
             node: Some(node),
+            attributes,
             ..Default::default()
         }
     }
@@ -176,6 +189,18 @@ impl Definition {
         }
 
         None
+    }
+
+    pub fn inputs(&self) -> Option<&Vec<String>> {
+        self.node.as_ref().map(|n| &n.input)
+    }
+
+    pub fn outputs(&self) -> Option<&Vec<String>> {
+        self.node.as_ref().map(|n| &n.output)
+    }
+
+    pub fn attrs(&self) -> Option<&HashMap<Box<str>, Attribute>> {
+        self.attributes.as_ref()
     }
 }
 

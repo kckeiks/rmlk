@@ -75,7 +75,7 @@ impl GraphTraverser for ExecutionGraphBuilder {
         Ok(false)
     }
 
-    fn check_inner_node(&mut self, mut node: rmlk_ir::Node) -> Result<bool, TraversalError> {
+    fn check_inner_node(&mut self, node: rmlk_ir::Node) -> Result<bool, TraversalError> {
         let op = node
             .op_type
             .as_ref()
@@ -83,42 +83,39 @@ impl GraphTraverser for ExecutionGraphBuilder {
             .ok_or(TraversalError::InvalidInnerNode)?
             .map_err(|_| TraversalError::InvalidInnerNode)?;
 
-        // Todo: remove this heavy clone.
-        let node_input = node.input.clone();
-        let node_output = node.output.clone();
-
-        // Todo: circle back here.
-        let node_attr = std::mem::take(&mut node.attribute);
-
         let def = Definition::node(node);
+        let mut node = Node::new(op, def);
 
-        let mut res_node = Node::new(op, def);
-
-        // Add attributes.
-        for attr in node_attr {
-            // Todo: Let's avoid the copy.
-            // Maybe we can define some type of object that we agree to never drop
-            // and then we can leak the string.
-            res_node.add_attr(attr.name.clone().into_boxed_str(), attr);
-        }
-
-        for name in node_input.iter() {
+        let mut inputs = Vec::new();
+        for name in node.def().inputs().ok_or(TraversalError::MissingValue)? {
             // Todo: Mapping one name to a single node id, we lose information,
             // because a single node might have two outputs, how do we differentiate?
             let input_node_id = self
                 .builder
                 .get_node_id(name)
                 .ok_or_else(|| TraversalError::InvalidInnerNode)?;
-            res_node.add_input(input_node_id);
+            inputs.push(input_node_id);
         }
 
-        let node_id = self.builder.add_node(res_node).expect("TODO");
+        node.set_input(inputs);
+
+        let node_id = self.builder.add_node(node).expect("TODO");
 
         let mut output_node_ids = Vec::new();
-        for name in node_output {
+        // Todo: remove clone.
+        let outputs = self
+            .builder
+            .get_node(node_id)
+            .expect("that node was just inserted")
+            .def()
+            .outputs()
+            .ok_or(TraversalError::MissingValue)?
+            .clone();
+        for name in outputs {
             match self.builder.get_node_id(&name) {
                 None => {
                     let def = Definition::value(ValueInfo {
+                        // Todo: remove clone.
                         name: name.clone(),
                         ty: None,
                         doc_string: None,
@@ -132,9 +129,10 @@ impl GraphTraverser for ExecutionGraphBuilder {
                         .builder
                         .add_node(output_node)
                         .map_err(|_| TraversalError::InvalidInnerNode)?;
-
                     output_node_ids.push(output_node_id);
-                    self.builder.insert_name_to_id(name, output_node_id);
+
+                    // Todo: remove clone.
+                    self.builder.insert_name_to_id(name.clone(), output_node_id);
                 }
                 Some(id) => {
                     let node = self
