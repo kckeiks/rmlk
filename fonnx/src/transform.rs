@@ -1,6 +1,5 @@
-use rmlk_graph::{
-    Definition, GraphBuilder, GraphTraverser, Node, OnnxGraphTraverser, TraversalError,
-};
+use rmlk_graph::Definition;
+use rmlk_graph::{GraphBuilder, GraphTraverser, Node, OnnxGraphTraverser, TraversalError};
 use rmlk_ir::{Category, Graph, NodeWithMetadata, Op, Tensor, ValueInfo};
 
 pub struct GraphFromOnnx {

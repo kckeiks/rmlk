@@ -1,6 +1,6 @@
 use crate::traverse::ExecutionGraphBuilder;
-use rmlk_graph::{visit_graph, Definition, GraphBuilder, Node};
-use rmlk_ir::{DataType, Graph, Op};
+use rmlk_graph::visit_graph;
+use rmlk_ir::Graph;
 
 type Result<T> = std::result::Result<T, Error>;
 
