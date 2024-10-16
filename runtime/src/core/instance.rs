@@ -144,7 +144,7 @@ where
             trace!(
                 "{i} {:?} {:?} inputs={:?}",
                 node.op(),
-                node.def().node.as_ref().unwrap().name,
+                node.def().name().unwrap(),
                 node.inputs()
             );
 
