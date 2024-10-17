@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::DataType;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Tensor {
@@ -9,5 +9,3 @@ pub struct Tensor {
     // Optional.
     pub name: Option<String>,
 }
-
-

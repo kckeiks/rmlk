@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::ir_v2::tensor::Tensor;
+use serde::{Deserialize, Serialize};
 
 /// Attributes
 ///

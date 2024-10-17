@@ -1,13 +1,13 @@
 mod attributes;
 mod error;
 mod graph;
+pub mod ir_v2;
 mod model;
 mod node;
 mod onnx;
 mod op;
 mod tensor;
 mod types;
-mod ir_v2;
 
 pub use attributes::*;
 pub use graph::*;

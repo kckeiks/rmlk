@@ -1,6 +1,8 @@
 use crate::graph::{GraphError, Result};
 use crate::Node;
-use rmlk_ir::{Category, Graph, NodeWithMetadata, NodeWithValue};
+use rmlk_ir::{
+    Category, Graph, NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, ValueInfoProto,
+};
 use rmlk_ir::{GraphProto, Op};
 use std::collections::HashSet;
 
@@ -71,9 +73,21 @@ pub fn compute_order(nodes: &[Node], outputs: &[usize]) -> Result<(Vec<usize>, V
 }
 
 pub trait OnnxGraphTraverser<'a> {
-    fn check_node(
+    fn check_input(
         &mut self,
-        node: NodeWithMetadata<'a>,
+        input: ValueInfoProto<'a>,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_output(
+        &mut self,
+        output: ValueInfoProto<'a>,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_initializer(
+        &mut self,
+        initializer: TensorProto<'a>,
+    ) -> std::result::Result<bool, TraversalError>;
+    fn check_inner_node(
+        &mut self,
+        node: NodeProto<'a>,
     ) -> std::result::Result<bool, TraversalError>;
 }
 
@@ -85,45 +99,25 @@ where
     T: OnnxGraphTraverser<'a>,
 {
     for initializer in graph_proto.initializer {
-        let node = NodeWithValue::try_from(initializer)
-            .map_err(|_| GraphError::LoopDetected)
-            .unwrap();
-        if traverser.check_node(NodeWithMetadata {
-            category: Category::Initializer,
-            node_with_value: node,
-        })? {
+        if traverser.check_initializer(initializer)? {
             return Ok(());
         }
     }
 
     for input in graph_proto.input {
-        let node = NodeWithValue::from(input);
-        if traverser.check_node(NodeWithMetadata {
-            category: Category::Input,
-            node_with_value: node,
-        })? {
+        if traverser.check_input(input)? {
             return Ok(());
         }
     }
 
     for output in graph_proto.output {
-        let node = NodeWithValue::from(output);
-        if traverser.check_node(NodeWithMetadata {
-            category: Category::Output,
-            node_with_value: node,
-        })? {
+        if traverser.check_output(output)? {
             return Ok(());
         }
     }
 
     for node in graph_proto.node {
-        let node = NodeWithValue::try_from(node)
-            .map_err(|_| GraphError::LoopDetected)
-            .unwrap();
-        if traverser.check_node(NodeWithMetadata {
-            category: Category::InnerNode,
-            node_with_value: node,
-        })? {
+        if traverser.check_inner_node(node)? {
             return Ok(());
         }
     }

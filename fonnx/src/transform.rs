@@ -1,6 +1,6 @@
 use rmlk_graph::Definition;
 use rmlk_graph::{GraphBuilder, GraphTraverser, Node, OnnxGraphTraverser, TraversalError};
-use rmlk_ir::{Category, Graph, NodeWithMetadata, Op, Tensor, ValueInfo};
+use rmlk_ir::{Graph, NodeProto, Op, Tensor, TensorProto, ValueInfo, ValueInfoProto};
 
 pub struct GraphFromOnnx {
     inner: Graph,
@@ -15,48 +15,31 @@ impl GraphFromOnnx {
 }
 
 impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
-    fn check_node(&mut self, node: NodeWithMetadata<'a>) -> Result<bool, TraversalError> {
-        match node.category {
-            Category::Input => {
-                let value_info = ValueInfo::try_from(
-                    node.node_with_value
-                        .value
-                        .ok_or(TraversalError::MissingValue)?,
-                )
-                .map_err(|_| TraversalError::TransformationFailed)?;
-                self.inner.input.push(value_info);
-            }
-            Category::Output => {
-                let value_info = ValueInfo::try_from(
-                    node.node_with_value
-                        .value
-                        .ok_or(TraversalError::MissingValue)?,
-                )
-                .map_err(|_| TraversalError::TransformationFailed)?;
-                self.inner.output.push(value_info);
-            }
-            Category::Initializer => {
-                let tensor = Tensor::from_onnx_tensor(
-                    node.node_with_value
-                        .tensor
-                        .ok_or(TraversalError::MissingValue)?,
-                )
-                .map_err(|_| TraversalError::TransformationFailed)?;
+    fn check_input(&mut self, input: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
+        let value_info =
+            ValueInfo::try_from(input).map_err(|_| TraversalError::TransformationFailed)?;
+        self.inner.input.push(value_info);
+        Ok(false)
+    }
 
-                self.inner.initializer.push(tensor);
-            }
-            Category::InnerNode => {
-                let node = rmlk_ir::Node::try_from(
-                    node.node_with_value
-                        .node
-                        .ok_or(TraversalError::MissingValue)?,
-                )
-                .map_err(|_| TraversalError::TransformationFailed)?;
+    fn check_output(&mut self, output: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
+        let value_info =
+            ValueInfo::try_from(output).map_err(|_| TraversalError::TransformationFailed)?;
+        self.inner.output.push(value_info);
+        Ok(false)
+    }
 
-                self.inner.node.push(node)
-            }
-        }
+    fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool, TraversalError> {
+        let initializer = Tensor::from_onnx_tensor(initializer)
+            .map_err(|_| TraversalError::TransformationFailed)?;
+        self.inner.initializer.push(initializer);
+        Ok(false)
+    }
 
+    fn check_inner_node(&mut self, node: NodeProto<'a>) -> Result<bool, TraversalError> {
+        let node =
+            rmlk_ir::Node::try_from(node).map_err(|_| TraversalError::TransformationFailed)?;
+        self.inner.node.push(node);
         Ok(false)
     }
 }

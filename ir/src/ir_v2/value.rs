@@ -1,5 +1,5 @@
+use crate::StringStringEntryProto;
 use serde::{Deserialize, Serialize};
-use crate::{StringStringEntryProto};
 
 /// Defines information on value, including the name, the type, and
 /// the shape of the value.
@@ -16,8 +16,5 @@ pub struct ValueInfo {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum TypeValue {
-    Tensor {
-        ty: i32,
-        dims: Vec<i64>,
-    }
+    Tensor { ty: i32, dims: Vec<i64> },
 }
