@@ -7,6 +7,7 @@ mod onnx;
 mod op;
 mod tensor;
 mod types;
+mod ir_v2;
 
 pub use attributes::*;
 pub use graph::*;
