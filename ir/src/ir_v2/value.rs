@@ -1,4 +1,4 @@
-use crate::StringStringEntryProto;
+use crate::{DataType, StringStringEntryProto, Tensor};
 use serde::{Deserialize, Serialize};
 
 /// Defines information on value, including the name, the type, and
@@ -17,4 +17,17 @@ pub struct ValueInfo {
 #[derive(Debug, Deserialize, Serialize)]
 pub enum TypeValue {
     Tensor { ty: i32, dims: Vec<i64> },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Value {
+    pub dtype: DataType,
+    pub dims: Vec<usize>,
+    pub name: String,
+}
+
+impl Value {
+    pub fn new(dtype: DataType, dims: Vec<usize>, name: String) -> Self {
+        Self { name, dtype, dims }
+    }
 }

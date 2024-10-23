@@ -43,6 +43,50 @@ pub enum Op {
     Where,
 }
 
+impl TryFrom<u32> for Op {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        let op = match value {
+            0 => Self::NoOp,
+            1 => Self::Add, // Done.
+            2 => Self::Cast,
+            3 => Self::Concat,
+            4 => Self::Conv,  // Done.
+            5 => Self::Const, // Done.
+            6 => Self::ConstantOfShape,
+            7 => Self::Div,
+            8 => Self::Equal,
+            9 => Self::Expand,
+            10 => Self::Flatten, // Done.
+            11 => Self::Gather,
+            12 => Self::Gemm,              // Done.
+            13 => Self::GlobalAveragePool, // Done.
+            14 => Self::MaxPool,           // Done.
+            15 => Self::MatMul,
+            16 => Self::Mul, // Done.
+            17 => Self::Pow,
+            18 => Self::Range,
+            19 => Self::Relu, // Done.
+            20 => Self::ReduceMean,
+            21 => Self::Reshape,
+            22 => Self::ScatterND,
+            23 => Self::Shape,
+            24 => Self::Sigmoid,
+            25 => Self::Slice,
+            26 => Self::Softmax,
+            27 => Self::Sqrt,
+            28 => Self::Sub,
+            29 => Self::Transpose,
+            30 => Self::Unsqueeze,
+            31 => Self::Where,
+            op => panic!("Unknown operation {op}"),
+        };
+
+        Ok(op)
+    }
+}
+
 impl FromStr for Op {
     type Err = ();
 

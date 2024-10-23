@@ -13,6 +13,7 @@ pub enum TraversalError {
     MissingType,
     TransformationFailed,
     InvalidTensor,
+    InvalidValue(String),
     InvalidInnerNode,
 }
 

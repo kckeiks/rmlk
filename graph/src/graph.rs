@@ -22,7 +22,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub(crate) fn new(
+    pub fn new(
         initializers: HashMap<usize, rmlk_ir::Tensor>,
         inputs: Vec<usize>,
         nodes: Vec<Node>,

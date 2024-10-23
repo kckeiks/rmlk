@@ -1,22 +1,87 @@
-use crate::attributes::Attribute;
 use crate::error::Error;
+use crate::ir_v2::{Attribute, Value};
 use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
+use crate::Op;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Node {
     // Input nodes.
-    pub input: Vec<u64>,
+    pub input: Option<Vec<usize>>,
     // Output nodes.
-    pub output: Vec<u64>,
+    pub output: Option<Vec<usize>>,
     // An identifier for this node in a graph.
-    pub id: u64,
+    pub id: usize,
     // The symbolic identifier of the Operator to execute.
-    pub op_type: Option<u32>,
+    pub op_type: u32,
     // Additional named attributes.
-    pub attribute: Vec<Attribute>,
+    pub attribute: Option<Vec<Attribute>>,
+    pub value: Option<Value>,
+    #[cfg(debug_assertions)]
     // Optional name of node.
-    pub name: String,
+    pub name: Option<String>,
+}
+
+impl Node {
+    pub fn new(id: usize) -> Self {
+        Self {
+            input: None,
+            output: None,
+            id,
+            op_type: Op::NoOp as u32,
+            attribute: None,
+            value: None,
+            #[cfg(debug_assertions)]
+            name: None,
+        }
+    }
+
+    pub fn add_input(&mut self, input: usize) {
+        if self.input.is_none() {
+            let _ = self.input.insert(vec![input]);
+        } else {
+            self.input
+                .as_mut()
+                .expect("That we initialize first before modifying")
+                .push(input);
+        }
+    }
+
+    pub fn add_output(&mut self, output: usize) {
+        if self.output.is_none() {
+            let _ = self.output.insert(vec![output]);
+        } else {
+            self.output
+                .as_mut()
+                .expect("That we initialize first before modifying")
+                .push(output);
+        }
+    }
+
+    pub fn set_inputs(&mut self, inputs: Vec<usize>) {
+        self.input = Some(inputs);
+    }
+
+    pub fn set_outputs(&mut self, outputs: Vec<usize>) {
+        self.input = Some(outputs);
+    }
+
+    pub fn set_op(&mut self, op: u32) {
+        self.op_type = op;
+    }
+
+    pub fn set_value(&mut self, value: Value) {
+        self.value = Some(value);
+    }
+
+    pub fn set_attributes(&mut self, attrs: Vec<Attribute>) {
+        self.attribute = Some(attrs);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
 }

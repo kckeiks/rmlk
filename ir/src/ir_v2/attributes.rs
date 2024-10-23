@@ -1,4 +1,6 @@
-use crate::ir_v2::tensor::Tensor;
+use crate::error::Error;
+use crate::onnx::AttributeProto;
+use crate::{onnx, Tensor};
 use serde::{Deserialize, Serialize};
 
 /// Attributes
@@ -10,16 +12,85 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Attribute {
     /// The name of the attribute.
-    pub name: u32,
+    pub name: String,
     /// If ref_attr_name is not empty, ref_attr_name is the attribute name in parent function.
     /// In this case, this AttributeProto does not contain data, and it's a reference of attribute
     /// in parent scope.
     /// NOTE: This should ONLY be used in function (sub-graph). It's invalid to be used in main graph.
-    pub ref_attr_name: Option<u32>,
+    pub ref_attr_name: Option<String>,
     /// The type of the attribute.
     pub ty: AttributeType,
     /// A human-readable documentation for this attribute. Markdown is allowed.
     pub doc_string: Option<String>,
+}
+
+impl TryFrom<AttributeProto<'_>> for Attribute {
+    type Error = Error;
+
+    fn try_from(value: AttributeProto) -> Result<Self, Self::Error> {
+        let attribute_ty = match value.type_pb.ok_or(Error::MissingField {
+            name: "Attribute::type".to_string(),
+        })? {
+            onnx::attributte_proto::AttributeType::UNDEFINED => {
+                return Err(Error::InvalidValue {
+                    field: "Attribute::type".to_string(),
+                    value: "undefined".to_string(),
+                });
+            }
+            onnx::attributte_proto::AttributeType::FLOAT => {
+                AttributeType::Float(value.f.ok_or(Error::MissingField {
+                    name: "Attribute::f".to_string(),
+                })?)
+            }
+            // Todo: Address casting.
+            onnx::attributte_proto::AttributeType::INT => {
+                AttributeType::Int(value.i.ok_or(Error::MissingField {
+                    name: "Attribute::i".to_string(),
+                })? as i32)
+            }
+            onnx::attributte_proto::AttributeType::STRING => AttributeType::String(
+                value
+                    .s
+                    .ok_or(Error::MissingField {
+                        name: "Attribute::s".to_string(),
+                    })?
+                    .to_vec(),
+            ),
+            onnx::attributte_proto::AttributeType::TENSOR => AttributeType::Tensor(
+                crate::Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
+                    name: "Attribute::t".to_string(),
+                })?)?,
+            ),
+            onnx::attributte_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
+            // Todo: Address casting.
+            onnx::attributte_proto::AttributeType::INTS => {
+                AttributeType::Ints(value.ints.iter().map(|num| *num as i32).collect())
+            }
+            onnx::attributte_proto::AttributeType::STRINGS => {
+                AttributeType::Strings(value.strings.into_iter().map(|s| s.to_vec()).collect())
+            }
+            onnx::attributte_proto::AttributeType::TENSORS => {
+                let mut tensors = Vec::new();
+                for tensor_proto in value.tensors.into_iter() {
+                    tensors.push(crate::Tensor::from_onnx_tensor(tensor_proto)?);
+                }
+                AttributeType::Tensors(tensors)
+            }
+            ty => panic!("unsupported attribute type {ty:?}"),
+        };
+
+        Ok(Self {
+            name: value
+                .name
+                .map(|name| name.to_string())
+                .ok_or(Error::MissingField {
+                    name: "Attribute::name".to_string(),
+                })?,
+            ref_attr_name: value.ref_attr_name.map(|name| name.to_string()),
+            doc_string: value.doc_string.map(|doc| doc.to_string()),
+            ty: attribute_ty,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
