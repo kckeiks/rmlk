@@ -127,7 +127,10 @@ impl Definition {
         //
         // Some(DataType::Undefined)
         // Todo: Handle unwrap().
-        self.node.value.as_ref().map(|v| DataType::try_from(v.ty()).unwrap())
+        self.node
+            .value
+            .as_ref()
+            .map(|v| DataType::try_from(v.ty()).unwrap())
     }
 
     pub fn name(&self) -> Option<&str> {

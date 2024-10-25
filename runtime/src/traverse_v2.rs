@@ -5,6 +5,7 @@ use rmlk_ir::{NodeProto, Op, Tensor, TensorProto, ValueInfoProto};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+#[derive(Default)]
 pub struct GraphFromOnnxV2 {
     pub debug_mode: bool,
     pub nodes: Vec<Node>,

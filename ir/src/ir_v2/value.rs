@@ -19,11 +19,15 @@ pub enum TypeValue {
 
 impl TypeValue {
     pub fn ty(&self) -> i32 {
-        match self { TypeValue::Tensor { ty, .. } => { *ty } }
+        match self {
+            TypeValue::Tensor { ty, .. } => *ty,
+        }
     }
 
     pub fn dims(&self) -> &Vec<usize> {
-        match self { TypeValue::Tensor { dims, .. } => { &dims } }
+        match self {
+            TypeValue::Tensor { dims, .. } => &dims,
+        }
     }
 }
 

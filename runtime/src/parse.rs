@@ -1,6 +1,7 @@
 use crate::traverse::ExecutionGraphBuilder;
+use crate::traverse_v2::GraphFromOnnxV2;
 use rmlk_graph::visit_graph;
-use rmlk_ir::Graph;
+use rmlk_ir::{Graph, GraphProto};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -9,6 +10,12 @@ pub enum Error {
     Device,
     MissingInputNode,
     Unknown,
+}
+
+pub fn parse_ir_graph_v3(graph_schema: GraphProto) -> Result<rmlk_graph::Graph> {
+    let mut traverser = GraphFromOnnxV2::default();
+    rmlk_graph::visit_onnx(graph_schema, &mut traverser).unwrap();
+    Ok(rmlk_graph::Graph::from(traverser))
 }
 
 pub fn parse_ir_graph_v2(graph_schema: Graph) -> Result<rmlk_graph::Graph> {
