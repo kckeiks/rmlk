@@ -35,7 +35,17 @@ impl Node {
             _provider: None,
             inputs: Vec::new(),
             outputs: Vec::new(),
-            definition: definition,
+            definition,
+        }
+    }
+
+    pub fn from_definition(mut definition: Definition) -> Self {
+        Self {
+            _provider: None,
+            op: Op::try_from(definition.op()).unwrap(),
+            inputs: definition.take_inputs().unwrap(),
+            outputs: definition.take_outputs().unwrap(),
+            definition,
         }
     }
 

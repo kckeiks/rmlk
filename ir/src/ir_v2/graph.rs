@@ -23,9 +23,9 @@ pub struct Graph {
     /// but the name MAY also appear in the input list.
     pub initializer: Vec<Tensor>,
     /// The inputs of the graph.
-    pub input: Vec<ValueInfo>,
+    pub input: Vec<usize>,
     /// The outputs of the graph.
-    pub output: Vec<ValueInfo>,
+    pub output: Vec<usize>,
     /// This field carries information to indicate the mapping among a tensor and its
     /// quantization parameter tensors. For example:
     /// For tensor 'a', it may have {'SCALE_TENSOR', 'a_scale'} and {'ZERO_POINT_TENSOR', 'a_zero_point'} annotated,

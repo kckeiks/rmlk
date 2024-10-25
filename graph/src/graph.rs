@@ -55,6 +55,7 @@ impl Graph {
     pub fn outputs(&self) -> impl Iterator<Item = usize> + '_ {
         self.outputs.iter().copied()
     }
+
     pub fn outputs_slice(&self) -> &[usize] {
         self.outputs.as_slice()
     }

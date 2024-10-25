@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::ir_v2::{Attribute, Value};
+use crate::ir_v2::{Attribute, TypeValue, Value};
 use crate::model::StringStringEntryProto;
 use crate::onnx::NodeProto;
 use crate::Op;
@@ -18,7 +18,7 @@ pub struct Node {
     pub op_type: u32,
     // Additional named attributes.
     pub attribute: Option<Vec<Attribute>>,
-    pub value: Option<Value>,
+    pub value: Option<TypeValue>,
     #[cfg(debug_assertions)]
     // Optional name of node.
     pub name: Option<String>,
@@ -72,7 +72,7 @@ impl Node {
         self.op_type = op;
     }
 
-    pub fn set_value(&mut self, value: Value) {
+    pub fn set_type_value(&mut self, value: TypeValue) {
         self.value = Some(value);
     }
 

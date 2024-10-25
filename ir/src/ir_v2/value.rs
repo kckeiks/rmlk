@@ -6,17 +6,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ValueInfo {
     /// This field MUST be present in this version of the IR.
-    pub id: u64,
+    pub id: usize,
     /// This field MUST be present in this version of the IR for
     /// inputs and outputs of the top-level graph.
     pub ty: Option<TypeValue>,
-    /// Optional name for debugging.
-    pub name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum TypeValue {
-    Tensor { ty: i32, dims: Vec<i64> },
+    Tensor { ty: i32, dims: Vec<usize> },
+}
+
+impl TypeValue {
+    pub fn ty(&self) -> i32 {
+        match self { TypeValue::Tensor { ty, .. } => { *ty } }
+    }
+
+    pub fn dims(&self) -> &Vec<usize> {
+        match self { TypeValue::Tensor { dims, .. } => { &dims } }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

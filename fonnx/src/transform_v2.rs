@@ -1,7 +1,7 @@
 use log::{debug, error};
 use rmlk_graph::{Definition, Graph, OnnxGraphTraverser, TraversalError};
-use rmlk_ir::ir_v2::{Attribute, Node, Value};
-use rmlk_ir::{NodeProto, Op, Tensor, TensorProto, ValueInfo, ValueInfoProto};
+use rmlk_ir::ir_v2::{Attribute, Node, TypeValue, Value, ValueInfo};
+use rmlk_ir::{NodeProto, Op, Tensor, TensorProto, ValueInfoProto};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -38,7 +38,7 @@ impl GraphFromOnnxV2 {
     }
 
     pub fn add_output(&mut self, output: usize) {
-        self.inputs.push(output);
+        self.outputs.push(output);
     }
 
     pub fn add_initializer(&mut self, id: usize, initializers: Tensor) -> Option<Tensor> {
@@ -55,33 +55,43 @@ impl GraphFromOnnxV2 {
 }
 
 impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
-    fn check_input(&mut self, input: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
-        let id = self.next_id();
+    fn check_input(
+        &mut self,
+        value_info_proto: ValueInfoProto<'a>,
+    ) -> Result<bool, TraversalError> {
+        let node_id = self.next_id();
 
-        debug!("Assigning id={id} for input {input:?}");
+        debug!("Assigning id={node_id} for input {value_info_proto:?}");
 
-        #[cfg(debug_assertions)]
         let name = {
-            let name = input.name.ok_or_else(|| {
+            let name = value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed inputs are not supported".to_string())
             })?;
             debug_assert!(matches!(name, Cow::Owned(_)));
             name
         };
 
-        let mut final_node = Node::new(id);
-        final_node.set_op(Op::NoOp as u32);
+        let mut node = Node::new(node_id);
+        node.set_op(Op::NoOp as u32);
 
-        let parsed_type = rmlk_ir::Type::try_from(input.type_pb.unwrap()).unwrap();
+        // Todo: Handle unwrap().
+        let parsed_type = rmlk_ir::Type::try_from(value_info_proto.type_pb.unwrap()).unwrap();
         let (dtype, dims) = parsed_type
             .get_tensor_info()
             .ok_or_else(|| TraversalError::InvalidValue("missing tensor info".to_string()))?;
-        final_node.set_value(Value::new(dtype, dims.unwrap(), name.to_string()));
 
-        #[cfg(debug_assertions)]
-        final_node.set_name(name.to_string());
+        let type_value = TypeValue::Tensor {
+            ty: dtype as i32,
+            dims: dims.unwrap(),
+        };
+        node.set_type_value(type_value);
 
-        let node_id = self.add_node(final_node);
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
+
+        let node_id = self.add_node(node);
+
+        self.add_input(node_id);
 
         if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
             return Err(TraversalError::InvalidValue(format!(
@@ -92,33 +102,42 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
         Ok(false)
     }
 
-    fn check_output(&mut self, output: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
-        let id = self.next_id();
+    fn check_output(
+        &mut self,
+        value_info_proto: ValueInfoProto<'a>,
+    ) -> Result<bool, TraversalError> {
+        let node_id = self.next_id();
 
-        debug!("Assigning id={id} for output {output:?}");
+        debug!("Assigning id={node_id} for output {value_info_proto:?}");
 
-        #[cfg(debug_assertions)]
         let name = {
-            let name = output.name.ok_or_else(|| {
+            let name = value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed outputs are not supported".to_string())
             })?;
             debug_assert!(matches!(name, Cow::Owned(_)));
             name
         };
 
-        let mut final_node = Node::new(id);
-        final_node.set_op(Op::NoOp as u32);
+        let mut node = Node::new(node_id);
+        node.set_op(Op::NoOp as u32);
 
-        let parsed_type = rmlk_ir::Type::try_from(output.type_pb.unwrap()).unwrap();
+        let parsed_type = rmlk_ir::Type::try_from(value_info_proto.type_pb.unwrap()).unwrap();
         let (dtype, dims) = parsed_type
             .get_tensor_info()
             .ok_or_else(|| TraversalError::InvalidValue("missing tensor info".to_string()))?;
-        final_node.set_value(Value::new(dtype, dims.unwrap(), name.to_string()));
 
-        #[cfg(debug_assertions)]
-        final_node.set_name(name.to_string());
+        let type_value = TypeValue::Tensor {
+            ty: dtype as i32,
+            dims: dims.unwrap(),
+        };
+        node.set_type_value(type_value);
 
-        let node_id = self.add_node(final_node);
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
+
+        let node_id = self.add_node(node);
+
+        self.add_output(node_id);
 
         if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
             return Err(TraversalError::InvalidValue(format!(
@@ -130,20 +149,30 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
     }
 
     fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool, TraversalError> {
-        let id = self.next_id();
+        let node_id = self.next_id();
 
-        debug!("Assigning id={id} for initializer {:?}", initializer.name);
+        debug!(
+            "Assigning id={node_id} for initializer {:?}",
+            initializer.name
+        );
 
         let name = initializer.name.clone().ok_or_else(|| {
             TraversalError::InvalidValue("unnamed tensors are not supported".to_string())
         })?;
 
-        let mut node = Node::new(id);
+        let mut node = Node::new(node_id);
         node.set_op(Op::Const as u32);
 
         let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
-        let value = Value::new(tensor.data_type, tensor.dims.clone(), tensor.name.clone().ok_or_else(|| TraversalError::InvalidValue("unnamed tensors are not supported".to_string()))?);
-        node.set_value(value);
+
+        let type_value = TypeValue::Tensor {
+            ty: tensor.data_type as i32,
+            dims: tensor.dims.clone(),
+        };
+        node.set_type_value(type_value);
+
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
 
         let node_id = self.add_node(node);
 
@@ -166,9 +195,11 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
             .ok_or(TraversalError::InvalidInnerNode)?
             .map_err(|_| TraversalError::InvalidInnerNode)?;
 
-        let id = self.next_id();
-        let mut node = Node::new(id);
+        let node_id = self.next_id();
+        let mut node = Node::new(node_id);
         node.set_op(op as u32);
+        // Todo: remove allocation.
+        node.set_name(node_proto.name.unwrap().to_string());
 
         let mut attributes = Vec::new();
         for attr_proto in node_proto.attribute {
@@ -198,6 +229,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
                     let id = self.next_id();
                     let mut output_node = Node::new(id);
                     output_node.add_input(node_id);
+                    output_node.set_name(name.to_string());
 
                     let output_node_id = self.add_node(output_node);
                     output_node_ids.push(output_node_id);
@@ -228,20 +260,14 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
 
 impl From<GraphFromOnnxV2> for Graph {
     fn from(value: GraphFromOnnxV2) -> Self {
-        // let GraphFromOnnxV2 {
-        //     nodes,
-        //     inputs,
-        //     outputs,
-        //     initializers,
-        //     ..
-        // } = value;
-        //
-        // let mut parsed_nodes = Vec::new();
-        // for node in nodes {
-        //     let node = rmlk_graph::Node::new(node.op_type.try_into().unwrap());
-        // }
-        //
-        // Self::new(initializers, inputs, nodes, outputs)
-        unimplemented!()
+        let mut nodes = Vec::new();
+        for node_schema in value.nodes {
+            debug_assert!(node_schema.id == nodes.len());
+            let def = Definition::new(node_schema);
+            let node = rmlk_graph::Node::from_definition(def);
+            nodes.push(node);
+        }
+
+        Self::new(value.initializers, value.inputs, nodes, value.outputs)
     }
 }
