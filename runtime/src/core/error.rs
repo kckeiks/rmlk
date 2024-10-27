@@ -9,7 +9,7 @@ pub enum Error {
     ModelDeserializationFailed,
     ComputingPlanFailed,
     MissingNode,
-    NotSupported,
+    NotSupportedDD,
     Unknown,
     ContextError,
     MissingData,

@@ -167,7 +167,7 @@ impl Tensor {
             .try_into()?;
 
         if !data_type.is_supported() {
-            return Err(Error::NotSupported);
+            return Err(Error::NotSupportedD);
         }
 
         let mut res = Self {
@@ -230,28 +230,28 @@ impl Tensor {
                     res.int32_data = u8_to_i32_vec(data.as_slice())?;
                 }
                 DataType::Float16 => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Bfloat16 => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Complex64 => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Complex128 => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Float8E4M3FN => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Float8E4M3FNUZ => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Float8E5M2 => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Float8E5M2FNUZ => {
-                    return Err(Error::NotSupported);
+                    return Err(Error::NotSupportedD);
                 }
                 DataType::Uint4 => {
                     res.int32_data = u8_to_i32_vec(data.as_slice())?;
