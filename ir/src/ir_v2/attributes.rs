@@ -24,6 +24,29 @@ pub struct Attribute {
     pub doc_string: Option<String>,
 }
 
+impl Attribute {
+    pub fn ints(&self) -> Option<&[i32]> {
+        match &self.ty {
+            AttributeType::Ints(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn float(&self) -> Option<f32> {
+        match &self.ty {
+            AttributeType::Float(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn int(&self) -> Option<i32> {
+        match &self.ty {
+            AttributeType::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
 impl TryFrom<AttributeProto<'_>> for Attribute {
     type Error = Error;
 

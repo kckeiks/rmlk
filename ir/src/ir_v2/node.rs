@@ -1,7 +1,4 @@
-use crate::error::Error;
-use crate::ir_v2::{Attribute, TypeValue, Value};
-use crate::model::StringStringEntryProto;
-use crate::onnx::NodeProto;
+use crate::ir_v2::{Attribute, TypeValue};
 use crate::Op;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;

@@ -1,5 +1,5 @@
 use crate::core::{Error, Result};
-use rmlk_ir::Attribute;
+use rmlk_ir::ir_v2::Attribute;
 use std::collections::HashMap;
 
 pub struct ConvAttributes {

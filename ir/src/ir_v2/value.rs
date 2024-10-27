@@ -1,4 +1,4 @@
-use crate::{DataType, StringStringEntryProto, Tensor};
+use crate::DataType;
 use serde::{Deserialize, Serialize};
 
 /// Defines information on value, including the name, the type, and
