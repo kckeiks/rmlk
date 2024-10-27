@@ -23,12 +23,8 @@ impl Builder {
         Self { graph }
     }
 
-    pub fn with_model_from_memory(model: Box<[u8]>) -> Result<Self> {
-        let model =
-            bincode::deserialize::<Model>(&model).map_err(|_| Error::ModelDeserializationFailed)?;
-        let graph = crate::parse::parse_ir_graph(model.graph.unwrap()).unwrap();
-
-        Ok(Self { graph })
+    pub fn with_model_from_memory(_model: Box<[u8]>) -> Result<Self> {
+        unimplemented!()
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {

@@ -45,16 +45,11 @@ impl TypeValue {
 
                 let mut dims = Vec::new();
                 for s in &tensor.shape.ok_or(Error::Unknown)?.dim {
-                    if let tensor_shape_proto::mod_Dimension::OneOfvalue::dim_value(v) = s
-                        .value
-                    {
-                        dims.push(
-                            usize::try_from(v)
-                                .map_err(|_| Error::InvalidValue {
-                                    field: "Dimension::value".to_string(),
-                                    value: v.to_string(),
-                                })?,
-                        );
+                    if let tensor_shape_proto::mod_Dimension::OneOfvalue::dim_value(v) = s.value {
+                        dims.push(usize::try_from(v).map_err(|_| Error::InvalidValue {
+                            field: "Dimension::value".to_string(),
+                            value: v.to_string(),
+                        })?);
                     } else {
                         // Todo: add support for other types here.
                         return Err(Error::NotSupportedD);

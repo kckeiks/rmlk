@@ -1,8 +1,6 @@
 use crate::graph::{GraphError, Result};
 use crate::Node;
-use rmlk_ir::onnx::{
-    GraphProto, NodeProto, TensorProto, ValueInfoProto,
-};
+use rmlk_ir::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
 use rmlk_ir::Op;
 use std::collections::HashSet;
 
