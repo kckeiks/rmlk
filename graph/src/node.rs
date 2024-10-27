@@ -43,8 +43,8 @@ impl Node {
         Self {
             _provider: None,
             op: Op::try_from(definition.op()).unwrap(),
-            inputs: definition.take_inputs().unwrap(),
-            outputs: definition.take_outputs().unwrap(),
+            inputs: definition.take_inputs().unwrap_or_default(),
+            outputs: definition.take_outputs().unwrap_or_default(),
             definition,
         }
     }

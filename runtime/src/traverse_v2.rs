@@ -68,7 +68,6 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
             let name = value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed inputs are not supported".to_string())
             })?;
-            debug_assert!(matches!(name, Cow::Owned(_)));
             name
         };
 
@@ -115,7 +114,6 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
             let name = value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed outputs are not supported".to_string())
             })?;
-            debug_assert!(matches!(name, Cow::Owned(_)));
             name
         };
 
