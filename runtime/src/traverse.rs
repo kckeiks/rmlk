@@ -77,83 +77,84 @@ impl GraphTraverser for ExecutionGraphBuilder {
     }
 
     fn check_inner_node(&mut self, node: rmlk_ir::Node) -> Result<bool, TraversalError> {
-        let op = node
-            .op_type
-            .as_ref()
-            .map(|op| op.parse::<Op>())
-            .ok_or(TraversalError::InvalidInnerNode)?
-            .map_err(|_| TraversalError::InvalidInnerNode)?;
-
-        let def = Definition::node(node);
-        let mut node = Node::new(op, def);
-
-        let mut inputs = Vec::new();
-        for name in node.def().inputs().ok_or(TraversalError::MissingValue)? {
-            // Todo: Mapping one name to a single node id, we lose information,
-            // because a single node might have two outputs, how do we differentiate?
-            let input_node_id = self
-                .builder
-                .get_node_id(name)
-                .ok_or_else(|| TraversalError::InvalidInnerNode)?;
-            inputs.push(input_node_id);
-        }
-
-        node.set_input(inputs);
-
-        let node_id = self.builder.add_node(node).expect("TODO");
-
-        let mut output_node_ids = Vec::new();
-        // Todo: remove clone.
-        let outputs = self
-            .builder
-            .get_node(node_id)
-            .expect("that node was just inserted")
-            .def()
-            .outputs()
-            .ok_or(TraversalError::MissingValue)?
-            .clone();
-        for name in outputs {
-            match self.builder.get_node_id(&name) {
-                None => {
-                    let def = Definition::value(ValueInfo {
-                        // Todo: remove clone.
-                        name: name.clone(),
-                        ty: None,
-                        doc_string: None,
-                        // Todo: remove this allocation.
-                        metadata_props: vec![],
-                    });
-                    let mut output_node = Node::new(Op::NoOp, def);
-                    output_node.add_input(node_id);
-
-                    let output_node_id = self
-                        .builder
-                        .add_node(output_node)
-                        .map_err(|_| TraversalError::InvalidInnerNode)?;
-                    output_node_ids.push(output_node_id);
-
-                    // Todo: remove clone.
-                    self.builder.insert_name_to_id(name.clone(), output_node_id);
-                }
-                Some(id) => {
-                    let node = self
-                        .builder
-                        .get_node_mut(id)
-                        .ok_or(TraversalError::InvalidInnerNode)?;
-                    node.add_input(node_id);
-                    output_node_ids.push(id);
-                }
-            }
-        }
-
-        let node = self
-            .builder
-            .get_node_mut(node_id)
-            .expect("We just inserted it above.");
-        for id in output_node_ids {
-            node.add_output(id);
-        }
-
-        Ok(false)
+        unimplemented!()
+        // let op = node
+        //     .op_type
+        //     .as_ref()
+        //     .map(|op| op.parse::<Op>())
+        //     .ok_or(TraversalError::InvalidInnerNode)?
+        //     .map_err(|_| TraversalError::InvalidInnerNode)?;
+        //
+        // let def = Definition::node(node);
+        // let mut node = Node::new(op, def);
+        //
+        // let mut inputs = Vec::new();
+        // for name in node.def().inputs().ok_or(TraversalError::MissingValue)? {
+        //     // Todo: Mapping one name to a single node id, we lose information,
+        //     // because a single node might have two outputs, how do we differentiate?
+        //     let input_node_id = self
+        //         .builder
+        //         .get_node_id(name)
+        //         .ok_or_else(|| TraversalError::InvalidInnerNode)?;
+        //     inputs.push(input_node_id);
+        // }
+        //
+        // node.set_input(inputs);
+        //
+        // let node_id = self.builder.add_node(node).expect("TODO");
+        //
+        // let mut output_node_ids = Vec::new();
+        // // Todo: remove clone.
+        // let outputs = self
+        //     .builder
+        //     .get_node(node_id)
+        //     .expect("that node was just inserted")
+        //     .def()
+        //     .outputs()
+        //     .ok_or(TraversalError::MissingValue)?
+        //     .clone();
+        // for name in outputs {
+        //     match self.builder.get_node_id(&name) {
+        //         None => {
+        //             let def = Definition::value(ValueInfo {
+        //                 // Todo: remove clone.
+        //                 name: name.clone(),
+        //                 ty: None,
+        //                 doc_string: None,
+        //                 // Todo: remove this allocation.
+        //                 metadata_props: vec![],
+        //             });
+        //             let mut output_node = Node::new(Op::NoOp, def);
+        //             output_node.add_input(node_id);
+        //
+        //             let output_node_id = self
+        //                 .builder
+        //                 .add_node(output_node)
+        //                 .map_err(|_| TraversalError::InvalidInnerNode)?;
+        //             output_node_ids.push(output_node_id);
+        //
+        //             // Todo: remove clone.
+        //             self.builder.insert_name_to_id(name.clone(), output_node_id);
+        //         }
+        //         Some(id) => {
+        //             let node = self
+        //                 .builder
+        //                 .get_node_mut(id)
+        //                 .ok_or(TraversalError::InvalidInnerNode)?;
+        //             node.add_input(node_id);
+        //             output_node_ids.push(id);
+        //         }
+        //     }
+        // }
+        //
+        // let node = self
+        //     .builder
+        //     .get_node_mut(node_id)
+        //     .expect("We just inserted it above.");
+        // for id in output_node_ids {
+        //     node.add_output(id);
+        // }
+        //
+        // Ok(false)
     }
 }
