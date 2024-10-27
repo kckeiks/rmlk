@@ -71,8 +71,8 @@ impl DeviceService for Cuda {
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
                 println!("Unsupported {op:?}");
-                return Err(Error::NotSupportedDD)
-            },
+                return Err(Error::NotSupportedDD);
+            }
         };
 
         Ok(kernel)

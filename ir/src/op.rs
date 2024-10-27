@@ -28,8 +28,8 @@ pub enum Op {
     MatMul,
     Pow,
     Range,
-    ReduceMean,
     Relu,
+    ReduceMean,
     Reshape,
     ScatterND,
     Shape,
@@ -56,15 +56,15 @@ impl TryFrom<u32> for Op {
             5 => Self::Const, // Done.
             6 => Self::ConstantOfShape,
             7 => Self::Div,
-            8 => Self::Equal,
-            9 => Self::Expand,
+            8 => Self::Expand,
+            9 => Self::Equal,
             10 => Self::Flatten, // Done.
             11 => Self::Gather,
             12 => Self::Gemm,              // Done.
             13 => Self::GlobalAveragePool, // Done.
             14 => Self::MaxPool,           // Done.
-            15 => Self::MatMul,
-            16 => Self::Mul, // Done.
+            15 => Self::Mul,               // Done.
+            16 => Self::MatMul,
             17 => Self::Pow,
             18 => Self::Range,
             19 => Self::Relu, // Done.
@@ -84,6 +84,45 @@ impl TryFrom<u32> for Op {
         };
 
         Ok(op)
+    }
+}
+
+impl From<Op> for u32 {
+    fn from(value: Op) -> Self {
+        match value {
+            Op::NoOp => 0,
+            Op::Add => 1,
+            Op::Cast => 2,
+            Op::Concat => 3,
+            Op::Conv => 4,
+            Op::Const => 5,
+            Op::ConstantOfShape => 6,
+            Op::Div => 7,
+            Op::Expand => 8,
+            Op::Equal => 9,
+            Op::Flatten => 10,
+            Op::Gather => 11,
+            Op::Gemm => 12,
+            Op::GlobalAveragePool => 13,
+            Op::MaxPool => 14,
+            Op::Mul => 15,
+            Op::MatMul => 16,
+            Op::Pow => 17,
+            Op::Range => 18,
+            Op::ReduceMean => 19,
+            Op::Relu => 20,
+            Op::Reshape => 21,
+            Op::ScatterND => 22,
+            Op::Shape => 23,
+            Op::Sigmoid => 24,
+            Op::Slice => 25,
+            Op::Softmax => 26,
+            Op::Sqrt => 27,
+            Op::Sub => 28,
+            Op::Transpose => 29,
+            Op::Unsqueeze => 30,
+            Op::Where => 31,
+        }
     }
 }
 

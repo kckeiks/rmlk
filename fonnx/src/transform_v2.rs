@@ -72,7 +72,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
         };
 
         let mut node = Node::new(node_id);
-        node.set_op(Op::NoOp as u32);
+        node.set_op(Op::NoOp.into());
 
         // Todo: Handle unwrap().
         let parsed_type = rmlk_ir::Type::try_from(value_info_proto.type_pb.unwrap()).unwrap();
