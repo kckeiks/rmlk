@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::model::StringStringEntryProto;
 use crate::onnx;
 use crate::onnx::dimension_proto::OneOfvalue;
 use crate::onnx::tensor_proto::DataLocation;
@@ -57,7 +56,6 @@ pub struct Tensor {
     // pub data_location: Option<DataLocation>,
     pub double_data: Vec<f64>,
     pub uint64_data: Vec<u64>,
-    pub metadata_props: Vec<StringStringEntryProto>,
 }
 
 impl Default for Tensor {
@@ -75,7 +73,6 @@ impl Default for Tensor {
             raw_data: None,
             double_data: vec![],
             uint64_data: vec![],
-            metadata_props: vec![],
         }
     }
 }
@@ -170,6 +167,8 @@ impl Tensor {
             return Err(Error::NotSupportedD);
         }
 
+        assert!(value.metadata_props.is_empty(), "this is not supported");
+
         let mut res = Self {
             dims: value.dims.into_iter().map(|d| d as usize).collect(),
             data_type,
@@ -187,7 +186,6 @@ impl Tensor {
             raw_data: value.raw_data.map(|data| data.to_vec()),
             double_data: value.double_data.to_vec(),
             uint64_data: value.uint64_data,
-            metadata_props: value.metadata_props.into_iter().map(From::from).collect(),
         };
 
         if let Some(data) = external_data {
@@ -474,21 +472,6 @@ pub enum DimensionValue {
 pub struct TensorShape {
     pub dim: Vec<Dimension>,
 }
-
-// impl TryFrom<&Dimension> for usize {
-//     type Error = Error;
-//
-//     fn try_from(value: &Dimension) -> Result<Self, Self::Error> {
-//         match value.value.as_ref().ok_or(Error::MissingField { name: "Dimension::value".to_string() })? {
-//             DimensionValue::Value(v) => {
-//                 usize::try_from(*v).map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
-//             }
-//             DimensionValue::String(v) => {
-//                 v.parse().map_err(|_| Error::InvalidValue { field: "Dimension::value".to_string(), value: v.to_string() })
-//             }
-//         }
-//     }
-// }
 
 impl TryFrom<TensorShapeProto<'_>> for TensorShape {
     type Error = Error;

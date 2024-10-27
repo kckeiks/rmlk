@@ -1,5 +1,7 @@
 use crate::error::Error;
-use crate::{dimension_proto, tensor_proto, ty_proto, NodeProto, TensorProto, ValueInfoProto};
+use crate::onnx::{
+    dimension_proto, tensor_proto, ty_proto, NodeProto, TensorProto, ValueInfoProto,
+};
 use std::fmt::{Debug, Formatter};
 
 #[derive(Debug)]

@@ -3,13 +3,13 @@ use anyhow::anyhow;
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_graph::{OnnxGraphTraverser, TraversalError};
-use rmlk_ir::NodeWithMetadata;
-use rmlk_ir::{Category, ModelProto, NodeProto, NodeWithValue, TensorProto, ValueInfoProto};
+use rmlk_ir::onnx::{
+    Category, ModelProto, NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, ValueInfoProto,
+};
 use std::fs;
 
 mod args;
 mod transform;
-mod transform_v2;
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();

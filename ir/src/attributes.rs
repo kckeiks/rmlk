@@ -1,9 +1,6 @@
 use crate::error::Error;
-use crate::graph::Graph;
-use crate::model::StringStringEntryProto;
-use crate::onnx::{self, AttributeProto, ValueInfoProto};
-use crate::tensor::{SparseTensor, Tensor};
-use crate::types::Type;
+use crate::onnx::AttributeProto;
+use crate::{onnx, Tensor};
 use serde::{Deserialize, Serialize};
 
 /// Attributes
@@ -21,10 +18,10 @@ pub struct Attribute {
     /// in parent scope.
     /// NOTE: This should ONLY be used in function (sub-graph). It's invalid to be used in main graph.
     pub ref_attr_name: Option<String>,
-    /// A human-readable documentation for this attribute. Markdown is allowed.
-    pub doc_string: Option<String>,
     /// The type of the attribute.
     pub ty: AttributeType,
+    /// A human-readable documentation for this attribute. Markdown is allowed.
+    pub doc_string: Option<String>,
 }
 
 impl Attribute {
@@ -83,33 +80,9 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     .to_vec(),
             ),
             onnx::attributte_proto::AttributeType::TENSOR => AttributeType::Tensor(
-                Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
+                crate::Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
                     name: "Attribute::t".to_string(),
                 })?)?,
-            ),
-            onnx::attributte_proto::AttributeType::GRAPH => AttributeType::Graph(
-                value
-                    .g
-                    .ok_or(Error::MissingField {
-                        name: "Attribute::g".to_string(),
-                    })?
-                    .try_into()?,
-            ),
-            onnx::attributte_proto::AttributeType::SPARSE_TENSOR => AttributeType::SparseTensor(
-                value
-                    .sparse_tensor
-                    .ok_or(Error::MissingField {
-                        name: "Attribute::sparse_tensor".to_string(),
-                    })?
-                    .try_into()?,
-            ),
-            onnx::attributte_proto::AttributeType::TYPE_PROTO => AttributeType::Type(
-                value
-                    .tp
-                    .ok_or(Error::MissingField {
-                        name: "Attribute::tp".to_string(),
-                    })?
-                    .try_into()?,
             ),
             onnx::attributte_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
             // Todo: Address casting.
@@ -122,31 +95,11 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
             onnx::attributte_proto::AttributeType::TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.tensors.into_iter() {
-                    tensors.push(Tensor::from_onnx_tensor(tensor_proto)?);
+                    tensors.push(crate::Tensor::from_onnx_tensor(tensor_proto)?);
                 }
                 AttributeType::Tensors(tensors)
             }
-            onnx::attributte_proto::AttributeType::GRAPHS => {
-                let mut graphs = Vec::new();
-                for graph_proto in value.graphs.into_iter() {
-                    graphs.push(graph_proto.try_into()?);
-                }
-                AttributeType::Graphs(graphs)
-            }
-            onnx::attributte_proto::AttributeType::SPARSE_TENSORS => {
-                let mut tensors = Vec::new();
-                for tensor_proto in value.sparse_tensors.into_iter() {
-                    tensors.push(tensor_proto.try_into()?);
-                }
-                AttributeType::SparseTensors(tensors)
-            }
-            onnx::attributte_proto::AttributeType::TYPE_PROTOS => {
-                let mut types = Vec::new();
-                for type_proto in value.type_protos.into_iter() {
-                    types.push(type_proto.try_into()?);
-                }
-                AttributeType::Types(types)
-            }
+            ty => panic!("unsupported attribute type {ty:?}"),
         };
 
         Ok(Self {
@@ -169,53 +122,9 @@ pub enum AttributeType {
     Int(i32),
     String(Vec<u8>),
     Tensor(Tensor),
-    Graph(Graph),
-    SparseTensor(SparseTensor),
-    Type(Type),
     Floats(Vec<f32>),
     Doubles(Vec<f64>),
     Ints(Vec<i32>),
     Strings(Vec<Vec<u8>>),
     Tensors(Vec<Tensor>),
-    Graphs(Vec<Graph>),
-    SparseTensors(Vec<SparseTensor>),
-    Types(Vec<Type>),
-}
-
-/// Defines information on value, including the name, the type, and
-/// the shape of the value.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ValueInfo {
-    /// This field MUST be present in this version of the IR.
-    pub name: String,
-    /// This field MUST be present in this version of the IR for
-    /// inputs and outputs of the top-level graph.
-    pub ty: Option<Type>,
-    /// A human-readable documentation for this value. Markdown is allowed.
-    pub doc_string: Option<String>,
-    /// Named metadata values; keys should be distinct.
-    pub metadata_props: Vec<StringStringEntryProto>,
-}
-
-impl TryFrom<ValueInfoProto<'_>> for ValueInfo {
-    type Error = Error;
-
-    fn try_from(value: ValueInfoProto) -> Result<Self, Self::Error> {
-        let mut metadata_props = Vec::new();
-        for metadata in value.metadata_props {
-            metadata_props.push(metadata.into());
-        }
-
-        Ok(Self {
-            name: value
-                .name
-                .map(|name| name.to_string())
-                .ok_or(Error::MissingField {
-                    name: "ValueInfo::name".to_string(),
-                })?,
-            ty: value.type_pb.map(|ty| ty.try_into()).transpose()?,
-            doc_string: value.doc_string.map(|doc| doc.to_string()),
-            metadata_props,
-        })
-    }
 }

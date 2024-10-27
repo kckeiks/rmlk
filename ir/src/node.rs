@@ -1,82 +1,84 @@
-use crate::attributes::Attribute;
-use crate::error::Error;
-use crate::model::StringStringEntryProto;
-use crate::onnx::NodeProto;
+use crate::Op;
+use crate::{Attribute, TypeValue};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Node {
     // Input nodes.
-    pub input: Vec<String>,
+    pub input: Option<Vec<usize>>,
     // Output nodes.
-    pub output: Vec<String>,
-    // An optional identifier for this node in a graph.
-    // This field MAY be absent in this version of the IR.
-    pub name: Option<String>,
+    pub output: Option<Vec<usize>>,
+    // An identifier for this node in a graph.
+    pub id: usize,
     // The symbolic identifier of the Operator to execute.
-    pub op_type: Option<String>,
-    // The domain of the OperatorSet that specifies the operator named by op_type.
-    pub domain: Option<String>,
-    // Overload identifier, used only to map this to a model-local function.
-    pub overload: Option<String>,
+    pub op_type: u32,
     // Additional named attributes.
-    pub attribute: Vec<Attribute>,
-    // A human-readable documentation for this node. Markdown is allowed.
-    pub doc_string: Option<String>,
-    // Named metadata values; keys should be distinct.
-    pub metadata_props: Vec<StringStringEntryProto>,
+    pub attribute: Option<Vec<Attribute>>,
+    pub value: Option<TypeValue>,
+    #[cfg(debug_assertions)]
+    // Optional name of node.
+    pub name: Option<String>,
 }
 
-impl Clone for Node {
-    fn clone(&self) -> Self {
+impl Node {
+    pub fn new(id: usize) -> Self {
         Self {
-            input: self.input.clone(),
-            output: self.output.clone(),
-            name: self.name.clone(),
-            op_type: self.op_type.clone(),
-            domain: self.domain.clone(),
-            // Todo: Finish.
-            overload: None,
-            attribute: vec![],
-            doc_string: None,
-            metadata_props: vec![],
+            input: None,
+            output: None,
+            id,
+            op_type: Op::NoOp as u32,
+            attribute: None,
+            value: None,
+            #[cfg(debug_assertions)]
+            name: None,
         }
     }
-}
 
-impl TryFrom<NodeProto<'_>> for Node {
-    type Error = Error;
-
-    fn try_from(value: NodeProto) -> Result<Self, Self::Error> {
-        let mut attribute = Vec::new();
-        for attr in value.attribute {
-            attribute.push(attr.try_into()?);
+    pub fn add_input(&mut self, input: usize) {
+        if self.input.is_none() {
+            let _ = self.input.insert(vec![input]);
+        } else {
+            self.input
+                .as_mut()
+                .expect("That we initialize first before modifying")
+                .push(input);
         }
+    }
 
-        let mut metadata_props = Vec::new();
-        for props in value.metadata_props {
-            metadata_props.push(props.into());
+    pub fn add_output(&mut self, output: usize) {
+        if self.output.is_none() {
+            let _ = self.output.insert(vec![output]);
+        } else {
+            self.output
+                .as_mut()
+                .expect("That we initialize first before modifying")
+                .push(output);
         }
+    }
 
-        Ok(Self {
-            input: value
-                .input
-                .into_iter()
-                .map(|input| input.to_string())
-                .collect(),
-            output: value
-                .output
-                .into_iter()
-                .map(|output| output.to_string())
-                .collect(),
-            name: value.name.map(|name| name.to_string()),
-            op_type: value.op_type.map(|op_type| op_type.to_string()),
-            domain: value.domain.map(|domain| domain.to_string()),
-            overload: value.overload.map(|overload| overload.to_string()),
-            attribute,
-            doc_string: value.doc_string.map(|doc| doc.to_string()),
-            metadata_props,
-        })
+    pub fn set_inputs(&mut self, inputs: Vec<usize>) {
+        self.input = Some(inputs);
+    }
+
+    pub fn set_outputs(&mut self, outputs: Vec<usize>) {
+        self.input = Some(outputs);
+    }
+
+    pub fn set_op(&mut self, op: u32) {
+        self.op_type = op;
+    }
+
+    pub fn set_type_value(&mut self, value: TypeValue) {
+        self.value = Some(value);
+    }
+
+    pub fn set_attributes(&mut self, attrs: Vec<Attribute>) {
+        self.attribute = Some(attrs);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
     }
 }

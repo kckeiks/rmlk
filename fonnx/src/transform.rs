@@ -1,192 +1,259 @@
-use rmlk_graph::Definition;
-use rmlk_graph::{GraphBuilder, GraphTraverser, Node, OnnxGraphTraverser, TraversalError};
-use rmlk_ir::{Graph, NodeProto, Op, Tensor, TensorProto, ValueInfo, ValueInfoProto};
+use log::debug;
+use rmlk_graph::{Definition, Graph, OnnxGraphTraverser, TraversalError};
+use rmlk_ir::onnx::{NodeProto, TensorProto, ValueInfoProto};
+use rmlk_ir::{Attribute, Node, Op, Tensor, TypeValue};
+use std::collections::HashMap;
 
-pub struct GraphFromOnnx {
-    inner: Graph,
+#[derive(Default)]
+pub struct GraphFromOnnxV2 {
+    pub debug_mode: bool,
+    pub nodes: Vec<Node>,
+    pub inputs: Vec<usize>,
+    pub outputs: Vec<usize>,
+    pub initializers: HashMap<usize, Tensor>,
+    pub name_to_id: HashMap<String, usize>,
 }
 
-impl GraphFromOnnx {
-    pub fn new() -> Self {
-        Self {
-            inner: Graph::default(),
-        }
+impl GraphFromOnnxV2 {
+    pub fn next_id(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn add_node(&mut self, node: Node) -> usize {
+        let id = self.next_id();
+        self.nodes.push(node);
+        id
+    }
+
+    pub fn get_node(&self, id: usize) -> Option<&Node> {
+        self.nodes.get(id)
+    }
+
+    pub fn get_node_mut(&mut self, id: usize) -> Option<&mut Node> {
+        self.nodes.get_mut(id)
+    }
+
+    pub fn add_input(&mut self, input: usize) {
+        self.inputs.push(input);
+    }
+
+    pub fn add_output(&mut self, output: usize) {
+        self.outputs.push(output);
+    }
+
+    pub fn add_initializer(&mut self, id: usize, initializers: Tensor) -> Option<Tensor> {
+        self.initializers.insert(id, initializers)
+    }
+
+    pub fn get_node_id(&self, name: &str) -> Option<usize> {
+        self.name_to_id.get(name).copied()
+    }
+
+    pub fn save_name_to_id(&mut self, name: String, id: usize) -> Option<usize> {
+        self.name_to_id.insert(name, id)
     }
 }
 
-impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
-    fn check_input(&mut self, input: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
-        let value_info =
-            ValueInfo::try_from(input).map_err(|_| TraversalError::TransformationFailed)?;
-        self.inner.input.push(value_info);
+impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnxV2 {
+    fn check_input(
+        &mut self,
+        value_info_proto: ValueInfoProto<'a>,
+    ) -> Result<bool, TraversalError> {
+        let node_id = self.next_id();
+
+        debug!("Assigning id={node_id} for input {value_info_proto:?}");
+
+        let name = {
+            let name = value_info_proto.name.ok_or_else(|| {
+                TraversalError::InvalidValue("Unnamed inputs are not supported".to_string())
+            })?;
+            name
+        };
+
+        let mut node = Node::new(node_id);
+        node.set_op(Op::NoOp as u32);
+
+        // Todo: Handle unwrap().
+        let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
+            .unwrap()
+            .unwrap();
+        node.set_type_value(type_value);
+
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
+
+        let node_id = self.add_node(node);
+
+        self.add_input(node_id);
+
+        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
+            return Err(TraversalError::InvalidValue(format!(
+                "found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]"
+            )));
+        }
+
         Ok(false)
     }
 
-    fn check_output(&mut self, output: ValueInfoProto<'a>) -> Result<bool, TraversalError> {
-        let value_info =
-            ValueInfo::try_from(output).map_err(|_| TraversalError::TransformationFailed)?;
-        self.inner.output.push(value_info);
+    fn check_output(
+        &mut self,
+        value_info_proto: ValueInfoProto<'a>,
+    ) -> Result<bool, TraversalError> {
+        let node_id = self.next_id();
+
+        debug!("Assigning id={node_id} for output {value_info_proto:?}");
+
+        let name = {
+            let name = value_info_proto.name.ok_or_else(|| {
+                TraversalError::InvalidValue("Unnamed outputs are not supported".to_string())
+            })?;
+            name
+        };
+
+        let mut node = Node::new(node_id);
+        node.set_op(Op::NoOp as u32);
+
+        let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
+            .unwrap()
+            .unwrap();
+        node.set_type_value(type_value);
+
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
+
+        let node_id = self.add_node(node);
+
+        self.add_output(node_id);
+
+        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
+            return Err(TraversalError::InvalidValue(format!(
+                "found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]"
+            )));
+        }
+
         Ok(false)
     }
 
     fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool, TraversalError> {
-        let initializer = Tensor::from_onnx_tensor(initializer)
-            .map_err(|_| TraversalError::TransformationFailed)?;
-        self.inner.initializer.push(initializer);
-        Ok(false)
-    }
+        let node_id = self.next_id();
 
-    fn check_inner_node(&mut self, node: NodeProto<'a>) -> Result<bool, TraversalError> {
-        let node =
-            rmlk_ir::Node::try_from(node).map_err(|_| TraversalError::TransformationFailed)?;
-        self.inner.node.push(node);
-        Ok(false)
-    }
-}
-
-pub struct ExecutionGraphBuilder {
-    builder: GraphBuilder,
-}
-
-impl GraphTraverser for ExecutionGraphBuilder {
-    fn check_input(&mut self, input: ValueInfo) -> Result<bool, TraversalError> {
-        // Todo: remove clone.
-        let name = input.name.clone();
-
-        let def = Definition::value(input);
-
-        let final_node = Node::new(Op::NoOp, def);
-        let node_id = self.builder.add_input(final_node).unwrap();
-
-        if let Some(old_id) = self.builder.insert_name_to_id(name, node_id) {
-            // Todo: Rename name.
-            println!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
-        }
-
-        Ok(false)
-    }
-
-    fn check_output(&mut self, output: ValueInfo) -> Result<bool, TraversalError> {
-        // Todo: remove clone.
-        let name = output.name.clone();
-
-        let def = Definition::value(output);
-
-        let node = Node::new(Op::NoOp, def);
-        let node_id = self.builder.add_output_node(node).expect("TODO");
-
-        if let Some(old_id) = self.builder.insert_name_to_id(name, node_id) {
-            // Todo: Rename name.
-            println!("found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]");
-        }
-
-        Ok(false)
-    }
-
-    fn check_initializer(&mut self, initializer: Tensor) -> Result<bool, TraversalError> {
-        let name = initializer
-            .name
-            .clone()
-            .ok_or(TraversalError::InvalidTensor)?;
-
-        let def = Definition::tensor(
-            name.clone(),
-            initializer.data_type,
-            // Todo: remove clone.
-            initializer.dims.clone(),
+        debug!(
+            "Assigning id={node_id} for initializer {:?}",
+            initializer.name
         );
-        let node = Node::new(Op::Const, def);
 
-        let node_id = self.builder.add_node(node).expect("TODO");
-        self.builder.add_initial_tensor(node_id, initializer);
+        let name = initializer.name.clone().ok_or_else(|| {
+            TraversalError::InvalidValue("unnamed tensors are not supported".to_string())
+        })?;
 
-        if let Some(old_id) = self.builder.insert_name_to_id(name, node_id) {
-            // Todo: Rename name.
-            println!("found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]");
+        let mut node = Node::new(node_id);
+        node.set_op(Op::Const as u32);
+
+        let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
+
+        let type_value = TypeValue::Tensor {
+            ty: tensor.data_type as i32,
+            dims: tensor.dims.clone(),
+        };
+        node.set_type_value(type_value);
+
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
+
+        let node_id = self.add_node(node);
+
+        self.add_initializer(node_id, tensor);
+
+        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
+            return Err(TraversalError::InvalidValue(format!(
+                "found two initializers with the same for id: prev:[{old_id}] new:[{node_id}]"
+            )));
         }
 
         Ok(false)
     }
 
-    fn check_inner_node(&mut self, node: rmlk_ir::Node) -> Result<bool, TraversalError> {
-        unimplemented!()
-        // let op = node
-        //     .op_type
-        //     .as_ref()
-        //     .map(|op| op.parse::<Op>())
-        //     .ok_or(TraversalError::InvalidInnerNode)?
-        //     .map_err(|_| TraversalError::InvalidInnerNode)?;
-        //
-        // let def = Definition::node(node);
-        // let mut node = Node::new(op, def);
-        //
-        // let mut inputs = Vec::new();
-        // for name in node.def().inputs().ok_or(TraversalError::MissingValue)? {
-        //     // Todo: Mapping one name to a single node id, we lose information,
-        //     // because a single node might have two outputs, how do we differentiate?
-        //     let input_node_id = self
-        //         .builder
-        //         .get_node_id(name)
-        //         .ok_or_else(|| TraversalError::InvalidInnerNode)?;
-        //     inputs.push(input_node_id);
-        // }
-        //
-        // node.set_input(inputs);
-        //
-        // let node_id = self.builder.add_node(node).expect("TODO");
-        //
-        // let mut output_node_ids = Vec::new();
-        // // Todo: remove clone.
-        // let outputs = self
-        //     .builder
-        //     .get_node(node_id)
-        //     .expect("that node was just inserted")
-        //     .def()
-        //     .outputs()
-        //     .ok_or(TraversalError::MissingValue)?
-        //     .clone();
-        // for name in outputs {
-        //     match self.builder.get_node_id(&name) {
-        //         None => {
-        //             let def = Definition::value(ValueInfo {
-        //                 // Todo: remove clone.
-        //                 name: name.clone(),
-        //                 ty: None,
-        //                 doc_string: None,
-        //                 // Todo: remove this allocation.
-        //                 metadata_props: vec![],
-        //             });
-        //             let mut output_node = Node::new(Op::NoOp, def);
-        //             output_node.add_input(node_id);
-        //
-        //             let output_node_id = self
-        //                 .builder
-        //                 .add_node(output_node)
-        //                 .map_err(|_| TraversalError::InvalidInnerNode)?;
-        //             output_node_ids.push(output_node_id);
-        //
-        //             // Todo: remove clone.
-        //             self.builder.insert_name_to_id(name, output_node_id);
-        //         }
-        //         Some(id) => {
-        //             let node = self
-        //                 .builder
-        //                 .get_node_mut(id)
-        //                 .ok_or(TraversalError::InvalidInnerNode)?;
-        //             node.add_input(node_id);
-        //                 output_node_ids.push(id);
-        //         }
-        //     }
-        // }
-        //
-        // let node = self
-        //     .builder
-        //     .get_node_mut(node_id)
-        //     .expect("We just inserted it above.");
-        // for id in output_node_ids {
-        //     node.add_output(id);
-        // }
-        //
-        // Ok(false)
+    fn check_inner_node(&mut self, node_proto: NodeProto<'a>) -> Result<bool, TraversalError> {
+        let op = node_proto
+            .op_type
+            .as_ref()
+            .map(|op| op.parse::<Op>())
+            .ok_or(TraversalError::InvalidInnerNode)?
+            .map_err(|_| TraversalError::InvalidInnerNode)?;
+
+        let node_id = self.next_id();
+        let mut node = Node::new(node_id);
+        node.set_op(op as u32);
+        // Todo: remove allocation.
+        node.set_name(node_proto.name.unwrap().to_string());
+
+        let mut attributes = Vec::new();
+        for attr_proto in node_proto.attribute {
+            attributes.push(Attribute::try_from(attr_proto).unwrap());
+        }
+
+        node.set_attributes(attributes);
+
+        let mut inputs = Vec::new();
+        for name in node_proto.input {
+            // Todo: Mapping one name to a single node id, we lose information,
+            // because a single node might have two outputs, how do we differentiate?
+            let input_node_id = self
+                .get_node_id(name.as_ref())
+                .ok_or_else(|| TraversalError::InvalidInnerNode)?;
+            inputs.push(input_node_id);
+        }
+
+        node.set_inputs(inputs);
+
+        let node_id = self.add_node(node);
+
+        let mut output_node_ids = Vec::new();
+        for name in node_proto.output {
+            match self.get_node_id(&name) {
+                None => {
+                    let id = self.next_id();
+                    let mut output_node = Node::new(id);
+                    output_node.add_input(node_id);
+                    output_node.set_name(name.to_string());
+
+                    let output_node_id = self.add_node(output_node);
+                    output_node_ids.push(output_node_id);
+
+                    // Todo: remove clone.
+                    self.save_name_to_id(name.into_owned(), output_node_id);
+                }
+                Some(id) => {
+                    let node = self
+                        .get_node_mut(id)
+                        .ok_or(TraversalError::InvalidInnerNode)?;
+                    node.add_input(node_id);
+                    output_node_ids.push(id);
+                }
+            }
+        }
+
+        let node = self
+            .get_node_mut(node_id)
+            .expect("We just inserted it above.");
+        for id in output_node_ids {
+            node.add_output(id);
+        }
+
+        Ok(false)
+    }
+}
+
+impl From<GraphFromOnnxV2> for Graph {
+    fn from(value: GraphFromOnnxV2) -> Self {
+        let mut nodes = Vec::new();
+        for node_schema in value.nodes {
+            debug_assert!(node_schema.id == nodes.len());
+            let def = Definition::new(node_schema);
+            let node = rmlk_graph::Node::from_definition(def);
+            nodes.push(node);
+        }
+
+        Self::new(value.initializers, value.inputs, nodes, value.outputs)
     }
 }

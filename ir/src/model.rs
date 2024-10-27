@@ -1,7 +1,5 @@
 use crate::error::Error;
 use crate::graph::Graph;
-use crate::onnx;
-use crate::onnx::ModelProto;
 use crate::op::{Function, OperatorSetId};
 use serde::{Deserialize, Serialize};
 
@@ -80,75 +78,8 @@ pub struct Model {
     pub functions: Vec<Function>,
 }
 
-impl TryFrom<ModelProto<'_>> for Model {
-    type Error = Error;
-
-    fn try_from(value: ModelProto) -> Result<Self, Self::Error> {
-        let mut metadata_props = Vec::new();
-        for metadata in value.metadata_props {
-            metadata_props.push(metadata.into());
-        }
-
-        let mut functions = Vec::new();
-        for f in value.functions {
-            functions.push(f.try_into()?);
-        }
-
-        let mut opset_import = Vec::new();
-        for opset in value.opset_import {
-            opset_import.push(opset.try_into()?);
-        }
-
-        Ok(Self {
-            ir_version: value
-                .ir_version
-                .ok_or(Error::MissingField {
-                    name: "Model::ir_version".to_string(),
-                })?
-                .try_into()?,
-            opset_import,
-            producer_name: value.producer_name.map(|str| str.to_string()),
-            producer_version: value.producer_version.map(|str| str.to_string()),
-            domain: value.domain.map(|str| str.to_string()),
-            model_version: value.model_version,
-            doc_string: value.doc_string.map(|str| str.to_string()),
-            graph: value.graph.map(|g| g.try_into()).transpose()?,
-            metadata_props,
-            functions,
-        })
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StringStringEntryProto {
     key: Option<String>,
     value: Option<String>,
-}
-
-impl From<onnx::StringStringEntryProto<'_>> for StringStringEntryProto {
-    fn from(value: onnx::StringStringEntryProto) -> Self {
-        Self {
-            key: value.key.map(|k| k.to_string()),
-            value: value.value.map(|v| v.to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct TensorAnnotation {
-    tensor_name: Option<String>,
-    quant_parameter_tensor_names: Vec<StringStringEntryProto>,
-}
-
-impl From<onnx::TensorAnnotation<'_>> for TensorAnnotation {
-    fn from(value: onnx::TensorAnnotation) -> Self {
-        Self {
-            tensor_name: value.tensor_name.map(|name| name.to_string()),
-            quant_parameter_tensor_names: value
-                .quant_parameter_tensor_names
-                .into_iter()
-                .map(From::from)
-                .collect(),
-        }
-    }
 }
