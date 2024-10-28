@@ -1,9 +1,55 @@
 use log::{debug, error};
-use rmlk_graph::{Definition, Graph, OnnxGraphTraverser, TraversalError};
-use rmlk_ir::onnx::{NodeProto, TensorProto, ValueInfoProto};
+use rmlk_graph::{Definition, Graph};
+use rmlk_ir::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
 use rmlk_ir::{Attribute, Node, Op, Tensor, TypeValue, Value, ValueInfo};
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+pub type Result<T> = std::result::Result<T, TraversalError>;
+
+#[derive(Debug)]
+pub enum TraversalError {
+    InvalidValue(String),
+    InvalidInnerNode,
+}
+
+pub trait OnnxGraphTraverser<'a> {
+    fn check_input(&mut self, input: ValueInfoProto<'a>) -> Result<bool>;
+    fn check_output(&mut self, output: ValueInfoProto<'a>) -> Result<bool>;
+    fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool>;
+    fn check_inner_node(&mut self, node: NodeProto<'a>) -> Result<bool>;
+}
+
+pub fn visit_onnx<'a, T>(graph_proto: GraphProto<'a>, traverser: &mut T) -> Result<()>
+where
+    T: OnnxGraphTraverser<'a>,
+{
+    for initializer in graph_proto.initializer {
+        if traverser.check_initializer(initializer)? {
+            return Ok(());
+        }
+    }
+
+    for input in graph_proto.input {
+        if traverser.check_input(input)? {
+            return Ok(());
+        }
+    }
+
+    for output in graph_proto.output {
+        if traverser.check_output(output)? {
+            return Ok(());
+        }
+    }
+
+    for node in graph_proto.node {
+        if traverser.check_inner_node(node)? {
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
 
 #[derive(Default)]
 pub struct GraphFromOnnx {
@@ -56,10 +102,7 @@ impl GraphFromOnnx {
 }
 
 impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
-    fn check_input(
-        &mut self,
-        value_info_proto: ValueInfoProto<'a>,
-    ) -> Result<bool, TraversalError> {
+    fn check_input(&mut self, value_info_proto: ValueInfoProto<'a>) -> Result<bool> {
         let node_id = self.next_id();
 
         debug!("Assigning id={node_id} for input {value_info_proto:?}");
@@ -96,10 +139,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         Ok(false)
     }
 
-    fn check_output(
-        &mut self,
-        value_info_proto: ValueInfoProto<'a>,
-    ) -> Result<bool, TraversalError> {
+    fn check_output(&mut self, value_info_proto: ValueInfoProto<'a>) -> Result<bool> {
         let node_id = self.next_id();
 
         debug!("Assigning id={node_id} for output {value_info_proto:?}");
@@ -135,7 +175,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         Ok(false)
     }
 
-    fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool, TraversalError> {
+    fn check_initializer(&mut self, initializer: TensorProto<'a>) -> Result<bool> {
         let node_id = self.next_id();
 
         debug!(
@@ -174,7 +214,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         Ok(false)
     }
 
-    fn check_inner_node(&mut self, node_proto: NodeProto<'a>) -> Result<bool, TraversalError> {
+    fn check_inner_node(&mut self, node_proto: NodeProto<'a>) -> Result<bool> {
         let op = node_proto
             .op_type
             .as_ref()

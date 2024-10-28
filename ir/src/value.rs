@@ -4,17 +4,6 @@ use crate::onnx::{tensor_shape_proto, TypeProto};
 use crate::{onnx, DataType};
 use serde::{Deserialize, Serialize};
 
-/// Defines information on value, including the name, the type, and
-/// the shape of the value.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ValueInfo {
-    /// This field MUST be present in this version of the IR.
-    pub id: usize,
-    /// This field MUST be present in this version of the IR for
-    /// inputs and outputs of the top-level graph.
-    pub ty: Option<TypeValue>,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub enum TypeValue {
     Tensor { ty: i32, dims: Vec<usize> },
@@ -92,4 +81,15 @@ impl Value {
     pub fn new(dtype: DataType, dims: Vec<usize>, name: String) -> Self {
         Self { name, dtype, dims }
     }
+}
+
+/// Defines information on value, including the name, the type, and
+/// the shape of the value.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ValueInfo {
+    /// This field MUST be present in this version of the IR.
+    pub id: usize,
+    /// This field MUST be present in this version of the IR for
+    /// inputs and outputs of the top-level graph.
+    pub ty: Option<TypeValue>,
 }

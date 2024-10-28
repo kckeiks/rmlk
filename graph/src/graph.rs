@@ -1,8 +1,6 @@
 use crate::node::Node;
 use std::collections::HashMap;
 
-pub type Result<T> = std::result::Result<T, GraphError>;
-
 #[derive(Debug)]
 pub enum GraphError {
     InvalidTensor,
