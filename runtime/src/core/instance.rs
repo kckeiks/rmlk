@@ -23,8 +23,28 @@ impl Builder {
         Self { graph }
     }
 
-    pub fn with_model_from_memory(_model: Box<[u8]>) -> Result<Self> {
-        unimplemented!()
+    pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> Result<Self> {
+        let compute_graph: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())?;
+        let mut nodes = Vec::new();
+        for node_schema in compute_graph.node {
+            debug_assert!(node_schema.id == nodes.len());
+            let mut def = Definition::new(node_schema);
+            let node = rmlk_graph::Node::from_definition(
+                def.take_inputs().unwrap_or_default(),
+                def.take_outputs().unwrap_or_default(),
+                def,
+            );
+            nodes.push(node);
+        }
+
+        Ok(Self {
+            graph: Graph::new(
+                compute_graph.initializer,
+                compute_graph.input,
+                nodes,
+                compute_graph.output,
+            ),
+        })
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {

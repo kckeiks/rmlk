@@ -31,13 +31,14 @@ fn main() {
     }
 
     // Read onnx file from disk.
-    let model = fs::read("/home/mmeier/Downloads/resnet34.onnx").expect("bad");
-    let mut reader = BytesReader::from_bytes(&model);
-    let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    let graph = rmlk_runtime::parse::parse_ir_graph(model_proto.graph.unwrap()).unwrap();
+    let serialized_graph = fs::read("resnet34.rmlk").expect("bad");
+
+    // let mut reader = BytesReader::from_bytes(&model);
+    // let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
+    // let graph = rmlk_runtime::parse::parse_ir_graph(model_proto.graph.unwrap()).unwrap();
 
     // Build engine graph.
-    let builder = Builder::new(graph);
+    let builder = Builder::with_model_from_memory(serialized_graph.into_boxed_slice()).unwrap();
     let mut model_instance = builder.build().unwrap();
 
     // Run inference.
