@@ -1,5 +1,5 @@
 use crate::utils;
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 
 /// Tensor.
 ///

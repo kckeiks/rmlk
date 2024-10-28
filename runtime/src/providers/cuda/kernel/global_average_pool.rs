@@ -4,7 +4,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::driver::CudaDevice;
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct GlobalAveragePoolKernel {
@@ -74,7 +74,7 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_global_average_pool_f32_2d() {

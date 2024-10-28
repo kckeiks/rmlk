@@ -5,7 +5,7 @@ mod traverse;
 use anyhow::anyhow;
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_ir::onnx::ModelProto;
+use rmlk_schema::onnx::ModelProto;
 use std::fs;
 
 use args::{Args, Command};

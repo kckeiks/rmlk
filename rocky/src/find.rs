@@ -1,5 +1,5 @@
 use crate::traverse::{OnnxGraphTraverser, Result};
-use rmlk_ir::onnx::{
+use rmlk_schema::onnx::{
     Category, NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, ValueInfoProto,
 };
 

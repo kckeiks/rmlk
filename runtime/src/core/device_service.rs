@@ -1,6 +1,6 @@
 use crate::core::kernel::Kernel;
 use crate::Result;
-use rmlk_ir::{DataType, Op};
+use rmlk_schema::{DataType, Op};
 
 /// Services for using an accelerator device's resources.
 pub trait DeviceService {

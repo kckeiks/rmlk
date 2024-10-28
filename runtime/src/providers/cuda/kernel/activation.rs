@@ -4,7 +4,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct ActivationKernel {
@@ -63,7 +63,7 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_relu_f32() {

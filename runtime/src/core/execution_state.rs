@@ -5,7 +5,7 @@ use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
 use rmlk_graph::Node;
-use rmlk_ir::Op;
+use rmlk_schema::Op;
 use std::collections::HashMap;
 use std::sync::Arc;
 

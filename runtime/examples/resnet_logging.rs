@@ -1,6 +1,6 @@
 fn main() {
     // use quick_protobuf::{BytesReader, MessageRead};
-    // use rmlk_ir::{Model, ModelProto};
+    // use rmlk_schema::{Model, ModelProto};
     // use std::fs;
     //
     // // let model = fs::read("/Users/acadia/Repo/Llama-2-7b-ONNX/FP32-Chat/LlamaV2_7B_FT_float32.onnx")

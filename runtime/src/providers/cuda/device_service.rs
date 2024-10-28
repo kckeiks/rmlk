@@ -11,7 +11,7 @@ use crate::providers::cuda::kernel::add::AddKernel;
 use crate::providers::cuda::max_pool::MaxPoolKernel;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction};
-use rmlk_ir::{DataType, Op};
+use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct Cuda {

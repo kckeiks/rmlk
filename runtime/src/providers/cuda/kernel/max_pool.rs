@@ -6,7 +6,7 @@ use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::driver::CudaDevice;
 use log::trace;
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct MaxPoolKernel {
@@ -98,7 +98,7 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_max_pool_f32_2d() {

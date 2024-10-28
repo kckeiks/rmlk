@@ -1,5 +1,5 @@
-use rmlk_ir::DataType;
-use rmlk_ir::{Attribute, Node};
+use rmlk_schema::DataType;
+use rmlk_schema::{Attribute, Node};
 use std::collections::HashMap;
 
 pub struct Definition {

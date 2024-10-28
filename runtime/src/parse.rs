@@ -1,6 +1,6 @@
 use crate::traverse;
 use crate::traverse::GraphFromOnnx;
-use rmlk_ir::onnx::GraphProto;
+use rmlk_schema::onnx::GraphProto;
 
 type Result<T> = std::result::Result<T, Error>;
 

@@ -1,5 +1,5 @@
 [package]
-name = "rmlk-fonnx"
+name = "rocky"
 version = "0.0.0"
 edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
@@ -7,7 +7,7 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "string"] }
-rmlk-ir = { path = "../ir" }
+rmlk-schema = { path = "../schema" }
 rmlk-graph = { path = "../graph" }
 quick-protobuf = "0.8"
 log = "0.4.21"

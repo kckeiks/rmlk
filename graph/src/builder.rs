@@ -8,7 +8,7 @@ pub type Result<T> = std::result::Result<T, GraphError>;
 // Todo: Maybe use `hashbrown` map for these maps.
 pub struct GraphBuilder {
     nodes: Vec<Node>,
-    initializers: HashMap<usize, rmlk_ir::Tensor>,
+    initializers: HashMap<usize, rmlk_schema::Tensor>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     /// Maps a node's name to its ID or its source's ID.
@@ -60,7 +60,7 @@ impl GraphBuilder {
         Ok(id)
     }
 
-    pub fn add_initial_tensor(&mut self, node_id: usize, tensor: rmlk_ir::Tensor) {
+    pub fn add_initial_tensor(&mut self, node_id: usize, tensor: rmlk_schema::Tensor) {
         self.initializers.insert(node_id, tensor);
     }
 

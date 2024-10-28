@@ -3,7 +3,7 @@ use crate::kernels::{add, mul};
 use cudarc::driver::{CudaDevice, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
-use rmlk_ir::{DataType, Op};
+use rmlk_schema::{DataType, Op};
 #[cfg(test)]
 use std::ops::AddAssign;
 use std::sync::Arc;

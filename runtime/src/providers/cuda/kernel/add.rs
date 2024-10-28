@@ -3,7 +3,7 @@ use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::{CudaDevice, CudaFunction};
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct AddKernel {
@@ -71,7 +71,7 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_add_f32() {

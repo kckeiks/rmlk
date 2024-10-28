@@ -66,7 +66,7 @@ mod test {
     use crate::kernels::add::compute;
     use crate::utils;
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_add_f32() {

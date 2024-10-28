@@ -7,7 +7,7 @@ use crate::utils;
 use cudarc::driver::{CudaDevice, DeviceSlice};
 use log::trace;
 use rmlk_cuda::kernels::conv::BiasInput;
-use rmlk_ir::DataType;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct ConvKernel {
@@ -197,7 +197,7 @@ mod test {
     use crate::test_utils;
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
     use cudarc::driver::CudaDevice;
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_conv_f32_2d_bias() {

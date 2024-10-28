@@ -13,7 +13,7 @@ pub enum GraphError {
 }
 
 pub struct Graph {
-    initializers: HashMap<usize, rmlk_ir::Tensor>,
+    initializers: HashMap<usize, rmlk_schema::Tensor>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     nodes: Vec<Node>,
@@ -21,7 +21,7 @@ pub struct Graph {
 
 impl Graph {
     pub fn new(
-        initializers: HashMap<usize, rmlk_ir::Tensor>,
+        initializers: HashMap<usize, rmlk_schema::Tensor>,
         inputs: Vec<usize>,
         nodes: Vec<Node>,
         outputs: Vec<usize>,
@@ -58,7 +58,7 @@ impl Graph {
         self.outputs.as_slice()
     }
 
-    pub fn initializers(&self) -> impl Iterator<Item = (&usize, &rmlk_ir::Tensor)> + '_ {
+    pub fn initializers(&self) -> impl Iterator<Item = (&usize, &rmlk_schema::Tensor)> + '_ {
         self.initializers.iter()
     }
 
@@ -66,7 +66,7 @@ impl Graph {
         self.nodes.get(id)
     }
 
-    pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_ir::Tensor> {
+    pub fn get_initial_tensor(&self, id: usize) -> Option<&rmlk_schema::Tensor> {
         self.initializers.get(&id)
     }
 }

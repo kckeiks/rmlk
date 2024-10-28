@@ -1,6 +1,6 @@
 use crate::core::{Error, Result};
 use log::warn;
-use rmlk_ir::Attribute;
+use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
 pub struct MaxPoolAttributes {

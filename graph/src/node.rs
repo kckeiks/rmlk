@@ -1,5 +1,5 @@
 use crate::definition::Definition;
-use rmlk_ir::Op;
+use rmlk_schema::Op;
 
 // Todo: Sometimes we dont want to keep all of a Definition specially in release
 // because we only need certain things and do not need the metadata.

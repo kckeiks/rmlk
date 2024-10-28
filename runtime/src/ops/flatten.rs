@@ -59,7 +59,7 @@ mod test {
     use crate::ops::flatten::_compute;
     use crate::test_utils;
     use crate::test_utils::{MockProvider, TestNode, TestParams};
-    use rmlk_ir::{DataType, Op};
+    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_flatten_f32() {

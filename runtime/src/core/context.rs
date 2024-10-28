@@ -2,7 +2,7 @@ use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
 use crate::core::tensor::Tensor;
 use crate::core::DeviceService;
-use rmlk_ir::Attribute;
+use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
 /// Computation context.
