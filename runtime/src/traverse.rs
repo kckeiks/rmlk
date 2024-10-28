@@ -115,7 +115,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         };
 
         let mut node = Node::new(node_id);
-        node.set_op(Op::NoOp as u32);
+        node.set_op(Op::NoOp);
 
         // Todo: Handle unwrap().
         let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
@@ -152,7 +152,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         };
 
         let mut node = Node::new(node_id);
-        node.set_op(Op::NoOp as u32);
+        node.set_op(Op::NoOp);
 
         let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
             .unwrap()
@@ -188,7 +188,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
         })?;
 
         let mut node = Node::new(node_id);
-        node.set_op(Op::Const as u32);
+        node.set_op(Op::Const);
 
         let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
 
@@ -224,7 +224,7 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
 
         let node_id = self.next_id();
         let mut node = Node::new(node_id);
-        node.set_op(op as u32);
+        node.set_op(op);
         // Todo: remove allocation.
         node.set_name(node_proto.name.unwrap().to_string());
 
