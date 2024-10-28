@@ -1,6 +1,6 @@
 use crate::core::plan::Plan;
 use crate::core::DeviceService;
-use rmlk_graph::Graph;
+use rmlk_graph::{Definition, Graph};
 use std::sync::Arc;
 
 /// The state of the model instance.
@@ -8,7 +8,7 @@ use std::sync::Arc;
 /// This object is used internally by the runtime to
 /// hold the state of its corresponding model instance.
 pub struct ModelInstanceState<D> {
-    graph: Arc<Graph>,
+    graph: Arc<Graph<Definition>>,
     _plan: Plan<D>,
 }
 
@@ -16,7 +16,7 @@ impl<D> ModelInstanceState<D>
 where
     D: DeviceService,
 {
-    pub fn new(plan: Plan<D>, graph: Graph) -> Self {
+    pub fn new(plan: Plan<D>, graph: Graph<Definition>) -> Self {
         Self {
             _plan: plan,
             graph: Arc::new(graph),
@@ -27,7 +27,7 @@ where
         &self._plan
     }
 
-    pub fn graph(&self) -> &Arc<Graph> {
+    pub fn graph(&self) -> &Arc<Graph<Definition>> {
         &self.graph
     }
 }

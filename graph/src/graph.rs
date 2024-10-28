@@ -12,18 +12,18 @@ pub enum GraphError {
     ComputationFailed,
 }
 
-pub struct Graph {
+pub struct Graph<T> {
     initializers: HashMap<usize, rmlk_schema::Tensor>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
-    nodes: Vec<Node>,
+    nodes: Vec<Node<T>>,
 }
 
-impl Graph {
+impl<T> Graph<T> {
     pub fn new(
         initializers: HashMap<usize, rmlk_schema::Tensor>,
         inputs: Vec<usize>,
-        nodes: Vec<Node>,
+        nodes: Vec<Node<T>>,
         outputs: Vec<usize>,
     ) -> Self {
         Self {
@@ -34,7 +34,7 @@ impl Graph {
         }
     }
 
-    pub fn nodes(&self) -> impl Iterator<Item = &Node> + '_ {
+    pub fn nodes(&self) -> impl Iterator<Item = &Node<T>> + '_ {
         self.nodes.iter()
     }
 
@@ -42,7 +42,7 @@ impl Graph {
         self.nodes.len()
     }
 
-    pub fn nodes_slice(&self) -> &[Node] {
+    pub fn nodes_slice(&self) -> &[Node<T>] {
         self.nodes.as_slice()
     }
 
@@ -62,7 +62,7 @@ impl Graph {
         self.initializers.iter()
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Node> {
+    pub fn get_node(&self, id: usize) -> Option<&Node<T>> {
         self.nodes.get(id)
     }
 

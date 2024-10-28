@@ -4,7 +4,7 @@ use crate::core::values::Values;
 use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
-use rmlk_graph::Node;
+use rmlk_graph::{Definition, Node};
 use rmlk_schema::Op;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ where
         for (node_id, node) in graph.nodes().enumerate() {
             // We already loaded the initializers.
             if graph.get_initial_tensor(node_id).is_some()
-                || matches!(node.def().op(), Op::Const | Op::NoOp)
+                || matches!(node.inner().op(), Op::Const | Op::NoOp)
             {
                 continue;
             }
@@ -87,7 +87,7 @@ where
     }
 
     /// Get a reference to the node.
-    pub fn get_node(&self, node_id: usize) -> Option<&Node> {
+    pub fn get_node(&self, node_id: usize) -> Option<&Node<Definition>> {
         self.instance_state.graph().get_node(node_id)
     }
 

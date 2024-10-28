@@ -6,8 +6,8 @@ use std::collections::HashMap;
 pub type Result<T> = std::result::Result<T, GraphError>;
 
 // Todo: Maybe use `hashbrown` map for these maps.
-pub struct GraphBuilder {
-    nodes: Vec<Node>,
+pub struct GraphBuilder<T> {
+    nodes: Vec<Node<T>>,
     initializers: HashMap<usize, rmlk_schema::Tensor>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
@@ -18,7 +18,7 @@ pub struct GraphBuilder {
     name_to_node_id: HashMap<String, usize>,
 }
 
-impl GraphBuilder {
+impl<T> GraphBuilder<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -29,21 +29,21 @@ impl GraphBuilder {
         }
     }
 
-    pub fn get_node(&self, id: usize) -> Option<&Node> {
+    pub fn get_node(&self, id: usize) -> Option<&Node<T>> {
         self.nodes.get(id)
     }
 
-    pub fn get_node_mut(&mut self, id: usize) -> Option<&mut Node> {
+    pub fn get_node_mut(&mut self, id: usize) -> Option<&mut Node<T>> {
         self.nodes.get_mut(id)
     }
 
-    pub fn add_node(&mut self, node: Node) -> Result<usize> {
+    pub fn add_node(&mut self, node: Node<T>) -> Result<usize> {
         let id = self.nodes.len();
         self.nodes.push(node);
         Ok(id)
     }
 
-    pub fn add_input(&mut self, node: Node) -> Result<usize> {
+    pub fn add_input(&mut self, node: Node<T>) -> Result<usize> {
         let id = self.add_node(node)?;
         self.inputs.push(id);
         Ok(id)
@@ -54,7 +54,7 @@ impl GraphBuilder {
         Ok(id)
     }
 
-    pub fn add_output_node(&mut self, node: Node) -> Result<usize> {
+    pub fn add_output_node(&mut self, node: Node<T>) -> Result<usize> {
         let id = self.add_node(node)?;
         self.outputs.push(id);
         Ok(id)
@@ -72,17 +72,15 @@ impl GraphBuilder {
         self.name_to_node_id.insert(name, id)
     }
 
-    pub fn build(self) -> Result<Graph> {
+    pub fn build(self) -> Result<Graph<T>> {
         // Todo: create a plan here.
         for (id, n) in self.nodes.iter().enumerate() {
             let inputs = n.inputs();
             let outputs = n.outputs();
             trace!(
                 "node_id={id},\
-                node_name={:?},\
                 inputs={inputs:?},\
                 outputs={outputs:?}",
-                n.def().name()
             );
         }
         Ok(Graph::new(

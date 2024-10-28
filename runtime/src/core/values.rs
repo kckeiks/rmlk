@@ -25,7 +25,7 @@ impl<T> Values<T> {
         // Load initializers.
         for (node_id, ir_tensor) in graph.initializers() {
             debug_assert_eq!(
-                graph.get_node(*node_id).map(|n| n.def().op()),
+                graph.get_node(*node_id).map(|n| n.inner().op()),
                 Some(Op::Const)
             );
 
@@ -48,7 +48,7 @@ impl<T> Values<T> {
         for node_id in graph.inputs() {
             match graph.get_node(node_id) {
                 Some(node) => {
-                    let def = node.def();
+                    let def = node.inner();
                     // Todo: Throw an error instead.
                     let dtype = def.dtype().expect("Input should have a data type defined");
                     let tensor = if let Some(shape) = def.shape() {
@@ -66,7 +66,7 @@ impl<T> Values<T> {
         for node_id in graph.outputs() {
             match graph.get_node(node_id) {
                 Some(node) => {
-                    let def = node.def();
+                    let def = node.inner();
                     // Todo: Throw an error instead.
                     let dtype = def.dtype().expect("Input should have a data type defined");
                     let tensor = if let Some(shape) = def.shape() {
@@ -83,7 +83,7 @@ impl<T> Values<T> {
 
         for node in graph.nodes() {
             // We already loaded the initializers.
-            if matches!(node.def().op(), Op::Const | Op::NoOp) {
+            if matches!(node.inner().op(), Op::Const | Op::NoOp) {
                 continue;
             }
 

@@ -1,9 +1,7 @@
-use crate::definition::Definition;
-
 // Todo: Sometimes we dont want to keep all of a Definition specially in release
 // because we only need certain things and do not need the metadata.
 // Let's solve it.
-pub struct Node {
+pub struct Node<T> {
     /// The node's Provider.
     ///
     /// Each node is assigned to a single Provider.
@@ -19,11 +17,11 @@ pub struct Node {
     /// an initial tensor.
     outputs: Vec<usize>,
     /// The node's definition.
-    definition: Definition,
+    definition: T,
 }
 
-impl Node {
-    pub fn new(definition: Definition) -> Self {
+impl<T> Node<T> {
+    pub fn new(definition: T) -> Self {
         Self {
             _provider: None,
             inputs: Vec::new(),
@@ -32,11 +30,11 @@ impl Node {
         }
     }
 
-    pub fn from_definition(mut definition: Definition) -> Self {
+    pub fn from_definition(inputs: Vec<usize>, outputs: Vec<usize>, definition: T) -> Self {
         Self {
             _provider: None,
-            inputs: definition.take_inputs().unwrap_or_default(),
-            outputs: definition.take_outputs().unwrap_or_default(),
+            inputs,
+            outputs,
             definition,
         }
     }
@@ -65,7 +63,7 @@ impl Node {
         self.outputs = outputs;
     }
 
-    pub fn def(&self) -> &Definition {
+    pub fn inner(&self) -> &T {
         &self.definition
     }
 }

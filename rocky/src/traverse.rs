@@ -286,13 +286,17 @@ impl<'a> OnnxGraphTraverser<'a> for GraphFromOnnx {
     }
 }
 
-impl From<GraphFromOnnx> for Graph {
+impl From<GraphFromOnnx> for Graph<Definition> {
     fn from(value: GraphFromOnnx) -> Self {
         let mut nodes = Vec::new();
         for node_schema in value.nodes {
             debug_assert!(node_schema.id == nodes.len());
-            let def = Definition::new(node_schema);
-            let node = rmlk_graph::Node::from_definition(def);
+            let mut def = Definition::new(node_schema);
+            let node = rmlk_graph::Node::from_definition(
+                def.take_inputs().unwrap_or_default(),
+                def.take_outputs().unwrap_or_default(),
+                def,
+            );
             nodes.push(node);
         }
 
