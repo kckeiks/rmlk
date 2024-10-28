@@ -33,7 +33,12 @@ fn main() {
 
     // Build engine graph.
     let builder = Builder::with_model_from_memory(serialized_graph.into_boxed_slice()).unwrap();
+
+    println!("Done serializing");
+
     let mut model_instance = builder.build().unwrap();
+
+    println!("Done building the compute graph in the runtime");
 
     // Run inference.
     let mut output = model_instance.run(input.into_raw_vec()).unwrap();

@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 struct ModelFromOnnx {
-    pub nodes: Vec<Node>,
-    pub inputs: Vec<usize>,
-    pub outputs: Vec<usize>,
-    pub initializers: HashMap<usize, Tensor>,
-    pub name_to_id: HashMap<String, usize>,
+    nodes: Vec<Node>,
+    inputs: Vec<usize>,
+    outputs: Vec<usize>,
+    initializers: HashMap<usize, Tensor>,
+    name_to_id: HashMap<String, usize>,
 }
 
 impl ModelFromOnnx {

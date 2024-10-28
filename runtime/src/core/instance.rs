@@ -26,6 +26,7 @@ impl Builder {
     pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> Result<Self> {
         let compute_graph: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
             .map_err(|_| Error::ModelDeserializationFailed)?;
+
         let mut nodes = Vec::new();
         for node_schema in compute_graph.node {
             debug_assert!(node_schema.id == nodes.len());
