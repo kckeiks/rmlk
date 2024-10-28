@@ -14,12 +14,12 @@ pub struct Graph {
     /// The nodes in the graph, sorted topologically.
     pub node: Vec<Node>,
     /// The name of the graph.
-    pub name: Option<u32>,
+    pub name: Option<String>,
     /// A list of named tensor values, used to specify constant inputs of the graph.
     /// Each initializer (both TensorProto as well SparseTensorProto) MUST have a name.
     /// The name MUST be unique across both initializer and sparse_initializer,
     /// but the name MAY also appear in the input list.
-    pub initializer: Vec<Tensor>,
+    pub initializer: HashMap<usize, Tensor>,
     /// The inputs of the graph.
     pub input: Vec<usize>,
     /// The outputs of the graph.

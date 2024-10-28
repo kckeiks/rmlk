@@ -11,4 +11,5 @@ pub struct Args {
 #[derive(Subcommand)]
 pub enum Command {
     Find { path: PathBuf, target: String },
+    Transform { path: PathBuf },
 }

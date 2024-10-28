@@ -1,5 +1,6 @@
 mod args;
 mod find;
+mod transform;
 mod traverse;
 
 use anyhow::anyhow;
@@ -8,6 +9,7 @@ use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_schema::onnx::ModelProto;
 use std::fs;
 
+use crate::transform::graph_from_onnx_proto;
 use args::{Args, Command};
 use find::FindNode;
 
@@ -33,6 +35,14 @@ fn main() -> anyhow::Result<()> {
                 Some(node) => println!("{:?}", node),
                 None => println!("we did not find a node with the name `{target}`"),
             }
+        }
+        Command::Transform { path } => {
+            let model = fs::read(path)?;
+            let mut reader = BytesReader::from_bytes(&model);
+            let model_proto = ModelProto::from_reader(&mut reader, &model)?;
+            let compute_graph = graph_from_onnx_proto(model_proto)?;
+            let serialized_model = bincode::serialize(&compute_graph)?;
+            fs::write("resnet34.rmlk", serialized_model)?;
         }
     }
 
