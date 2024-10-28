@@ -1,9 +1,8 @@
 use crate::core::Values;
 use crate::core::{Context, Kernel, ModelInstanceState};
 use crate::core::{DeviceService, ExecutionState, Plan};
-use rmlk_graph::definition::Definition;
 use rmlk_graph::{GraphBuilder, Node};
-use rmlk_schema::{Attribute, AttributeType, DataType, Op};
+use rmlk_schema::{Attribute, AttributeType, DataType, Definition, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 

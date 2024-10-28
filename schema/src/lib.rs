@@ -1,4 +1,5 @@
 mod attributes;
+mod definition;
 mod error;
 mod graph;
 mod model;
@@ -10,6 +11,7 @@ mod value;
 pub mod onnx;
 
 pub use attributes::*;
+pub use definition::*;
 pub use graph::*;
 pub use model::*;
 pub use node::*;

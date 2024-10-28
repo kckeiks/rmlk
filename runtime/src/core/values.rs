@@ -1,7 +1,7 @@
 use crate::core::{DeviceService, Tensor};
 use crate::{Error, Result};
-use rmlk_graph::{Definition, Graph};
-use rmlk_schema::{DataType, Op};
+use rmlk_graph::Graph;
+use rmlk_schema::{DataType, Definition, Op};
 
 /// Tensor values.
 ///

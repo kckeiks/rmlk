@@ -1,6 +1,7 @@
 use crate::core::plan::Plan;
 use crate::core::DeviceService;
-use rmlk_graph::{Definition, Graph};
+use rmlk_graph::Graph;
+use rmlk_schema::Definition;
 use std::sync::Arc;
 
 /// The state of the model instance.

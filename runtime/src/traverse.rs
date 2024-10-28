@@ -1,7 +1,7 @@
 use log::debug;
-use rmlk_graph::{Definition, Graph};
+use rmlk_graph::Graph;
 use rmlk_schema::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
-use rmlk_schema::{Attribute, Node, Op, Tensor, TypeValue};
+use rmlk_schema::{Attribute, Definition, Node, Op, Tensor, TypeValue};
 use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, TraversalError>;

@@ -1,5 +1,4 @@
-use rmlk_schema::{Attribute, Node};
-use rmlk_schema::{DataType, Op};
+use crate::{Attribute, DataType, Node, Op};
 use std::collections::HashMap;
 
 pub struct Definition {
