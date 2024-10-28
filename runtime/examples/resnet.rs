@@ -1,8 +1,6 @@
 use image::GenericImageView;
 use ndarray::Array;
-use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_runtime::Builder;
-use rmlk_schema::onnx::ModelProto;
 use std::fs;
 use std::path::Path;
 
@@ -32,10 +30,6 @@ fn main() {
 
     // Read onnx file from disk.
     let serialized_graph = fs::read("resnet34.rmlk").expect("bad");
-
-    // let mut reader = BytesReader::from_bytes(&model);
-    // let model_proto = ModelProto::from_reader(&mut reader, &model).unwrap();
-    // let graph = rmlk_runtime::parse::parse_ir_graph(model_proto.graph.unwrap()).unwrap();
 
     // Build engine graph.
     let builder = Builder::with_model_from_memory(serialized_graph.into_boxed_slice()).unwrap();
