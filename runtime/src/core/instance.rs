@@ -9,17 +9,17 @@ use crate::core::values::Values;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
-use rmlk_graph::Graph;
+use rmlk_graph::{Definition, Graph};
 use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 /// Model instance builder.
 pub struct Builder {
-    graph: Graph,
+    graph: Graph<Definition>,
 }
 
 impl Builder {
-    pub fn new(graph: Graph) -> Self {
+    pub fn new(graph: Graph<Definition>) -> Self {
         Self { graph }
     }
 

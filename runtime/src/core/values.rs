@@ -1,6 +1,6 @@
 use crate::core::{DeviceService, Tensor};
 use crate::{Error, Result};
-use rmlk_graph::Graph;
+use rmlk_graph::{Definition, Graph};
 use rmlk_schema::{DataType, Op};
 
 /// Tensor values.
@@ -11,7 +11,10 @@ pub struct Values<T> {
 }
 
 impl<T> Values<T> {
-    pub fn new<D: DeviceService<Data = T>>(provider: &D, graph: &Graph) -> Result<Values<D::Data>> {
+    pub fn new<D: DeviceService<Data = T>>(
+        provider: &D,
+        graph: &Graph<Definition>,
+    ) -> Result<Values<D::Data>> {
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
