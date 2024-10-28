@@ -46,7 +46,7 @@ where
         for (node_id, node) in graph.nodes().enumerate() {
             // We already loaded the initializers.
             if graph.get_initial_tensor(node_id).is_some()
-                || matches!(node.op(), Op::Const | Op::NoOp)
+                || matches!(node.def().op(), Op::Const | Op::NoOp)
             {
                 continue;
             }

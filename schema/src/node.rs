@@ -12,7 +12,7 @@ pub struct Node {
     // An identifier for this node in a graph.
     pub id: usize,
     // The symbolic identifier of the Operator to execute.
-    pub op_type: u32,
+    pub op_type: Op,
     // Additional named attributes.
     pub attribute: Option<Vec<Attribute>>,
     pub value: Option<TypeValue>,
@@ -27,7 +27,7 @@ impl Node {
             input: None,
             output: None,
             id,
-            op_type: Op::NoOp as u32,
+            op_type: Op::NoOp,
             attribute: None,
             value: None,
             #[cfg(debug_assertions)]
@@ -65,7 +65,11 @@ impl Node {
         self.input = Some(outputs);
     }
 
-    pub fn set_op(&mut self, op: u32) {
+    pub fn op(&self) -> Op {
+        self.op_type
+    }
+
+    pub fn set_op(&mut self, op: Op) {
         self.op_type = op;
     }
 

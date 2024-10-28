@@ -7,7 +7,7 @@ use crate::value::ValueInfo;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Op {
     NoOp = 0,
     Add = 1,

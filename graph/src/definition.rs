@@ -1,5 +1,5 @@
-use rmlk_schema::DataType;
 use rmlk_schema::{Attribute, Node};
+use rmlk_schema::{DataType, Op};
 use std::collections::HashMap;
 
 pub struct Definition {
@@ -65,7 +65,7 @@ impl Definition {
         self.attributes.as_ref()
     }
 
-    pub fn op(&self) -> u32 {
-        self.node.op_type
+    pub fn op(&self) -> Op {
+        self.node.op()
     }
 }

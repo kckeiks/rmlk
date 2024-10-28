@@ -1,8 +1,8 @@
 use image::GenericImageView;
 use ndarray::Array;
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_schema::onnx::ModelProto;
 use rmlk_runtime::Builder;
+use rmlk_schema::onnx::ModelProto;
 use std::fs;
 use std::path::Path;
 

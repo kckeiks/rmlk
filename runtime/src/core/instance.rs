@@ -120,10 +120,10 @@ where
         // Remove allocation.
         for (i, node) in self.instance_state.graph().nodes_slice().iter().enumerate() {
             // Todo: We might want to separate the load operation because at this point we don't know the type.
-            if matches!(node.op(), Op::NoOp) || matches!(node.op(), Op::Const) {
+            if matches!(node.def().op(), Op::NoOp) || matches!(node.def().op(), Op::Const) {
                 continue;
             }
-            let kernel = provider.get_kernel(node.op(), DataType::Float)?;
+            let kernel = provider.get_kernel(node.def().op(), DataType::Float)?;
 
             let mut ctx = Context::new(
                 self.execution_state.get_mut(0).ok_or(Error::MissingData)?,
@@ -132,7 +132,7 @@ where
 
             trace!(
                 "{i} {:?} {:?} inputs={:?}",
-                node.op(),
+                node.def().op(),
                 node.def().name().unwrap(),
                 node.inputs()
             );

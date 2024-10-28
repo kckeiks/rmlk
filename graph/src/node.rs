@@ -1,19 +1,13 @@
 use crate::definition::Definition;
-use rmlk_schema::Op;
 
 // Todo: Sometimes we dont want to keep all of a Definition specially in release
 // because we only need certain things and do not need the metadata.
 // Let's solve it.
-
 pub struct Node {
     /// The node's Provider.
     ///
     /// Each node is assigned to a single Provider.
     _provider: Option<u32>,
-    /// The node's operation.
-    ///
-    /// If the op is NoOp, this node is an input and graph leaf.
-    op: Op,
     /// Inputs for this node.
     ///
     /// An ID may correspond to a node or
@@ -29,9 +23,8 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(op: Op, definition: Definition) -> Self {
+    pub fn new(definition: Definition) -> Self {
         Self {
-            op,
             _provider: None,
             inputs: Vec::new(),
             outputs: Vec::new(),
@@ -42,15 +35,10 @@ impl Node {
     pub fn from_definition(mut definition: Definition) -> Self {
         Self {
             _provider: None,
-            op: Op::try_from(definition.op()).unwrap(),
             inputs: definition.take_inputs().unwrap_or_default(),
             outputs: definition.take_outputs().unwrap_or_default(),
             definition,
         }
-    }
-
-    pub fn op(&self) -> Op {
-        self.op
     }
 
     pub fn inputs(&self) -> &[usize] {

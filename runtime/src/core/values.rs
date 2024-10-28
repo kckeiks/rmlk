@@ -24,7 +24,10 @@ impl<T> Values<T> {
 
         // Load initializers.
         for (node_id, ir_tensor) in graph.initializers() {
-            debug_assert_eq!(graph.get_node(*node_id).map(|n| n.op()), Some(Op::Const));
+            debug_assert_eq!(
+                graph.get_node(*node_id).map(|n| n.def().op()),
+                Some(Op::Const)
+            );
 
             let data = match ir_tensor.float_data.is_empty() {
                 true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or(Error::MissingData)?),
@@ -80,7 +83,7 @@ impl<T> Values<T> {
 
         for node in graph.nodes() {
             // We already loaded the initializers.
-            if matches!(node.op(), Op::Const | Op::NoOp) {
+            if matches!(node.def().op(), Op::Const | Op::NoOp) {
                 continue;
             }
 
