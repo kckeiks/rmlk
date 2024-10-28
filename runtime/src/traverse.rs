@@ -1,14 +1,14 @@
-use log::{debug, error};
+use log::debug;
 use rmlk_graph::{Definition, Graph};
 use rmlk_ir::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
-use rmlk_ir::{Attribute, Node, Op, Tensor, TypeValue, Value, ValueInfo};
-use std::borrow::Cow;
+use rmlk_ir::{Attribute, Node, Op, Tensor, TypeValue};
 use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, TraversalError>;
 
 #[derive(Debug)]
 pub enum TraversalError {
+    #[allow(unused)]
     InvalidValue(String),
     InvalidInnerNode,
 }

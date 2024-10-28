@@ -10,7 +10,7 @@ use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;
-use rmlk_ir::{DataType, Model, Op};
+use rmlk_ir::{DataType, Op};
 use std::sync::Arc;
 
 /// Model instance builder.
