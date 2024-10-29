@@ -30,7 +30,7 @@ impl<T> Values<T> {
         // Load initializers.
         for (node_id, ir_tensor) in initializers {
             debug_assert_eq!(
-                graph.get_node(*node_id).map(|n| n.inner().op()),
+                graph.get_node(node_id).map(|n| n.inner().op()),
                 Some(Op::Const)
             );
 
@@ -47,7 +47,7 @@ impl<T> Values<T> {
 
             let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
             tensor.init(data);
-            tensors[*node_id].replace(tensor);
+            tensors[node_id].replace(tensor);
         }
 
         for node_id in graph.inputs() {

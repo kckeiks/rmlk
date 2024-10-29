@@ -83,10 +83,6 @@ impl<T> GraphBuilder<T> {
                 outputs={outputs:?}",
             );
         }
-        Ok(Graph::new(
-            self.inputs,
-            self.nodes,
-            self.outputs,
-        ))
+        Ok(Graph::new(self.inputs, self.nodes, self.outputs))
     }
 }

@@ -45,7 +45,7 @@ impl Builder {
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let provider = Cuda::new(CudaDevice::new(0)?);
-        let values = Values::new(&provider, &self.graph)?;
+        let values = Values::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(plan, self.graph));
 
