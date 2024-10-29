@@ -10,25 +10,23 @@ use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
 use rmlk_graph::Graph;
-use rmlk_schema::{DataType, Definition, Op};
+use rmlk_schema::{DataType, Definition, Op, Tensor};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Model instance builder.
 pub struct Builder {
+    initializers: HashMap<usize, Tensor>,
     graph: Graph<Definition>,
 }
 
 impl Builder {
-    pub fn new(graph: Graph<Definition>) -> Self {
-        Self { graph }
-    }
-
     pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> Result<Self> {
-        let compute_graph: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
+        let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
             .map_err(|_| Error::ModelDeserializationFailed)?;
 
         let mut nodes = Vec::new();
-        for node_schema in compute_graph.node {
+        for node_schema in graph_schema.node {
             debug_assert!(node_schema.id == nodes.len());
             let mut def = Definition::new(node_schema);
             let node = rmlk_graph::Node::from_definition(
@@ -40,12 +38,8 @@ impl Builder {
         }
 
         Ok(Self {
-            graph: Graph::new(
-                compute_graph.initializer,
-                compute_graph.input,
-                nodes,
-                compute_graph.output,
-            ),
+            initializers: graph_schema.initializer,
+            graph: Graph::new(graph_schema.input, nodes, graph_schema.output),
         })
     }
 

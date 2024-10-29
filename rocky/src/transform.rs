@@ -250,7 +250,7 @@ impl From<ModelFromOnnx> for Graph<Definition> {
             nodes.push(node);
         }
 
-        Self::new(value.initializers, value.inputs, nodes, value.outputs)
+        Self::new(value.inputs, nodes, value.outputs)
     }
 }
 

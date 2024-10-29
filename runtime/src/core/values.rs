@@ -2,6 +2,7 @@ use crate::core::{DeviceService, Tensor};
 use crate::{Error, Result};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
+use std::collections::HashMap;
 
 /// Tensor values.
 ///
@@ -14,6 +15,7 @@ impl<T> Values<T> {
     pub fn new<D: DeviceService<Data = T>>(
         provider: &D,
         graph: &Graph<Definition>,
+        initializers: HashMap<usize, rmlk_schema::Tensor>,
     ) -> Result<Values<D::Data>> {
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
@@ -26,7 +28,7 @@ impl<T> Values<T> {
         // need values and we can avoid these overlapping loops.
 
         // Load initializers.
-        for (node_id, ir_tensor) in graph.initializers() {
+        for (node_id, ir_tensor) in initializers {
             debug_assert_eq!(
                 graph.get_node(*node_id).map(|n| n.inner().op()),
                 Some(Op::Const)

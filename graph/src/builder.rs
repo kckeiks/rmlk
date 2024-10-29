@@ -84,7 +84,6 @@ impl<T> GraphBuilder<T> {
             );
         }
         Ok(Graph::new(
-            self.initializers,
             self.inputs,
             self.nodes,
             self.outputs,
