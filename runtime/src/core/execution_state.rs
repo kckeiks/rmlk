@@ -46,7 +46,7 @@ where
         // Todo: Remove when we have a plan with steps to traverse the graph.
         for (node_id, node) in graph.nodes().enumerate() {
             // We already loaded the initializers.
-            if matches!(node.inner().op(), Op::Const | Op::NoOp) {
+            if matches!(node.value().op(), Op::Const | Op::NoOp) {
                 continue;
             }
 

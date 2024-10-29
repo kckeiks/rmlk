@@ -29,7 +29,7 @@ impl Builder {
         for node_schema in graph_schema.node {
             debug_assert!(node_schema.id == nodes.len());
             let mut def = Definition::new(node_schema);
-            let node = rmlk_graph::Node::from_definition(
+            let node = rmlk_graph::Node::new(
                 def.take_inputs().unwrap_or_default(),
                 def.take_outputs().unwrap_or_default(),
                 def,
@@ -136,10 +136,10 @@ where
         // Remove allocation.
         for (i, node) in self.instance_state.graph().nodes_slice().iter().enumerate() {
             // Todo: We might want to separate the load operation because at this point we don't know the type.
-            if matches!(node.inner().op(), Op::NoOp) || matches!(node.inner().op(), Op::Const) {
+            if matches!(node.value().op(), Op::NoOp) || matches!(node.value().op(), Op::Const) {
                 continue;
             }
-            let kernel = provider.get_kernel(node.inner().op(), DataType::Float)?;
+            let kernel = provider.get_kernel(node.value().op(), DataType::Float)?;
 
             let mut ctx = Context::new(
                 self.execution_state.get_mut(0).ok_or(Error::MissingData)?,
@@ -148,8 +148,8 @@ where
 
             trace!(
                 "{i} {:?} {:?} inputs={:?}",
-                node.inner().op(),
-                node.inner().name().unwrap(),
+                node.value().op(),
+                node.value().name().unwrap(),
                 node.inputs()
             );
 

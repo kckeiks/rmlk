@@ -2,9 +2,8 @@ use crate::traverse;
 use crate::traverse::{OnnxGraphTraverser, TraversalError};
 use anyhow::anyhow;
 use log::debug;
-use rmlk_graph::Graph;
 use rmlk_schema::onnx::{ModelProto, NodeProto, TensorProto, ValueInfoProto};
-use rmlk_schema::{Attribute, Definition, Node, Op, Tensor, TypeValue};
+use rmlk_schema::{Attribute, Node, Op, Tensor, TypeValue};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -233,24 +232,6 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         }
 
         Ok(false)
-    }
-}
-
-impl From<ModelFromOnnx> for Graph<Definition> {
-    fn from(value: ModelFromOnnx) -> Self {
-        let mut nodes = Vec::new();
-        for node_schema in value.nodes {
-            debug_assert!(node_schema.id == nodes.len());
-            let mut def = Definition::new(node_schema);
-            let node = rmlk_graph::Node::from_definition(
-                def.take_inputs().unwrap_or_default(),
-                def.take_outputs().unwrap_or_default(),
-                def,
-            );
-            nodes.push(node);
-        }
-
-        Self::new(value.inputs, nodes, value.outputs)
     }
 }
 

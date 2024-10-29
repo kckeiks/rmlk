@@ -82,7 +82,7 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
 ) -> ExecutionState<P> {
     let mut builder = GraphBuilder::new();
 
-    let mut op_node = Node::new(params.op, Definition::default());
+    let mut op_node = Node::from_definition(params.op, Definition::default());
 
     for attr in params.attributes {
         op_node.add_attr(attr.name.clone().into_boxed_str(), attr);
@@ -90,7 +90,7 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
 
     let mut inputs = Vec::new();
     for (index, input) in params.inputs.into_iter().enumerate() {
-        let input_node = Node::new(
+        let input_node = Node::from_definition(
             Op::NoOp,
             Definition {
                 shape: input.shape.clone(),
@@ -105,7 +105,7 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
         inputs.push((node_id, input.data.unwrap()));
     }
 
-    let output_node = Node::new(Op::NoOp, Definition::default());
+    let output_node = Node::from_definition(Op::NoOp, Definition::default());
     let output_id = builder.add_node(output_node).unwrap();
     op_node.add_output(output_id);
 

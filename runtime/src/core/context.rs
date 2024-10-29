@@ -104,7 +104,7 @@ where
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
         self.execution_state
             .get_node(self.original_node_id)?
-            .inner()
+            .value()
             .attrs()
     }
 }

@@ -16,26 +16,17 @@ pub struct Node<T> {
     /// An ID may correspond to a node or
     /// an initial tensor.
     outputs: Vec<usize>,
-    /// The node's definition.
-    definition: T,
+    /// The value of the node.
+    value: T,
 }
 
 impl<T> Node<T> {
-    pub fn new(definition: T) -> Self {
-        Self {
-            _provider: None,
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-        }
-    }
-
-    pub fn from_definition(inputs: Vec<usize>, outputs: Vec<usize>, definition: T) -> Self {
+    pub fn new(inputs: Vec<usize>, outputs: Vec<usize>, value: T) -> Self {
         Self {
             _provider: None,
             inputs,
             outputs,
-            definition,
+            value,
         }
     }
 
@@ -63,7 +54,7 @@ impl<T> Node<T> {
         self.outputs = outputs;
     }
 
-    pub fn inner(&self) -> &T {
-        &self.definition
+    pub fn value(&self) -> &T {
+        &self.value
     }
 }
