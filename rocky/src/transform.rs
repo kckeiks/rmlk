@@ -16,14 +16,11 @@ struct ModelFromOnnx {
 }
 
 impl ModelFromOnnx {
-    pub fn next_id(&self) -> usize {
-        self.nodes.len()
-    }
-
-    pub fn add_node(&mut self, node: Node) -> usize {
-        let id = self.next_id();
+    pub fn create_and_get_node(&mut self) -> &mut Node {
+        let id = self.nodes.len();
+        let node = Node::new(id);
         self.nodes.push(node);
-        id
+        self.nodes.get_mut(id).expect("We just inserted the node")
     }
 
     pub fn get_node_mut(&mut self, id: usize) -> Option<&mut Node> {
@@ -53,7 +50,8 @@ impl ModelFromOnnx {
 
 impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     fn check_input(&mut self, value_info_proto: ValueInfoProto<'a>) -> traverse::Result<bool> {
-        let node_id = self.next_id();
+        let node = self.create_and_get_node();
+        let node_id = node.id;
 
         debug!("Assigning id={node_id} for input {value_info_proto:?}");
 
@@ -63,26 +61,21 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             })?;
             name
         };
-
-        let mut node = Node::new(node_id);
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
         node.set_op(Op::NoOp);
-
         // Todo: Handle unwrap().
         let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
             .unwrap()
             .unwrap();
         node.set_type_value(type_value);
 
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-
-        let node_id = self.add_node(node);
-
         self.add_input(node_id);
 
         if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
             return Err(TraversalError::InvalidValue(format!(
-                "found two inputs with the same for id: prev:[{old_id}] new:[{node_id}]"
+                "found two inputs with the same for id: prev:[{old_id}] new:[{}]",
+                node_id
             )));
         }
 
@@ -90,7 +83,8 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     }
 
     fn check_output(&mut self, value_info_proto: ValueInfoProto<'a>) -> traverse::Result<bool> {
-        let node_id = self.next_id();
+        let node = self.create_and_get_node();
+        let node_id = node.id;
 
         debug!("Assigning id={node_id} for output {value_info_proto:?}");
 
@@ -100,19 +94,14 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             })?;
             name
         };
-
-        let mut node = Node::new(node_id);
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
         node.set_op(Op::NoOp);
-
+        // Todo: Handle unwrap().
         let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
             .unwrap()
             .unwrap();
         node.set_type_value(type_value);
-
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-
-        let node_id = self.add_node(node);
 
         self.add_output(node_id);
 
@@ -126,7 +115,8 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     }
 
     fn check_initializer(&mut self, initializer: TensorProto<'a>) -> traverse::Result<bool> {
-        let node_id = self.next_id();
+        let node = self.create_and_get_node();
+        let node_id = node.id;
 
         debug!(
             "Assigning id={node_id} for initializer {:?}",
@@ -136,8 +126,8 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         let name = initializer.name.clone().ok_or_else(|| {
             TraversalError::InvalidValue("unnamed tensors are not supported".to_string())
         })?;
-
-        let mut node = Node::new(node_id);
+        // Todo: avoid allocation.
+        node.set_name(name.to_string());
         node.set_op(Op::Const);
 
         let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
@@ -147,11 +137,6 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             dims: tensor.dims.clone(),
         };
         node.set_type_value(type_value);
-
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-
-        let node_id = self.add_node(node);
 
         self.add_initializer(node_id, tensor);
 
@@ -172,8 +157,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             .ok_or(TraversalError::InvalidInnerNode)?
             .map_err(|_| TraversalError::InvalidInnerNode)?;
 
-        let node_id = self.next_id();
-        let mut node = Node::new(node_id);
+        let node = self.create_and_get_node();
         node.set_op(op);
         // Todo: remove allocation.
         node.set_name(node_proto.name.unwrap().to_string());
@@ -185,6 +169,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
 
         node.set_attributes(attributes);
 
+        let node_id = node.id;
         let mut inputs = Vec::new();
         for name in node_proto.input {
             // Todo: Mapping one name to a single node id, we lose information,
@@ -194,23 +179,20 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
                 .ok_or_else(|| TraversalError::InvalidInnerNode)?;
             inputs.push(input_node_id);
         }
-
+        let node = self.get_node_mut(node_id).expect("We just inserted it");
         node.set_inputs(inputs);
-
-        let node_id = self.add_node(node);
 
         let mut output_node_ids = Vec::new();
         for name in node_proto.output {
             match self.get_node_id(&name) {
                 None => {
-                    let id = self.next_id();
-                    let mut output_node = Node::new(id);
+                    let output_node = self.create_and_get_node();
                     output_node.add_input(node_id);
                     output_node.set_name(name.to_string());
 
-                    let output_node_id = self.add_node(output_node);
-                    output_node_ids.push(output_node_id);
+                    output_node_ids.push(output_node.id);
 
+                    let output_node_id = output_node.id;
                     // Todo: remove clone.
                     self.save_name_to_id(name.into_owned(), output_node_id);
                 }
