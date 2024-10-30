@@ -16,13 +16,20 @@ pub struct Graph {
     /// The name of the graph.
     pub name: Option<String>,
     /// A list of named tensor values, used to specify constant inputs of the graph.
+    ///
     /// Each initializer (both TensorProto as well SparseTensorProto) MUST have a name.
     /// The name MUST be unique across both initializer and sparse_initializer,
     /// but the name MAY also appear in the input list.
+    ///
+    /// The key is the index of its corresponding node in `node`.
     pub initializer: HashMap<usize, Tensor>,
     /// The inputs of the graph.
+    ///
+    /// Holds the index of its corresponding node in `node`.
     pub input: Vec<usize>,
     /// The outputs of the graph.
+    ///
+    /// Holds the index of its corresponding node in `node`.
     pub output: Vec<usize>,
     /// This field carries information to indicate the mapping among a tensor and its
     /// quantization parameter tensors. For example:

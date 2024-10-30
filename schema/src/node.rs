@@ -62,7 +62,7 @@ impl Node {
     }
 
     pub fn set_outputs(&mut self, outputs: Vec<usize>) {
-        self.input = Some(outputs);
+        self.output = Some(outputs);
     }
 
     pub fn op(&self) -> Op {

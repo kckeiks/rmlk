@@ -90,15 +90,13 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
 
     let mut inputs = Vec::new();
     for (index, input) in params.inputs.into_iter().enumerate() {
-        let input_node = Node::from_definition(
-            Op::NoOp,
-            Definition {
-                shape: input.shape.clone(),
-                dtype: input.dtype,
-                node: None,
-                name: format!("{index}-input"),
-            },
-        );
+        let mut schema_node = rmlk_schema::Node::new(index);
+        schema_node.set_op(Op::NoOp);
+
+        let def = Definition::new(schema_node);
+
+        let input_node = Node::new(Vec::new(), Vec::new(), def);
+
         let node_id = builder.add_input(input_node).unwrap();
         op_node.add_input(node_id);
 

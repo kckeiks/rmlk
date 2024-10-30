@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 /// Model instance builder.
 pub struct Builder {
+    map_io_name_to_id: HashMap<String, usize>,
     initializers: HashMap<usize, Tensor>,
     graph: Graph<Definition>,
 }
@@ -25,7 +26,31 @@ impl Builder {
         let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
             .map_err(|_| Error::ModelDeserializationFailed)?;
 
-        let mut nodes = Vec::new();
+        let mut map_name_to_id = HashMap::new();
+
+        for input in graph_schema.input.as_slice() {
+            let name = graph_schema
+                .node
+                .get(*input)
+                .ok_or(Error::MissingNode)?
+                .name
+                .as_ref()
+                .ok_or(Error::MissingData)?;
+            map_name_to_id.insert(name.clone(), *input);
+        }
+
+        for output in graph_schema.output.as_slice() {
+            let name = graph_schema
+                .node
+                .get(*output)
+                .ok_or(Error::MissingNode)?
+                .name
+                .as_ref()
+                .ok_or(Error::MissingData)?;
+            map_name_to_id.insert(name.clone(), *output);
+        }
+
+        let mut nodes = Vec::with_capacity(graph_schema.node.len());
         for node_schema in graph_schema.node {
             debug_assert!(node_schema.id == nodes.len());
             let mut def = Definition::new(node_schema);
@@ -38,6 +63,7 @@ impl Builder {
         }
 
         Ok(Self {
+            map_io_name_to_id: map_name_to_id,
             initializers: graph_schema.initializer,
             graph: Graph::new(graph_schema.input, nodes, graph_schema.output),
         })
@@ -47,7 +73,11 @@ impl Builder {
         let provider = Cuda::new(CudaDevice::new(0)?);
         let values = Values::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
-        let instance_state = Arc::new(ModelInstanceState::new(plan, self.graph));
+        let instance_state = Arc::new(ModelInstanceState::new(
+            plan,
+            self.graph,
+            self.map_io_name_to_id,
+        ));
 
         Ok(ModelInstance {
             execution_state: Box::new([ExecutionState::new(instance_state.clone(), values)?]),
@@ -69,30 +99,38 @@ impl<D> ModelInstance<D>
 where
     D: DeviceService,
 {
-    fn load_input(&mut self, data: Vec<f32>) -> Result<()> {
-        let mut inputs = self.instance_state.graph().inputs();
-
-        let provider = self
-            .instance_state
-            ._plan()
-            .device(0)
-            .expect("We always have one device");
-        let input = inputs.next().ok_or(Error::MissingData)?;
-        match self.instance_state.graph().get_node(input) {
-            None => Err(Error::MissingData),
-            Some(_) => {
-                // Todo: Improve API for loading input values.
-                let tensor = self
-                    .execution_state
-                    .get_mut(0)
-                    .expect("Provider is hardcoded")
-                    .get_value_from_node_id_mut(input)
-                    .ok_or(Error::MissingData)?;
-                tensor.init(provider.htod_float(data)?);
-
-                Ok(())
-            }
+    fn load_input(&mut self, input: HashMap<String, Vec<f32>>) -> Result<()> {
+        if input.len() != self.instance_state.graph().inputs().count() {
+            return Err(Error::MissingData);
         }
+
+        for (input_name, input_data) in input {
+            let provider = self
+                .instance_state
+                ._plan()
+                .device(0)
+                .expect("We always have one device");
+
+            let node_id = self
+                .instance_state
+                .get_io_node_id(&input_name)
+                .ok_or(Error::MissingNode)?;
+
+            if self.instance_state.graph().get_node(node_id).is_none() {
+                return Err(Error::MissingNode);
+            }
+
+            // Todo: Improve API for loading input values.
+            let tensor = self
+                .execution_state
+                .get_mut(0)
+                .expect("Provider is hardcoded")
+                .get_value_from_node_id_mut(node_id)
+                .ok_or(Error::MissingData)?;
+            tensor.init(provider.htod_float(input_data)?);
+        }
+
+        Ok(())
     }
 
     fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
@@ -102,29 +140,29 @@ where
             .device(0)
             .expect("We always have one device");
 
-        let mut result = Vec::new();
+        // Todo: preallocate these buffers.
+        let mut result = Vec::with_capacity(self.instance_state.graph().outputs().count());
         for output in self.instance_state.graph().outputs() {
-            match self.instance_state.graph().get_node(output) {
-                None => return Err(Error::MissingData),
-                Some(_) => {
-                    // Todo: Improve API for loading input values.
-                    let tensor = self
-                        .execution_state
-                        .get_mut(0)
-                        .expect("Provider is hardcoded")
-                        .get_value_from_node_id_mut(output)
-                        .ok_or(Error::MissingData)?;
-                    let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
-                    let data = provider.dtoh_float(ptr)?;
-                    result.push(data);
-                }
+            if self.instance_state.graph().get_node(output).is_none() {
+                return Err(Error::MissingData);
             }
+
+            // Todo: Improve API for loading input values.
+            let tensor = self
+                .execution_state
+                .get_mut(0)
+                .expect("Provider is hardcoded")
+                .get_value_from_node_id_mut(output)
+                .ok_or(Error::MissingData)?;
+            let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
+            let data = provider.dtoh_float(ptr)?;
+            result.push(data);
         }
 
         Ok(result)
     }
 
-    pub fn run(&mut self, input: Vec<f32>) -> Result<Vec<Vec<f32>>> {
+    pub fn run(&mut self, input: HashMap<String, Vec<f32>>) -> Result<Vec<Vec<f32>>> {
         self.load_input(input)?;
 
         let provider = self
@@ -139,6 +177,7 @@ where
             if matches!(node.value().op(), Op::NoOp) || matches!(node.value().op(), Op::Const) {
                 continue;
             }
+
             let kernel = provider.get_kernel(node.value().op(), DataType::Float)?;
 
             let mut ctx = Context::new(

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 ///
 /// All the values for a computational graph.
 pub struct Values<T> {
-    inner: Box<[Option<Tensor<T>>]>,
+    tensors: Box<[Option<Tensor<T>>]>,
 }
 
 impl<T> Values<T> {
@@ -105,16 +105,16 @@ impl<T> Values<T> {
         }
 
         Ok(Values {
-            inner: tensors.into_boxed_slice(),
+            tensors: tensors.into_boxed_slice(),
         })
     }
 
     pub fn get(&self, id: usize) -> Option<&Tensor<T>> {
-        self.inner.get(id).map(|r| r.as_ref()).flatten()
+        self.tensors.get(id).map(|r| r.as_ref()).flatten()
     }
 
     pub fn get_mut(&mut self, id: usize) -> Option<&mut Tensor<T>> {
-        self.inner.get_mut(id).map(|r| r.as_mut()).flatten()
+        self.tensors.get_mut(id).map(|r| r.as_mut()).flatten()
     }
 }
 
