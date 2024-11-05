@@ -177,7 +177,7 @@ where
             let mut ctx = Context::new(&mut self.execution_state, id)?;
 
             trace!(
-                "{i} {op:?} {:?} inputs={:?}",
+                "{id} {op:?} {:?} inputs={:?}",
                 node.value().name(),
                 node.inputs()
             );
