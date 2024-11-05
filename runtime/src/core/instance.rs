@@ -80,7 +80,7 @@ impl Builder {
         ));
 
         Ok(ModelInstance {
-            execution_state: Box::new([ExecutionState::new(instance_state.clone(), values)?]),
+            execution_state: ExecutionState::new(instance_state.clone(), values)?,
             instance_state,
         })
     }
@@ -92,7 +92,7 @@ impl Builder {
 /// runtime.
 pub struct ModelInstance<D: DeviceService> {
     instance_state: Arc<ModelInstanceState<D>>,
-    execution_state: Box<[ExecutionState<D>]>,
+    execution_state: ExecutionState<D>,
 }
 
 impl<D> ModelInstance<D>
@@ -120,11 +120,8 @@ where
                 return Err(Error::MissingNode);
             }
 
-            // Todo: Improve API for loading input values.
             let tensor = self
                 .execution_state
-                .get_mut(0)
-                .expect("Provider is hardcoded")
                 .get_value_from_node_id_mut(node_id)
                 .ok_or(Error::MissingData)?;
             tensor.init(provider.htod_float(input_data)?);
@@ -147,11 +144,8 @@ where
                 return Err(Error::MissingData);
             }
 
-            // Todo: Improve API for loading input values.
             let tensor = self
                 .execution_state
-                .get_mut(0)
-                .expect("Provider is hardcoded")
                 .get_value_from_node_id_mut(output)
                 .ok_or(Error::MissingData)?;
             let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
@@ -171,28 +165,26 @@ where
             .device(0)
             .expect("We always have one device");
 
-        // Remove allocation.
-        for (i, node) in self.instance_state.graph().nodes_slice().iter().enumerate() {
-            // Todo: We might want to separate the load operation because at this point we don't know the type.
-            if matches!(node.value().op(), Op::NoOp) || matches!(node.value().op(), Op::Const) {
+        // Go through the nodes and execute the computation.
+        // Todo: use the Plan to know which nodes to compute the output.
+        for (id, node) in self.instance_state.graph().node_iter() {
+            let op = node.value().op();
+
+            if matches!(op, Op::NoOp) || matches!(op, Op::Const) {
                 continue;
             }
 
-            let kernel = provider.get_kernel(node.value().op(), DataType::Float)?;
-
-            let mut ctx = Context::new(
-                self.execution_state.get_mut(0).ok_or(Error::MissingData)?,
-                i,
-            )?;
+            let mut ctx = Context::new(&mut self.execution_state, id)?;
 
             trace!(
-                "{i} {:?} {:?} inputs={:?}",
-                node.value().op(),
-                node.value().name().unwrap(),
+                "{i} {op:?} {:?} inputs={:?}",
+                node.value().name(),
                 node.inputs()
             );
 
-            kernel.compute(&mut ctx)?;
+            provider
+                .get_kernel(op, DataType::Float)?
+                .compute(&mut ctx)?;
         }
 
         self.load_output()

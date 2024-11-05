@@ -33,26 +33,30 @@ impl<'a, D> Context<'a, D>
 where
     D: DeviceService,
 {
-    pub fn new(execution_state: &'a mut ExecutionState<D>, index: usize) -> Result<Self> {
+    pub fn new(execution_state: &'a mut ExecutionState<D>, node_id: usize) -> Result<Self> {
         let node_index = execution_state
-            .get_value_index(&index)
+            .get_value_index(&node_id)
             .ok_or(Error::MissingData)
             .unwrap();
-
         let input_count = execution_state
-            .get_input_count(index)
-            .ok_or(Error::ContextError)?;
-
+            .graph()
+            .get_node(node_id)
+            .ok_or(Error::MissingNode)?
+            .inputs()
+            .len();
         let output_count = execution_state
-            .get_output_count(index)
-            .ok_or(Error::ContextError)?;
+            .graph()
+            .get_node(node_id)
+            .ok_or(Error::MissingNode)?
+            .outputs()
+            .len();
 
         Ok(Self {
             execution_state,
             input_start_index: node_index,
             max_values: input_count + output_count,
             output_start_index: node_index + input_count,
-            original_node_id: index,
+            original_node_id: node_id,
         })
     }
 
@@ -103,6 +107,7 @@ where
 
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
         self.execution_state
+            .graph()
             .get_node(self.original_node_id)?
             .value()
             .attrs()

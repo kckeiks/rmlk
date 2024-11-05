@@ -4,7 +4,7 @@ use crate::core::values::Values;
 use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
-use rmlk_graph::Node;
+use rmlk_graph::{Graph, Node};
 use rmlk_schema::Definition;
 use rmlk_schema::Op;
 use std::collections::HashMap;
@@ -90,18 +90,6 @@ where
         self.instance_state.graph().get_node(node_id)
     }
 
-    /// Get a count of all the inputs for the given node.
-    pub fn get_input_count(&self, node_id: usize) -> Option<usize> {
-        let node = self.get_node(node_id)?;
-        Some(node.inputs().len())
-    }
-
-    /// Get a count of all the outputs for the given node.
-    pub fn get_output_count(&self, node_id: usize) -> Option<usize> {
-        let node = self.get_node(node_id)?;
-        Some(node.outputs().len())
-    }
-
     /// Get the shared tensor value.
     ///
     /// The value index for a given computation can be
@@ -133,5 +121,9 @@ where
     /// Get the index of the actual value.
     fn get_inner_index(&self, value_index: usize) -> Option<usize> {
         self.op_values.get(value_index).copied()
+    }
+
+    pub fn graph(&self) -> &Arc<Graph<Definition>> {
+        self.instance_state.graph()
     }
 }

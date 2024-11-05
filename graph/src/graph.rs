@@ -34,8 +34,12 @@ impl<T> Graph<T> {
         self.nodes.len()
     }
 
-    pub fn nodes_slice(&self) -> &[Node<T>] {
-        self.nodes.as_slice()
+    pub fn node_iter(&self) -> impl Iterator<Item = (usize, &Node<T>)> {
+        self.nodes.iter().enumerate()
+    }
+
+    pub fn get_node(&self, id: usize) -> Option<&Node<T>> {
+        self.nodes.get(id)
     }
 
     pub fn inputs(&self) -> impl Iterator<Item = usize> + '_ {
@@ -48,9 +52,5 @@ impl<T> Graph<T> {
 
     pub fn outputs_slice(&self) -> &[usize] {
         self.outputs.as_slice()
-    }
-
-    pub fn get_node(&self, id: usize) -> Option<&Node<T>> {
-        self.nodes.get(id)
     }
 }
