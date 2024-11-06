@@ -47,7 +47,7 @@ impl ActivationKernel {
             output.set_dtype(DataType::Float);
         } else {
             return Err(Error::NoSupport(format!(
-                "unsupported dtype `{}`",
+                "unsupported dtype `{:?}`",
                 x.dtype()
             )));
         }

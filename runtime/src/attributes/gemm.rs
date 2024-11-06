@@ -30,7 +30,11 @@ impl GemmAttributes {
                 Some(0) => Some(false),
                 Some(1) => Some(true),
                 None => None,
-                _ => return Err(Error::InvalidAttribute),
+                Some(n) => {
+                    return Err(Error::InvalidAttribute(format!(
+                        "invalid value {n} for the `transA` attribute"
+                    )))
+                }
             };
         }
 
@@ -39,7 +43,11 @@ impl GemmAttributes {
                 Some(0) => Some(false),
                 Some(1) => Some(true),
                 None => None,
-                _ => return Err(Error::InvalidAttribute),
+                Some(n) => {
+                    return Err(Error::InvalidAttribute(format!(
+                        "invalid value {n} for the `transB` attribute"
+                    )))
+                }
             };
         }
 

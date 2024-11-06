@@ -1,10 +1,12 @@
 use crate::Error;
 
+#[derive(Debug)]
 pub struct Value {
     pub(crate) inner: InnerValue,
 }
 
 #[allow(unused)]
+#[derive(Debug)]
 pub(crate) enum InnerValue {
     Int32(Vec<i32>),
     Float32(Vec<f32>),

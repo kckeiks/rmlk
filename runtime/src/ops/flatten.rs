@@ -32,7 +32,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
             y_shape[1] = x.shape().iter().product();
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
-            return Err(Error::InvalidAttribute);
+            return Err(Error::InvalidAttribute(format!("invalid axis `{axis}`")));
         }
         axis => {
             let axis = axis.unsigned_abs() as usize;
