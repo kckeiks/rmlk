@@ -74,7 +74,7 @@ impl GemmKernel {
             output.set_dtype(DataType::Float);
         } else {
             return Err(Error::NoSupport(format!(
-                "unsupported dtype `{}`",
+                "unsupported dtype `{:?}`",
                 lhs.dtype()
             )));
         }
