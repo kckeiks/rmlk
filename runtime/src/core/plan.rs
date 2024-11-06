@@ -1,4 +1,4 @@
-use crate::core::DeviceService;
+use crate::core::device_service::DeviceService;
 
 // Todo:
 /// The plan for the computation of the model instance.

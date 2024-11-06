@@ -1,4 +1,4 @@
-use crate::core::{Error, Result};
+use crate::core::kernel::{KernelError, Result};
 use log::warn;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ impl MaxPoolAttributes {
             Some(attr) => attr
                 .ints()
                 .ok_or_else(|| {
-                    Error::InvalidAttribute(
+                    KernelError::Other(
                         "expected `dilations` attribute to be of type `[int]`".to_string(),
                     )
                 })?
@@ -26,7 +26,7 @@ impl MaxPoolAttributes {
                 .to_vec()
                 .into_boxed_slice(),
             None => {
-                return Err(Error::InvalidAttribute(
+                return Err(KernelError::Other(
                     "missing attribute `kernel_shape`".to_string(),
                 ))
             }
@@ -41,7 +41,7 @@ impl MaxPoolAttributes {
             ceil_mode = match attr.int() {
                 Some(0) => Some(false),
                 Some(n) => {
-                    return Err(Error::NoSupport(format!(
+                    return Err(KernelError::Other(format!(
                         "unsupported attribute type `{n}` for `ceil_mode`"
                     )))
                 }
@@ -58,7 +58,7 @@ impl MaxPoolAttributes {
             pads = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `pads` attribute to be of type `[int]`".to_string(),
                         )
                     })?
@@ -71,7 +71,7 @@ impl MaxPoolAttributes {
             strides = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `strides` attribute to be of type `[int]`".to_string(),
                         )
                     })?

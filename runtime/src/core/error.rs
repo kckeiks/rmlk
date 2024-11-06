@@ -1,33 +1,24 @@
-use cudarc::driver::DriverError;
+use crate::core::device_service::DeviceServiceError;
+use crate::core::kernel::KernelError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// Todo: Fix.
 #[derive(Debug)]
 pub enum Error {
-    Cuda(u32),
-    Device(String),
-    Input(String),
+    Device(DeviceServiceError),
     Internal(String),
-    InvalidAttribute(String),
-    InvalidTensor(String),
-    InvalidTensorDimensions(Vec<usize>),
+    Kernel(KernelError),
     ModelDeserializationFailed,
-    MissingAttributes,
-    MissingNodeInfo(String),
-    NoSupport(String),
-    UnknownNode(String),
-    UnknownTensor(String),
 }
 
-impl From<DriverError> for Error {
-    fn from(value: DriverError) -> Self {
-        Self::Cuda(value.0 as u32)
+impl From<KernelError> for Error {
+    fn from(value: KernelError) -> Self {
+        Self::Kernel(value)
     }
 }
 
-impl From<rmlk_cuda::Error> for Error {
-    fn from(value: rmlk_cuda::Error) -> Self {
-        Self::Device(format!("cuda device error: {value:?}"))
+impl From<DeviceServiceError> for Error {
+    fn from(value: DeviceServiceError) -> Self {
+        Self::Device(value)
     }
 }

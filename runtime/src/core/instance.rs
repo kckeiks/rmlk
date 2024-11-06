@@ -34,14 +34,14 @@ impl Builder {
                 .node
                 .get(*input)
                 .ok_or_else(|| {
-                    Error::UnknownNode(format!(
+                    Error::Internal(format!(
                         "failed to find node {} in the graph schema",
                         *input
                     ))
                 })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::MissingNodeInfo("node is missing a name".to_string()))?;
+                .ok_or_else(|| Error::Internal("node is missing a name".to_string()))?;
             map_name_to_id.insert(name.clone(), *input);
         }
 
@@ -50,14 +50,14 @@ impl Builder {
                 .node
                 .get(*output)
                 .ok_or_else(|| {
-                    Error::UnknownNode(format!(
+                    Error::Internal(format!(
                         "failed to find node {} in the graph schema",
                         *output
                     ))
                 })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::MissingNodeInfo("node is missing a name".to_string()))?;
+                .ok_or_else(|| Error::Internal("node is missing a name".to_string()))?;
             map_name_to_id.insert(name.clone(), *output);
         }
 
@@ -113,7 +113,7 @@ where
     fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().inputs().count() {
             debug!("user input: {input:?}");
-            return Err(Error::Input(
+            return Err(Error::Internal(
                 "expected inputs and user inputs do not match".to_string(),
             ));
         }
@@ -123,11 +123,11 @@ where
                 .instance_state
                 .get_io_node_id(&input_name)
                 .ok_or_else(|| {
-                    Error::UnknownNode(format!("failed to find a node ID for input `{input_name}`"))
+                    Error::Internal(format!("failed to find a node ID for input `{input_name}`"))
                 })?;
 
             if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::UnknownNode(format!(
+                return Err(Error::Internal(format!(
                     "failed to find an input node for `{node_id}`"
                 )));
             }
@@ -143,7 +143,7 @@ where
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {
                 None => {
-                    return Err(Error::UnknownNode(format!(
+                    return Err(Error::Internal(format!(
                         "failed to find an output node for `{output}`"
                     )))
                 }
@@ -153,9 +153,7 @@ where
                         node.value()
                             .name()
                             .ok_or_else(|| {
-                                Error::MissingNodeInfo(format!(
-                                    "output node {output} is missing a name"
-                                ))
+                                Error::Internal(format!("output node {output} is missing a name"))
                             })?
                             .to_string(),
                         value,

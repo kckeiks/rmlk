@@ -1,6 +1,4 @@
-use crate::core::{Error, Result};
-
-use crate::core::DeviceService;
+use crate::core::device_service::{DeviceService, DeviceServiceError, Result};
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
@@ -10,7 +8,7 @@ use crate::providers::cuda::global_average_pool::GlobalAveragePoolKernel;
 use crate::providers::cuda::kernel::add::AddKernel;
 use crate::providers::cuda::max_pool::MaxPoolKernel;
 use crate::providers::cuda::CudaKernel;
-use cudarc::driver::{CudaDevice, CudaFunction};
+use cudarc::driver::{CudaDevice, CudaFunction, DriverError};
 use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
@@ -24,32 +22,20 @@ impl Cuda {
     }
 
     fn load_kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
-        rmlk_cuda::load_kernel(&self.device, op, dtype)
-            .map_err(|_| Error::Device("failed to load kernel".to_string()))
+        Ok(rmlk_cuda::load_kernel(&self.device, op, dtype)?)
     }
 
     pub fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
-        let ptr = self.device.htod_copy(data).map_err(|_| {
-            Error::Device(format!(
-                "failed to copy data to device {}",
-                self.device.ordinal()
-            ))
-        })?;
+        let ptr = self.device.htod_copy(data)?;
         Ok(CudaData::F32(ptr))
     }
 
     pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         match data {
-            CudaData::F32(ptr) => {
-                let result = self.device.dtoh_sync_copy::<f32, _>(ptr).map_err(|_| {
-                    Error::Device(format!(
-                        "failed to copy data to device {}",
-                        self.device.ordinal()
-                    ))
-                })?;
-                Ok(result)
-            }
-            _ => Err(Error::NoSupport("unsupported data type".to_string())),
+            CudaData::F32(ptr) => Ok(self.device.dtoh_sync_copy::<f32, _>(ptr)?),
+            _ => Err(DeviceServiceError::Other(
+                "unsupported data type".to_string(),
+            )),
         }
     }
 }
@@ -74,7 +60,9 @@ impl DeviceService for Cuda {
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolKernel::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
-                return Err(Error::NoSupport(format!("no support for op `{op:?}`")));
+                return Err(DeviceServiceError::Other(format!(
+                    "no support for op `{op:?}`"
+                )));
             }
         };
 
@@ -87,5 +75,11 @@ impl DeviceService for Cuda {
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         self.dtoh_float(data)
+    }
+}
+
+impl From<DriverError> for DeviceServiceError {
+    fn from(value: DriverError) -> Self {
+        rmlk_cuda::Error::Cuda(value.0 as u32).into()
     }
 }

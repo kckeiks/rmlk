@@ -1,6 +1,6 @@
 use crate::attributes::gemm::GemmAttributes;
+use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
-use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
@@ -22,7 +22,8 @@ impl GemmKernel {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 
-        let attrs = GemmAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
+        let attrs =
+            GemmAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
 
         let op = GemmOp::new(
             lhs.shape(),
@@ -53,10 +54,10 @@ impl GemmKernel {
 
         if matches!(lhs.dtype(), DataType::Float) {
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected lhs tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
             })?;
             let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected rhs tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
             let mut out_slice = self.device.alloc_zeros(output_size)?;
@@ -70,7 +71,7 @@ impl GemmKernel {
             output._reshape(op.calculate_output_shape().to_vec());
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::NoSupport(format!(
+            return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",
                 lhs.dtype()
             )));

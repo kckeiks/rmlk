@@ -5,9 +5,8 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 
+use crate::core::kernel::{Kernel, Result};
 use crate::core::Context;
-use crate::core::Kernel;
-use crate::core::Result;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::kernel::activation::ActivationKernel;
 use crate::providers::cuda::kernel::add::AddKernel;

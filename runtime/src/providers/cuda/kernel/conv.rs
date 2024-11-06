@@ -1,6 +1,6 @@
 use crate::attributes::conv::ConvAttributes;
+use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
-use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -35,7 +35,7 @@ impl ConvKernel {
         };
 
         let attrs = ConvAttributes::new(
-            ctx.get_attributes().ok_or(Error::MissingAttributes)?,
+            ctx.get_attributes().ok_or(KernelError::MissingAttributes)?,
             filter_dims,
         )?;
 
@@ -56,10 +56,10 @@ impl ConvKernel {
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected x tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected x tensor data to be of type `float32`".to_string())
             })?;
             let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected w tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected w tensor data to be of type `float32`".to_string())
             })?;
 
             let mut y_data = self
@@ -117,7 +117,9 @@ impl ConvKernel {
                     utils::calculate_stride(&bias_shape, &mut bias_stride);
 
                     let bias_data = bias.data().and_then(|data| data.f32()).ok_or_else(|| {
-                        Error::Internal("expected tensor data to be of type `float32`".to_string())
+                        KernelError::Other(
+                            "expected tensor data to be of type `float32`".to_string(),
+                        )
                     })?;
 
                     trace!(
@@ -175,7 +177,7 @@ impl ConvKernel {
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::NoSupport(format!(
+            return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",
                 x.dtype()
             )));

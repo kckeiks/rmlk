@@ -1,5 +1,5 @@
+use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
-use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::{CudaDevice, CudaFunction};
@@ -26,10 +26,10 @@ impl AddKernel {
 
         if matches!(lhs.dtype(), &DataType::Float) {
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected lhs tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
             })?;
             let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected rhs tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
             let mut out_slice = unsafe { self.device.alloc::<f32>(elem_count)? };
@@ -52,7 +52,7 @@ impl AddKernel {
             result._reshape(result_shape);
             result.set_dtype(DataType::Float);
         } else {
-            return Err(Error::NoSupport(format!(
+            return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",
                 lhs.dtype()
             )));

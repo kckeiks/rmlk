@@ -1,4 +1,4 @@
-use crate::core::{Error, Result};
+use crate::core::kernel::{KernelError, Result};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ impl ConvAttributes {
             dilations = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `dilations` attribute to be of type `[int]`".to_string(),
                         )
                     })?
@@ -35,9 +35,7 @@ impl ConvAttributes {
 
         if let Some(attr) = attrs.get("group") {
             group = Some(attr.int().ok_or_else(|| {
-                Error::InvalidAttribute(
-                    "expected `group` attribute to be of type `[int]`".to_string(),
-                )
+                KernelError::Other("expected `group` attribute to be of type `[int]`".to_string())
             })?);
         }
 
@@ -45,7 +43,7 @@ impl ConvAttributes {
             kernel_shape = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `kernel_shape` attribute to be of type `[int]`".to_string(),
                         )
                     })?
@@ -58,7 +56,7 @@ impl ConvAttributes {
             pads = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `pads` attribute to be of type `[int]`".to_string(),
                         )
                     })?
@@ -71,7 +69,7 @@ impl ConvAttributes {
             strides = Some(
                 attr.ints()
                     .ok_or_else(|| {
-                        Error::InvalidAttribute(
+                        KernelError::Other(
                             "expected `strides` attribute to be of type `[int]`".to_string(),
                         )
                     })?

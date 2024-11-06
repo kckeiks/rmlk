@@ -1,6 +1,6 @@
 use crate::attributes::pooling::MaxPoolAttributes;
+use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
-use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -23,7 +23,8 @@ impl MaxPoolKernel {
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
-        let attrs = MaxPoolAttributes::new(ctx.get_attributes().ok_or(Error::MissingAttributes)?)?;
+        let attrs =
+            MaxPoolAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
         rmlk_cuda::kernels::max_pool::compute_output_shape(
@@ -53,7 +54,7 @@ impl MaxPoolKernel {
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected tensor data to be of type `float32`".to_string())
             })?;
 
             let mut y_data = self

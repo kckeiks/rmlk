@@ -1,8 +1,8 @@
+use crate::core::device_service::DeviceService;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
 use crate::core::value::{InnerValue, Value};
-use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
 use rmlk_graph::{Graph, Node};
@@ -60,7 +60,7 @@ where
                 if graph.get_node(*input).is_some() {
                     node_values.push(*input);
                 } else {
-                    return Err(Error::UnknownNode(format!(
+                    return Err(Error::Internal(format!(
                         "the input `{}` for node `{node_id}` does not exist in the graph",
                         *input
                     )));
@@ -73,7 +73,7 @@ where
                 if graph.get_node(*output).is_some() {
                     node_values.push(*output);
                 } else {
-                    return Err(Error::UnknownNode(format!(
+                    return Err(Error::Internal(format!(
                         "the output `{}` for node `{node_id}` does not exist in the graph",
                         *output
                     )));
@@ -130,7 +130,7 @@ where
                     .expect("We always have one device")
                     .htod_float(data)?;
                 let tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
-                    Error::UnknownTensor(format!(
+                    Error::Internal(format!(
                         "failed to load value: missing tensor for node {node_id}"
                     ))
                 })?;
@@ -150,12 +150,12 @@ where
             .expect("We always have one device");
 
         let tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-            Error::UnknownTensor(format!(
+            Error::Internal(format!(
                 "failed to get value: missing tensor for node {node_id}"
             ))
         })?;
         let ptr = tensor.data().take().ok_or_else(|| {
-            Error::InvalidTensor(format!(
+            Error::Internal(format!(
                 "failed to get value: empty tensor for node {node_id}"
             ))
         })?;

@@ -1,6 +1,14 @@
 use crate::core::context::Context;
-use crate::core::error::Result;
-use crate::core::DeviceService;
+use crate::core::device_service::DeviceService;
+
+pub type Result<T> = std::result::Result<T, KernelError>;
+
+#[derive(Debug)]
+pub enum KernelError {
+    InvalidTensorDimensions(Vec<usize>),
+    MissingAttributes,
+    Other(String),
+}
 
 pub trait Kernel {
     type Device: DeviceService;

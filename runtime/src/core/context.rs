@@ -1,7 +1,7 @@
+use crate::core::device_service::DeviceService;
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
 use crate::core::tensor::Tensor;
-use crate::core::DeviceService;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -37,7 +37,7 @@ where
         let node_index = execution_state
             .get_tensor_index(&node_id)
             .ok_or_else(|| {
-                Error::UnknownTensor(format!(
+                Error::Internal(format!(
                     "failed to create a context: failed to find tensor for node {node_id}"
                 ))
             })
@@ -73,7 +73,7 @@ where
         }
 
         self.execution_state.get_tensor(node_index).ok_or_else(|| {
-            Error::UnknownTensor(format!(
+            Error::Internal(format!(
                 "context error: failed to find tensor for node {node_index}"
             ))
         })
@@ -90,7 +90,7 @@ where
         self.execution_state
             .get_tensor_mut(node_index)
             .ok_or_else(|| {
-                Error::UnknownTensor(format!(
+                Error::Internal(format!(
                     "context error: failed to find tensor for node {node_index}"
                 ))
             })
@@ -106,7 +106,7 @@ where
         }
 
         self.execution_state.get_tensor(node_index).ok_or_else(|| {
-            Error::UnknownTensor(format!(
+            Error::Internal(format!(
                 "context error: failed to find tensor for node {node_index}"
             ))
         })
@@ -123,7 +123,7 @@ where
         self.execution_state
             .get_tensor_mut(node_index)
             .ok_or_else(|| {
-                Error::UnknownTensor(format!(
+                Error::Internal(format!(
                     "context error: failed to find tensor for node {node_index}"
                 ))
             })

@@ -1,5 +1,5 @@
+use crate::core::device_service::DeviceService;
 use crate::core::plan::Plan;
-use crate::core::DeviceService;
 use rmlk_graph::Graph;
 use rmlk_schema::Definition;
 use std::collections::HashMap;

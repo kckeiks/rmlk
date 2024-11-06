@@ -1,5 +1,5 @@
+use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
-use crate::core::{Error, Result};
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -32,7 +32,7 @@ impl GlobalAveragePoolKernel {
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                Error::Internal("expected tensor data to be of type `float32`".to_string())
+                KernelError::Other("expected tensor data to be of type `float32`".to_string())
             })?;
 
             let mut y_data = self
@@ -55,7 +55,7 @@ impl GlobalAveragePoolKernel {
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::NoSupport(format!(
+            return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",
                 x.dtype()
             )));

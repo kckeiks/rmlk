@@ -1,4 +1,4 @@
-use crate::core::{DeviceService, Tensor};
+use crate::core::{device_service::DeviceService, Tensor};
 use crate::Error;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
@@ -65,7 +65,7 @@ impl<T> TensorStore<T> {
                     tensors[node_id].replace(tensor);
                 }
                 None => {
-                    return Err(Error::UnknownNode(format!(
+                    return Err(Error::Internal(format!(
                         "failed to create tensor store: failed to find input node `{node_id}`"
                     )))
                 }
@@ -87,7 +87,7 @@ impl<T> TensorStore<T> {
                     tensors[node_id].replace(tensor);
                 }
                 None => {
-                    return Err(Error::UnknownNode(format!(
+                    return Err(Error::Internal(format!(
                         "failed to create tensor store: failed to find output node `{node_id}`"
                     )))
                 }
@@ -105,7 +105,7 @@ impl<T> TensorStore<T> {
                     Some(_) => {
                         if tensors.get(*output)
                             .ok_or_else(|| {
-                                Error::UnknownTensor(
+                                Error::Internal(
                                     format!("failed to create tensor store: node {} is referring to an output node ID that is unknown", *output)
                                 )
                             })?
@@ -115,7 +115,7 @@ impl<T> TensorStore<T> {
                         }
                     }
                     None => {
-                        return Err(Error::UnknownNode(format!(
+                        return Err(Error::Internal(format!(
                             "failed to create tensor store: failed to find output node `{}` for node {}",
                             *output,
                             node_id

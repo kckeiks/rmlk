@@ -1,4 +1,4 @@
-use crate::core::{Error, Result};
+use crate::core::kernel::{KernelError, Result};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ impl GemmAttributes {
                 Some(1) => Some(true),
                 None => None,
                 Some(n) => {
-                    return Err(Error::InvalidAttribute(format!(
+                    return Err(KernelError::Other(format!(
                         "invalid value {n} for the `transA` attribute"
                     )))
                 }
@@ -44,7 +44,7 @@ impl GemmAttributes {
                 Some(1) => Some(true),
                 None => None,
                 Some(n) => {
-                    return Err(Error::InvalidAttribute(format!(
+                    return Err(KernelError::Other(format!(
                         "invalid value {n} for the `transB` attribute"
                     )))
                 }
