@@ -9,7 +9,7 @@ use crate::core::values::{Value, Values};
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
-use rmlk_graph::Graph;
+use rmlk_graph::{Graph, Node};
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -114,28 +114,32 @@ where
                 return Err(Error::MissingNode);
             }
 
-            self.execution_state.load_inner_value(node_id, value)?;
+            self.execution_state.load_value(node_id, value)?;
         }
 
         Ok(())
     }
 
-    fn get_outputs(&mut self) -> Result<Vec<Value>> {
+    fn get_outputs(&mut self) -> Result<HashMap<String, Value>> {
         // Todo: preallocate these buffers.
-        let mut result = Vec::with_capacity(self.instance_state.graph().outputs().count());
+        let mut result = HashMap::new();
         for output in self.instance_state.graph().outputs() {
-            if self.instance_state.graph().get_node(output).is_none() {
-                return Err(Error::MissingData);
+            match self.instance_state.graph().get_node(output) {
+                None => return Err(Error::MissingData),
+                Some(node) => {
+                    let value = self.execution_state.read_value(output)?;
+                    result.insert(
+                        node.value().name().ok_or(Error::MissingData)?.to_string(),
+                        value,
+                    );
+                }
             }
-
-            let value = self.execution_state.get_inner_value(output)?;
-            result.push(value);
         }
 
         Ok(result)
     }
 
-    pub fn run(&mut self, input: HashMap<String, Value>) -> Result<Vec<Value>> {
+    pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
         self.load_inputs(input)?;
 
         let provider = self

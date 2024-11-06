@@ -113,7 +113,7 @@ where
         self.node_to_value_index_map.get(node_id).copied()
     }
 
-    pub fn load_inner_value(&mut self, node_id: usize, value: Value) -> Result<()> {
+    pub fn load_value(&mut self, node_id: usize, value: Value) -> Result<()> {
         match value.inner {
             InnerValue::F32(data) => {
                 let data = self
@@ -133,7 +133,7 @@ where
         Ok(())
     }
 
-    pub fn get_inner_value(&self, node_id: usize) -> Result<Value> {
+    pub fn read_value(&self, node_id: usize) -> Result<Value> {
         let provider = self
             .instance_state
             ._plan()
