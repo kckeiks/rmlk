@@ -33,8 +33,7 @@ impl MaxPoolKernel {
             attrs.strides(),
             &mut y_shape,
             false,
-        )
-        .map_err(|_| Error::ComputationFailed)?;
+        )?;
 
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
@@ -73,8 +72,7 @@ impl MaxPoolKernel {
                 &mut y_data,
                 &y_shape,
                 &y_stride,
-            )
-            .map_err(|_| Error::ComputationFailed)?;
+            )?;
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));

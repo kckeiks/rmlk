@@ -37,8 +37,7 @@ impl ActivationKernel {
                 &x_shape,
                 &x_stride,
                 &mut y_data,
-            )
-            .map_err(|_| Error::ComputationFailed)?;
+            )?;
 
             let output_shape = x.shape().clone();
             let output = ctx.get_output_mut(0)?;

@@ -44,8 +44,7 @@ impl AddKernel {
                 rhs.shape(),
                 rhs.stride(),
                 &mut out_slice,
-            )
-            .map_err(|_| Error::ComputationFailed)?;
+            )?;
 
             let result_shape = lhs.shape().clone();
             let result = ctx.get_output_mut(0)?;

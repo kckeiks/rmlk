@@ -49,8 +49,7 @@ impl ConvKernel {
             attrs.strides(),
             attrs.dilations(),
             &mut y_shape,
-        )
-        .map_err(|_| Error::ComputationFailed)?;
+        )?;
 
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
@@ -107,8 +106,7 @@ impl ConvKernel {
                         &mut y_data,
                         &y_shape,
                         &y_stride,
-                    )
-                    .map_err(|_| Error::ComputationFailed)?;
+                    )?;
                 }
                 Some(bias) => {
                     let mut bias_shape = vec![1i32; x_shape.len()];
@@ -168,8 +166,7 @@ impl ConvKernel {
                         &mut y_data,
                         &y_shape,
                         &y_stride,
-                    )
-                    .map_err(|_| Error::ComputationFailed)?;
+                    )?;
                 }
             }
 

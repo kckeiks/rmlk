@@ -5,7 +5,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 // Todo: Fix.
 #[derive(Debug)]
 pub enum Error {
-    ComputationFailed,
     Cuda(u32),
     Device(String),
     Input(String),
@@ -24,5 +23,11 @@ pub enum Error {
 impl From<DriverError> for Error {
     fn from(value: DriverError) -> Self {
         Self::Cuda(value.0 as u32)
+    }
+}
+
+impl From<rmlk_cuda::Error> for Error {
+    fn from(value: rmlk_cuda::Error) -> Self {
+        Self::Device(format!("cuda device error: {value:?}"))
     }
 }

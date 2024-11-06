@@ -61,12 +61,9 @@ impl GemmKernel {
 
             let mut out_slice = self.device.alloc_zeros(output_size)?;
 
-            let config = op
-                .strided_batch_config((attrs.alpha(), attrs.beta()))
-                .map_err(|_| Error::ComputationFailed)?;
+            let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
 
-            op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)
-                .map_err(|_| Error::ComputationFailed)?;
+            op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(out_slice));

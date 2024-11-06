@@ -25,8 +25,7 @@ impl GlobalAveragePoolKernel {
         rmlk_cuda::kernels::global_average_pool::compute_output_shape(
             &x_shape,
             y_shape.as_mut_slice(),
-        )
-        .map_err(|_| Error::ComputationFailed)?;
+        )?;
 
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
@@ -49,8 +48,7 @@ impl GlobalAveragePoolKernel {
                 &mut y_data,
                 &y_shape,
                 &y_stride,
-            )
-            .map_err(|_| Error::ComputationFailed)?;
+            )?;
 
             let output = ctx.get_output_mut(0)?;
             output.init(CudaData::F32(y_data));
