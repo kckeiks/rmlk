@@ -9,7 +9,6 @@ pub struct Value {
 }
 
 pub(crate) enum InnerValue {
-    Int32(Vec<i32>),
     F32(Vec<f32>),
 }
 
