@@ -8,7 +8,9 @@ pub struct Value {
     pub(crate) inner: InnerValue,
 }
 
+#[allow(unused)]
 pub(crate) enum InnerValue {
+    Int32(Vec<i32>),
     F32(Vec<f32>),
 }
 

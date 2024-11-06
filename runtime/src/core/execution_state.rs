@@ -140,7 +140,9 @@ where
             .device(0)
             .expect("We always have one device");
 
-        let tensor = self.get_value(node_id).ok_or(Error::MissingData)?;
+        let tensor = self
+            .get_value_from_node_id(node_id)
+            .ok_or(Error::MissingData)?;
         let ptr = tensor.data().take().ok_or(Error::MissingData)?;
 
         match tensor.dtype() {
@@ -151,6 +153,11 @@ where
 
     pub fn graph(&self) -> &Arc<Graph<Definition>> {
         self.instance_state.graph()
+    }
+
+    /// Get the tensor value given a node ID.
+    fn get_value_from_node_id(&self, node_id: usize) -> Option<&Tensor<T::Data>> {
+        self.values.get(node_id)
     }
 
     /// Get the tensor value given a node ID.
