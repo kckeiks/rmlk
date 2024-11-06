@@ -5,7 +5,7 @@ use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
 use crate::core::plan::Plan;
-use crate::core::values::Values;
+use crate::core::values::{Value, Values};
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
@@ -99,18 +99,12 @@ impl<D> ModelInstance<D>
 where
     D: DeviceService,
 {
-    fn load_input(&mut self, input: HashMap<String, Vec<f32>>) -> Result<()> {
+    fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().inputs().count() {
             return Err(Error::MissingData);
         }
 
-        for (input_name, input_data) in input {
-            let provider = self
-                .instance_state
-                ._plan()
-                .device(0)
-                .expect("We always have one device");
-
+        for (input_name, value) in input {
             let node_id = self
                 .instance_state
                 .get_io_node_id(&input_name)
@@ -120,23 +114,13 @@ where
                 return Err(Error::MissingNode);
             }
 
-            let tensor = self
-                .execution_state
-                .get_value_from_node_id_mut(node_id)
-                .ok_or(Error::MissingData)?;
-            tensor.init(provider.htod_float(input_data)?);
+            self.execution_state.load_inner_value(node_id, value)?;
         }
 
         Ok(())
     }
 
-    fn load_output(&mut self) -> Result<Vec<Vec<f32>>> {
-        let provider = self
-            .instance_state
-            ._plan()
-            .device(0)
-            .expect("We always have one device");
-
+    fn get_outputs(&mut self) -> Result<Vec<Value>> {
         // Todo: preallocate these buffers.
         let mut result = Vec::with_capacity(self.instance_state.graph().outputs().count());
         for output in self.instance_state.graph().outputs() {
@@ -144,20 +128,15 @@ where
                 return Err(Error::MissingData);
             }
 
-            let tensor = self
-                .execution_state
-                .get_value_from_node_id_mut(output)
-                .ok_or(Error::MissingData)?;
-            let ptr = tensor.data_mut().take().ok_or(Error::MissingData)?;
-            let data = provider.dtoh_float(ptr)?;
-            result.push(data);
+            let value = self.execution_state.get_inner_value(output)?;
+            result.push(value);
         }
 
         Ok(result)
     }
 
-    pub fn run(&mut self, input: HashMap<String, Vec<f32>>) -> Result<Vec<Vec<f32>>> {
-        self.load_input(input)?;
+    pub fn run(&mut self, input: HashMap<String, Value>) -> Result<Vec<Value>> {
+        self.load_inputs(input)?;
 
         let provider = self
             .instance_state
@@ -187,6 +166,6 @@ where
                 .compute(&mut ctx)?;
         }
 
-        self.load_output()
+        self.get_outputs()
     }
 }

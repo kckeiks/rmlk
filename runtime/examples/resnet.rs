@@ -1,6 +1,6 @@
 use image::GenericImageView;
 use ndarray::Array;
-use rmlk_runtime::Builder;
+use rmlk_runtime::{Builder, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -42,7 +42,11 @@ fn main() {
     println!("Done building the compute graph in the runtime");
 
     // Run inference.
-    let input: HashMap<String, Vec<f32>> = [("input".to_string(), input.into_raw_vec())].into();
+    let input: HashMap<String, Value> = [(
+        "input".to_string(),
+        input.into_raw_vec().try_into().unwrap(),
+    )]
+    .into();
     let mut output = model_instance.run(input).unwrap();
     let mut output = output.remove(0).into_iter().enumerate().collect::<Vec<_>>();
     output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());

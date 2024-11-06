@@ -16,5 +16,5 @@ pub trait DeviceService {
     fn htod_float(&self, data: Vec<f32>) -> Result<Self::Data>;
 
     /// Copies `f32` data from device to host.
-    fn dtoh_float(&self, data: &mut Self::Data) -> Result<Vec<f32>>;
+    fn dtoh_float(&self, data: &Self::Data) -> Result<Vec<f32>>;
 }

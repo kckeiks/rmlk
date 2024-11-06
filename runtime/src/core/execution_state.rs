@@ -1,12 +1,12 @@
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::tensor::Tensor;
-use crate::core::values::Values;
+use crate::core::values::{InnerValue, Value, Values};
 use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
 use rmlk_graph::{Graph, Node};
-use rmlk_schema::Definition;
 use rmlk_schema::Op;
+use rmlk_schema::{DataType, Definition};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -90,7 +90,7 @@ where
         self.instance_state.graph().get_node(node_id)
     }
 
-    /// Get the shared tensor value.
+    /// Get a shared tensor value.
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_value_index`].
@@ -108,22 +108,57 @@ where
         self.values.get_mut(index)
     }
 
-    /// Get the tensor value given a node ID.
-    pub fn get_value_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
-        self.values.get_mut(node_id)
-    }
-
     /// Get the starting index for the values of a node.
     pub fn get_value_index(&self, node_id: &usize) -> Option<usize> {
         self.node_to_value_index_map.get(node_id).copied()
     }
 
-    /// Get the index of the actual value.
-    fn get_inner_index(&self, value_index: usize) -> Option<usize> {
-        self.op_values.get(value_index).copied()
+    pub fn load_inner_value(&mut self, node_id: usize, value: Value) -> Result<()> {
+        let tensor = self
+            .get_value_from_node_id_mut(node_id)
+            .ok_or(Error::MissingData)?;
+
+        let provider = self
+            .instance_state
+            ._plan()
+            .device(0)
+            .expect("We always have one device");
+
+        match value.inner {
+            InnerValue::F32(data) => tensor.init(provider.htod_float(data)?),
+            _ => unimplemented!(),
+        }
+
+        Ok(())
+    }
+
+    pub fn get_inner_value(&self, node_id: usize) -> Result<Value> {
+        let provider = self
+            .instance_state
+            ._plan()
+            .device(0)
+            .expect("We always have one device");
+
+        let tensor = self.get_value(node_id).ok_or(Error::MissingData)?;
+        let ptr = tensor.data().take().ok_or(Error::MissingData)?;
+
+        match tensor.dtype() {
+            DataType::Float => provider.dtoh_float(ptr)?.try_into(),
+            _ => unimplemented!(),
+        }
     }
 
     pub fn graph(&self) -> &Arc<Graph<Definition>> {
         self.instance_state.graph()
+    }
+
+    /// Get the tensor value given a node ID.
+    fn get_value_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
+        self.values.get_mut(node_id)
+    }
+
+    /// Get the index of the actual value.
+    fn get_inner_index(&self, value_index: usize) -> Option<usize> {
+        self.op_values.get(value_index).copied()
     }
 }

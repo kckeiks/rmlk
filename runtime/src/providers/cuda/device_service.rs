@@ -35,7 +35,7 @@ impl Cuda {
         Ok(CudaData::F32(ptr))
     }
 
-    pub fn dtoh_float(&self, data: &mut CudaData) -> Result<Vec<f32>> {
+    pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         match data {
             CudaData::F32(ptr) => {
                 let result = self
@@ -82,7 +82,7 @@ impl DeviceService for Cuda {
         self.htod_float(data)
     }
 
-    fn dtoh_float(&self, data: &mut CudaData) -> Result<Vec<f32>> {
+    fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         self.dtoh_float(data)
     }
 }
