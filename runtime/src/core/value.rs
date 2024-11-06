@@ -13,7 +13,7 @@ pub(crate) enum InnerValue {
 impl TryFrom<Value> for Vec<f32> {
     type Error = Error;
 
-    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
             InnerValue::Float32(data) => Ok(data),
             _ => unimplemented!(),

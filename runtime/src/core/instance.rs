@@ -122,7 +122,6 @@ where
     }
 
     fn get_outputs(&mut self) -> Result<HashMap<String, Value>> {
-        // Todo: preallocate these buffers.
         let mut result = HashMap::new();
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {

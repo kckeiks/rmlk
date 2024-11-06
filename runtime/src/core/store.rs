@@ -4,9 +4,9 @@ use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::collections::HashMap;
 
-/// Tensor array.
+/// Tensor store.
 ///
-/// All the tensor values for a computational graph.
+/// This object stores a fixed-size collection of tensors.
 pub struct TensorStore<T> {
     tensors: Box<[Option<Tensor<T>>]>,
 }
