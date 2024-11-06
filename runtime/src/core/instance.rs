@@ -1,5 +1,5 @@
 use crate::core::context::Context;
-use crate::core::device_service::DeviceService;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::error::{Error, Result};
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
@@ -81,7 +81,11 @@ impl Builder {
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
-        let provider = Cuda::new(CudaDevice::new(0)?);
+        let provider = Cuda::new(
+            CudaDevice::new(0)
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?,
+        );
         let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
