@@ -150,7 +150,11 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, k)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(Error::InvalidInputShapes),
+        _ => {
+            return Err(Error::InvalidArguments(format!(
+                "invalid rhs stride {rhs_stride:?}"
+            )))
+        }
     };
 
     let lhs_stride = lhs_layout.1;
@@ -162,7 +166,11 @@ pub fn gemm_config<T>(
             (sys::cublasOperation_t::CUBLAS_OP_T, m)
         }
         // Todo: return an non-contiguous error.
-        _ => return Err(Error::InvalidInputShapes),
+        _ => {
+            return Err(Error::InvalidArguments(format!(
+                "invalid lhs stride {lhs_stride:?}"
+            )))
+        }
     };
 
     let gemm = GemmConfig {

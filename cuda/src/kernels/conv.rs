@@ -57,7 +57,9 @@ where
         y_shape[3] = height;
         y_shape[4] = width;
     } else {
-        return Err(Error::InvalidInputShapes);
+        return Err(Error::InvalidArguments(format!(
+            "invalid shapes y_shape={y_shape:?} and kernel_shape={kernel_shape:?}"
+        )));
     }
 
     Ok(())
@@ -101,7 +103,9 @@ where
     // every input must have a shape and we must set the shape of the output
     // if it doesn't exist.
     if (x_shape.len() != 4 && x_shape.len() != 5) || (w_shape.len() != 4 && w_shape.len() != 5) {
-        return Err(Error::InvalidTensorDimensions);
+        return Err(Error::InvalidArguments(format!(
+            "invalid shapes x_shape={x_shape:?} and w_shape={w_shape:?}"
+        )));
     }
 
     // Todo: handle this data and move it to device.

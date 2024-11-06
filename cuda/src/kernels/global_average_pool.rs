@@ -5,19 +5,26 @@ use cudarc::cudnn::{CudnnDataType, PoolingForward};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use log::trace;
 use num_traits::Num;
+use std::fmt::Debug;
 use std::ops::AddAssign;
 use std::sync::Arc;
 
-pub fn compute_output_shape<T: Num + Copy + AddAssign>(
+pub fn compute_output_shape<T: AddAssign + Copy + Debug + Num>(
     x_shape: &[T],
     y_shape: &mut [T],
 ) -> Result<()> {
     if x_shape.len() < 4 {
-        return Err(Error::InvalidInputShapes);
+        return Err(Error::InvalidArguments(format!(
+            "invalid shape`{:?}` for x",
+            x_shape
+        )));
     }
 
     if x_shape.len() != y_shape.len() {
-        return Err(Error::InvalidBufferSize);
+        return Err(Error::InvalidArguments(format!(
+            "the shape of x ({:?}) and y ({:?}) do not match",
+            x_shape, y_shape
+        )));
     }
 
     for i in 0..2 {

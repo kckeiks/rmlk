@@ -40,7 +40,7 @@ pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<
     if !device.has_func(module_name, fwd_fn_name) {
         device
             .load_ptx(ptx_src.into(), module_name, fwd_fn_all)
-            .map_err(|_| Error::KernelFailedToLoad)?
+            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
     }
 
     Ok(device

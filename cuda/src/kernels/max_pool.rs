@@ -3,6 +3,7 @@ use crate::error::Result;
 use cudarc::cudnn::{Cudnn, CudnnDataType, PoolingForward};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use num_traits::{FromPrimitive, Num};
+use std::fmt::Debug;
 use std::ops::AddAssign;
 use std::sync::Arc;
 
@@ -16,7 +17,7 @@ pub fn compute_output_shape<T>(
     ceil_mode: bool,
 ) -> Result<()>
 where
-    T: Num + Copy + AddAssign + FromPrimitive,
+    T: AddAssign + Copy + Debug + FromPrimitive + Num,
     f64: From<T>,
 {
     let two = T::one() + T::one();
@@ -37,8 +38,12 @@ where
 
         y_shape[0] = x_shape[0];
         y_shape[1] = x_shape[1];
-        y_shape[2] = T::from_f64(height).ok_or(Error::ComputationError)?;
-        y_shape[3] = T::from_f64(width).ok_or(Error::ComputationError)?;
+        y_shape[2] = T::from_f64(height).ok_or_else(|| {
+            Error::InvalidArguments("failed to create a value of type `T` for float64".to_string())
+        })?;
+        y_shape[3] = T::from_f64(width).ok_or_else(|| {
+            Error::InvalidArguments("failed to create a value of type `T` for float64".to_string())
+        })?;
     } else if kernel_shape.len() == 3 && y_shape.len() == 5 {
         let depth =
             (f64::from(x_shape[1] + two * pads[0] - kernel_shape[0]) / f64::from(strides[0])) + 1.0;
@@ -63,11 +68,19 @@ where
 
         y_shape[0] = x_shape[0];
         y_shape[1] = x_shape[1];
-        y_shape[2] = T::from_f64(depth).ok_or(Error::ComputationError)?;
-        y_shape[3] = T::from_f64(height).ok_or(Error::ComputationError)?;
-        y_shape[4] = T::from_f64(width).ok_or(Error::ComputationError)?;
+        y_shape[2] = T::from_f64(depth).ok_or_else(|| {
+            Error::InvalidArguments("failed to create a value of type `T` for float64".to_string())
+        })?;
+        y_shape[3] = T::from_f64(height).ok_or_else(|| {
+            Error::InvalidArguments("failed to create a value of type `T` for float64".to_string())
+        })?;
+        y_shape[4] = T::from_f64(width).ok_or_else(|| {
+            Error::InvalidArguments("failed to create a value of type `T` for float64".to_string())
+        })?;
     } else {
-        return Err(Error::InvalidInputShapes);
+        return Err(Error::InvalidArguments(format!(
+            "invalid shapes y_shape={y_shape:?} and kernel_shape={kernel_shape:?}"
+        )));
     }
 
     Ok(())
