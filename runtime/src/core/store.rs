@@ -1,51 +1,22 @@
 use crate::core::{DeviceService, Tensor};
-use crate::{Error, Result};
+use crate::Error;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::collections::HashMap;
 
-pub struct Value {
-    pub(crate) inner: InnerValue,
-}
-
-#[allow(unused)]
-pub(crate) enum InnerValue {
-    Int32(Vec<i32>),
-    F32(Vec<f32>),
-}
-
-impl TryFrom<Value> for Vec<f32> {
-    type Error = Error;
-
-    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
-        match value.inner {
-            InnerValue::F32(data) => Ok(data),
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl From<Vec<f32>> for Value {
-    fn from(value: Vec<f32>) -> Self {
-        Self {
-            inner: InnerValue::F32(value),
-        }
-    }
-}
-
-/// Tensor values.
+/// Tensor array.
 ///
-/// All the values for a computational graph.
-pub struct Values<T> {
+/// All the tensor values for a computational graph.
+pub struct TensorStore<T> {
     tensors: Box<[Option<Tensor<T>>]>,
 }
 
-impl<T> Values<T> {
+impl<T> TensorStore<T> {
     pub fn new<D: DeviceService<Data = T>>(
         provider: &D,
         graph: &Graph<Definition>,
         initializers: HashMap<usize, rmlk_schema::Tensor>,
-    ) -> Result<Values<D::Data>> {
+    ) -> crate::Result<TensorStore<D::Data>> {
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
@@ -133,7 +104,7 @@ impl<T> Values<T> {
             }
         }
 
-        Ok(Values {
+        Ok(TensorStore {
             tensors: tensors.into_boxed_slice(),
         })
     }

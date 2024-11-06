@@ -1,4 +1,4 @@
-use crate::core::Values;
+use crate::core::store::TensorStore;
 use crate::core::{Context, Kernel, ModelInstanceState};
 use crate::core::{DeviceService, ExecutionState, Plan};
 use rmlk_graph::{GraphBuilder, Node};
@@ -110,7 +110,7 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
     builder.add_node(op_node).unwrap();
     let graph = builder.build().unwrap();
 
-    let mut values = Values::new(&provider, &graph).unwrap();
+    let mut values = TensorStore::new(&provider, &graph).unwrap();
     for (node_id, data) in inputs {
         let tensor = values.get_mut(node_id).unwrap();
         tensor.init(data);

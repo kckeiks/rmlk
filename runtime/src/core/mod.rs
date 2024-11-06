@@ -6,8 +6,9 @@ mod instance;
 mod instance_state;
 mod kernel;
 mod plan;
+mod store;
 mod tensor;
-mod values;
+mod value;
 
 pub use context::Context;
 pub use device_service::DeviceService;
@@ -20,7 +21,7 @@ pub use instance_state::ModelInstanceState;
 pub use kernel::Kernel;
 #[cfg(test)]
 pub use plan::Plan;
-pub use tensor::Tensor;
-pub use values::Value;
 #[cfg(test)]
-pub use values::Values;
+pub use store::TensorStore;
+pub use tensor::Tensor;
+pub use value::Value;

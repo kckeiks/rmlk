@@ -5,7 +5,8 @@ use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
 use crate::core::plan::Plan;
-use crate::core::values::{Value, Values};
+use crate::core::store::TensorStore;
+use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
@@ -71,7 +72,7 @@ impl Builder {
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let provider = Cuda::new(CudaDevice::new(0)?);
-        let values = Values::new(&provider, &self.graph, self.initializers)?;
+        let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
@@ -127,7 +128,7 @@ where
             match self.instance_state.graph().get_node(output) {
                 None => return Err(Error::MissingData),
                 Some(node) => {
-                    let value = self.execution_state.read_value(output)?;
+                    let value = self.execution_state.get_value(output)?;
                     result.insert(
                         node.value().name().ok_or(Error::MissingData)?.to_string(),
                         value,

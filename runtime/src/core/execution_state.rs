@@ -1,6 +1,7 @@
 use crate::core::instance_state::ModelInstanceState;
+use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
-use crate::core::values::{InnerValue, Value, Values};
+use crate::core::value::{InnerValue, Value};
 use crate::core::DeviceService;
 use crate::{Error, Result};
 use log::trace;
@@ -19,14 +20,14 @@ pub struct ExecutionState<T: DeviceService> {
     ///
     /// This includes the inputs, outputs and
     /// intermediate values of the entire graph.
-    values: Values<T::Data>,
-    /// Value indices for finding an operation's tensor values.
+    tensor: TensorStore<T::Data>,
+    /// Tensor indices for finding an operation's tensor values.
     ///
     /// The order is inputs, optional inputs and outputs.
-    op_values: Box<[usize]>,
+    op_tensors: Box<[usize]>,
     /// Maps a computation given by a node ID
     /// to the start of the node's values in `values`.
-    node_to_value_index_map: HashMap<usize, usize>,
+    node_to_tensor_index_map: HashMap<usize, usize>,
     /// Reference to the model instance state.
     instance_state: Arc<ModelInstanceState<T>>,
 }
@@ -37,7 +38,7 @@ where
 {
     pub fn new(
         instance_state: Arc<ModelInstanceState<T>>,
-        values: Values<T::Data>,
+        values: TensorStore<T::Data>,
     ) -> Result<ExecutionState<T>> {
         let graph = instance_state.graph();
         let mut node_to_value_index_map = HashMap::new();
@@ -78,9 +79,9 @@ where
         trace!("node_to_value_index_map={:?}", node_to_value_index_map);
 
         Ok(Self {
-            values,
-            node_to_value_index_map,
-            op_values: node_values.into_boxed_slice(),
+            tensor: values,
+            node_to_tensor_index_map: node_to_value_index_map,
+            op_tensors: node_values.into_boxed_slice(),
             instance_state,
         })
     }
@@ -93,29 +94,29 @@ where
     /// Get a shared tensor value.
     ///
     /// The value index for a given computation can be
-    /// found using [`ExecutionState::get_value_index`].
-    pub fn get_value(&self, value_index: usize) -> Option<&Tensor<T::Data>> {
+    /// found using [`ExecutionState::get_tensor_index`].
+    pub fn get_tensor(&self, value_index: usize) -> Option<&Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
-        self.values.get(index)
+        self.tensor.get(index)
     }
 
-    /// Get the mutable tensor value.
+    /// Get a mutable tensor value.
     ///
     /// The value index for a given computation can be
-    /// found using [`ExecutionState::get_value_index`].
-    pub fn get_value_mut(&mut self, value_index: usize) -> Option<&mut Tensor<T::Data>> {
+    /// found using [`ExecutionState::get_tensor_index`].
+    pub fn get_tensor_mut(&mut self, value_index: usize) -> Option<&mut Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
-        self.values.get_mut(index)
+        self.tensor.get_mut(index)
     }
 
     /// Get the starting index for the values of a node.
-    pub fn get_value_index(&self, node_id: &usize) -> Option<usize> {
-        self.node_to_value_index_map.get(node_id).copied()
+    pub fn get_tensor_index(&self, node_id: &usize) -> Option<usize> {
+        self.node_to_tensor_index_map.get(node_id).copied()
     }
 
     pub fn load_value(&mut self, node_id: usize, value: Value) -> Result<()> {
         match value.inner {
-            InnerValue::F32(data) => {
+            InnerValue::Float32(data) => {
                 let data = self
                     .instance_state
                     ._plan()
@@ -123,7 +124,7 @@ where
                     .expect("We always have one device")
                     .htod_float(data)?;
                 let tensor = self
-                    .get_value_from_node_id_mut(node_id)
+                    .get_tensor_from_node_id_mut(node_id)
                     .ok_or(Error::MissingData)?;
                 tensor.init(data)
             }
@@ -133,7 +134,7 @@ where
         Ok(())
     }
 
-    pub fn read_value(&self, node_id: usize) -> Result<Value> {
+    pub fn get_value(&self, node_id: usize) -> Result<Value> {
         let provider = self
             .instance_state
             ._plan()
@@ -141,7 +142,7 @@ where
             .expect("We always have one device");
 
         let tensor = self
-            .get_value_from_node_id(node_id)
+            .get_tensor_from_node_id(node_id)
             .ok_or(Error::MissingData)?;
         let ptr = tensor.data().take().ok_or(Error::MissingData)?;
 
@@ -156,17 +157,17 @@ where
     }
 
     /// Get the tensor value given a node ID.
-    fn get_value_from_node_id(&self, node_id: usize) -> Option<&Tensor<T::Data>> {
-        self.values.get(node_id)
+    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<&Tensor<T::Data>> {
+        self.tensor.get(node_id)
     }
 
     /// Get the tensor value given a node ID.
-    fn get_value_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
-        self.values.get_mut(node_id)
+    fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
+        self.tensor.get_mut(node_id)
     }
 
     /// Get the index of the actual value.
     fn get_inner_index(&self, value_index: usize) -> Option<usize> {
-        self.op_values.get(value_index).copied()
+        self.op_tensors.get(value_index).copied()
     }
 }

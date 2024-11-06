@@ -35,7 +35,7 @@ where
 {
     pub fn new(execution_state: &'a mut ExecutionState<D>, node_id: usize) -> Result<Self> {
         let node_index = execution_state
-            .get_value_index(&node_id)
+            .get_tensor_index(&node_id)
             .ok_or(Error::MissingData)
             .unwrap();
         let input_count = execution_state
@@ -67,7 +67,7 @@ where
         }
 
         self.execution_state
-            .get_value(node_index)
+            .get_tensor(node_index)
             .ok_or(Error::ContextError)
     }
 
@@ -78,7 +78,7 @@ where
         }
 
         self.execution_state
-            .get_value_mut(node_index)
+            .get_tensor_mut(node_index)
             .ok_or(Error::ContextError)
     }
 
@@ -90,7 +90,7 @@ where
         }
 
         self.execution_state
-            .get_value(node_index)
+            .get_tensor(node_index)
             .ok_or(Error::ContextError)
     }
 
@@ -101,7 +101,7 @@ where
         }
 
         self.execution_state
-            .get_value_mut(node_index)
+            .get_tensor_mut(node_index)
             .ok_or(Error::ContextError)
     }
 
