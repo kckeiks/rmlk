@@ -24,10 +24,9 @@ impl ActivationKernel {
         trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
 
         if matches!(x.dtype(), DataType::Float) {
-            let x_data = x
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected tensor data to be of type `float32`".to_string())
+            })?;
 
             let mut y_data = self.device.alloc_zeros(x.shape().iter().product())?;
 
@@ -47,7 +46,10 @@ impl ActivationKernel {
             output._reshape(output_shape);
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::UnsupportedDataType);
+            return Err(Error::NoSupport(format!(
+                "unsupported dtype `{}`",
+                x.dtype()
+            )));
         }
 
         Ok(())

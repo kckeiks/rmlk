@@ -17,11 +17,19 @@ impl MaxPoolAttributes {
         let kernel_shape = match attrs.get("kernel_shape") {
             Some(attr) => attr
                 .ints()
-                .ok_or(Error::InvalidAttributeFormat)?
+                .ok_or_else(|| {
+                    Error::InvalidAttribute(
+                        "expected `dilations` attribute to be of type `[int]`".to_string(),
+                    )
+                })?
                 // Todo: remove the allocation here.
                 .to_vec()
                 .into_boxed_slice(),
-            None => return Err(Error::MissingAttributes),
+            None => {
+                return Err(Error::InvalidAttribute(
+                    "missing attribute `kernel_shape`".to_string(),
+                ))
+            }
         };
 
         let mut ceil_mode = None;
@@ -32,7 +40,11 @@ impl MaxPoolAttributes {
         if let Some(attr) = attrs.get("ceil_mode") {
             ceil_mode = match attr.int() {
                 Some(0) => Some(false),
-                Some(_) => return Err(Error::UnsupportedAttribute),
+                Some(n) => {
+                    return Err(Error::NoSupport(format!(
+                        "unsupported attribute type `{n}` for `ceil_mode`"
+                    )))
+                }
                 None => None,
             }
         }
@@ -40,13 +52,16 @@ impl MaxPoolAttributes {
         if attrs.get("dilations").is_some() {
             // Todo: how do we add support for this?
             warn!("unsupported attributes");
-            // return Err(Error::UnsupportedAttribute);
         }
 
         if let Some(attr) = attrs.get("pads") {
             pads = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `pads` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );
@@ -55,7 +70,11 @@ impl MaxPoolAttributes {
         if let Some(attr) = attrs.get("strides") {
             strides = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `strides` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );

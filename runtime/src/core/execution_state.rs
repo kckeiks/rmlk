@@ -38,7 +38,7 @@ where
 {
     pub fn new(
         instance_state: Arc<ModelInstanceState<T>>,
-        values: TensorStore<T::Data>,
+        store: TensorStore<T::Data>,
     ) -> Result<ExecutionState<T>> {
         let graph = instance_state.graph();
         let mut node_to_value_index_map = HashMap::new();
@@ -55,22 +55,28 @@ where
             node_to_value_index_map.insert(node_id, index);
 
             for input in node.inputs() {
-                debug_assert!(values.get(*input).is_some());
+                debug_assert!(store.get(*input).is_some());
 
                 if graph.get_node(*input).is_some() {
                     node_values.push(*input);
                 } else {
-                    return Err(Error::MissingNode);
+                    return Err(Error::UnknownNode(format!(
+                        "the input `{}` for node `{node_id}` does not exist in the graph",
+                        *input
+                    )));
                 }
             }
 
             for output in node.outputs() {
-                debug_assert!(values.get(*output).is_some());
+                debug_assert!(store.get(*output).is_some());
 
                 if graph.get_node(*output).is_some() {
                     node_values.push(*output);
                 } else {
-                    return Err(Error::MissingNode);
+                    return Err(Error::UnknownNode(format!(
+                        "the output `{}` for node `{node_id}` does not exist in the graph",
+                        *output
+                    )));
                 }
             }
         }
@@ -79,7 +85,7 @@ where
         trace!("node_to_value_index_map={:?}", node_to_value_index_map);
 
         Ok(Self {
-            tensor: values,
+            tensor: store,
             node_to_tensor_index_map: node_to_value_index_map,
             op_tensors: node_values.into_boxed_slice(),
             instance_state,
@@ -123,9 +129,11 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_float(data)?;
-                let tensor = self
-                    .get_tensor_from_node_id_mut(node_id)
-                    .ok_or(Error::MissingData)?;
+                let tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
+                    Error::UnknownTensor(format!(
+                        "failed to load value: missing tensor for node {node_id}"
+                    ))
+                })?;
                 tensor.init(data)
             }
             _ => unimplemented!(),
@@ -141,10 +149,16 @@ where
             .device(0)
             .expect("We always have one device");
 
-        let tensor = self
-            .get_tensor_from_node_id(node_id)
-            .ok_or(Error::MissingData)?;
-        let ptr = tensor.data().take().ok_or(Error::MissingData)?;
+        let tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
+            Error::UnknownTensor(format!(
+                "failed to get value: missing tensor for node {node_id}"
+            ))
+        })?;
+        let ptr = tensor.data().take().ok_or_else(|| {
+            Error::InvalidTensor(format!(
+                "failed to get value: empty tensor for node {node_id}"
+            ))
+        })?;
 
         match tensor.dtype() {
             DataType::Float => Ok(provider.dtoh_float(ptr)?.into()),

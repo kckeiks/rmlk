@@ -16,7 +16,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {
-        return Err(Error::InvalidTensorDimensions);
+        return Err(Error::InvalidTensorDimensions(x.shape().clone()));
     }
 
     let mut y_shape = Box::new([0; 2]);
@@ -45,7 +45,9 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     // This way we can avoid making a copy of the same data.
     let x = ctx.get_input_mut(0)?;
     let y_dtype = *x.dtype();
-    let data = x._take_data().ok_or(Error::MissingData)?;
+    let data = x
+        ._take_data()
+        .ok_or_else(|| Error::Internal("expected tensor to have data".to_string()))?;
     let y = ctx.get_output_mut(0)?;
     y._reshape(y_shape.to_vec());
     y.init(data);

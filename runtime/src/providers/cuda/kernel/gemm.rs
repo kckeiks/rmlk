@@ -52,14 +52,12 @@ impl GemmKernel {
         );
 
         if matches!(lhs.dtype(), DataType::Float) {
-            let lhs_data = lhs
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
-            let rhs_data = rhs
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected lhs tensor data to be of type `float32`".to_string())
+            })?;
+            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected rhs tensor data to be of type `float32`".to_string())
+            })?;
 
             let mut out_slice = self.device.alloc_zeros(output_size)?;
 
@@ -75,7 +73,10 @@ impl GemmKernel {
             output._reshape(op.calculate_output_shape().to_vec());
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::UnsupportedDataType);
+            return Err(Error::NoSupport(format!(
+                "unsupported dtype `{}`",
+                lhs.dtype()
+            )));
         }
 
         Ok(())

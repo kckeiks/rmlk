@@ -23,20 +23,32 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("dilations") {
             dilations = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `dilations` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );
         }
 
         if let Some(attr) = attrs.get("group") {
-            group = Some(attr.int().ok_or(Error::InvalidAttributeFormat)?);
+            group = Some(attr.int().ok_or_else(|| {
+                Error::InvalidAttribute(
+                    "expected `group` attribute to be of type `[int]`".to_string(),
+                )
+            })?);
         }
 
         if let Some(attr) = attrs.get("kernel_shape") {
             kernel_shape = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `kernel_shape` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );
@@ -45,7 +57,11 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("pads") {
             pads = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `pads` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );
@@ -54,7 +70,11 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("strides") {
             strides = Some(
                 attr.ints()
-                    .ok_or(Error::InvalidAttributeFormat)?
+                    .ok_or_else(|| {
+                        Error::InvalidAttribute(
+                            "expected `strides` attribute to be of type `[int]`".to_string(),
+                        )
+                    })?
                     .to_vec()
                     .into_boxed_slice(),
             );

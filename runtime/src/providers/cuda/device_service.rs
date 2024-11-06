@@ -24,28 +24,32 @@ impl Cuda {
     }
 
     fn load_kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
-        rmlk_cuda::load_kernel(&self.device, op, dtype).map_err(|_| Error::Unknown)
+        rmlk_cuda::load_kernel(&self.device, op, dtype)
+            .map_err(|_| Error::Device("failed to load kernel".to_string()))
     }
 
     pub fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
-        let ptr = self
-            .device
-            .htod_copy(data)
-            .map_err(|_| Error::AllocationFailed)?;
+        let ptr = self.device.htod_copy(data).map_err(|_| {
+            Error::Device(format!(
+                "failed to copy data to device {}",
+                self.device.ordinal()
+            ))
+        })?;
         Ok(CudaData::F32(ptr))
     }
 
     pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         match data {
             CudaData::F32(ptr) => {
-                let result = self
-                    .device
-                    .dtoh_sync_copy::<f32, _>(ptr)
-                    .map_err(|_| Error::AllocationFailed)?;
-
+                let result = self.device.dtoh_sync_copy::<f32, _>(ptr).map_err(|_| {
+                    Error::Device(format!(
+                        "failed to copy data to device {}",
+                        self.device.ordinal()
+                    ))
+                })?;
                 Ok(result)
             }
-            _ => Err(Error::Unknown),
+            _ => Err(Error::NoSupport("unsupported data type".to_string())),
         }
     }
 }
@@ -70,8 +74,7 @@ impl DeviceService for Cuda {
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolKernel::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
-                println!("Unsupported {op:?}");
-                return Err(Error::NotSupportedDD);
+                return Err(Error::NoSupport("no support for op `{op}`".to_string()));
             }
         };
 

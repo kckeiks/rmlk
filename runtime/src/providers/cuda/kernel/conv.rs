@@ -56,14 +56,12 @@ impl ConvKernel {
         utils::calculate_stride(&y_shape, &mut y_stride);
 
         if matches!(x.dtype(), DataType::Float) {
-            let x_data = x
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
-            let w_data = w
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected x tensor data to be of type `float32`".to_string())
+            })?;
+            let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected w tensor data to be of type `float32`".to_string())
+            })?;
 
             let mut y_data = self
                 .device
@@ -120,10 +118,9 @@ impl ConvKernel {
                     let mut bias_stride = vec![0i32; x_shape.len()];
                     utils::calculate_stride(&bias_shape, &mut bias_stride);
 
-                    let bias_data = bias
-                        .data()
-                        .and_then(|data| data.f32())
-                        .ok_or(Error::MissingData)?;
+                    let bias_data = bias.data().and_then(|data| data.f32()).ok_or_else(|| {
+                        Error::Internal("expected tensor data to be of type `float32`".to_string())
+                    })?;
 
                     trace!(
                         "x_data_len={:?},\
@@ -181,7 +178,10 @@ impl ConvKernel {
             output._reshape(y_shape.iter().map(|d| *d as usize).collect());
             output.set_dtype(DataType::Float);
         } else {
-            return Err(Error::UnsupportedDataType);
+            return Err(Error::NoSupport(format!(
+                "unsupported dtype `{}`",
+                x.dtype()
+            )));
         }
 
         Ok(())

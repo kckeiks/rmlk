@@ -53,10 +53,9 @@ impl MaxPoolKernel {
         );
 
         if matches!(x.dtype(), DataType::Float) {
-            let x_data = x
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected tensor data to be of type `float32`".to_string())
+            })?;
 
             let mut y_data = self
                 .device

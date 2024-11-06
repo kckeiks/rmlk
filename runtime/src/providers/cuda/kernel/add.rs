@@ -25,14 +25,12 @@ impl AddKernel {
         let elem_count: usize = lhs.shape().iter().product();
 
         if matches!(lhs.dtype(), &DataType::Float) {
-            let lhs_data = lhs
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
-            let rhs_data = rhs
-                .data()
-                .and_then(|data| data.f32())
-                .ok_or(Error::MissingData)?;
+            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected lhs tensor data to be of type `float32`".to_string())
+            })?;
+            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+                Error::Internal("expected rhs tensor data to be of type `float32`".to_string())
+            })?;
 
             let mut out_slice = unsafe { self.device.alloc::<f32>(elem_count)? };
 
@@ -55,7 +53,10 @@ impl AddKernel {
             result._reshape(result_shape);
             result.set_dtype(DataType::Float);
         } else {
-            return Err(Error::UnsupportedDataType);
+            return Err(Error::NoSupport(format!(
+                "unsupported dtype `{}`",
+                lhs.dtype()
+            )));
         }
 
         Ok(())

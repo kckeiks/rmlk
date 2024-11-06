@@ -9,7 +9,7 @@ use crate::core::store::TensorStore;
 use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
-use log::trace;
+use log::{debug, trace};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
@@ -33,10 +33,15 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*input)
-                .ok_or(Error::MissingNode)?
+                .ok_or_else(|| {
+                    Error::UnknownNode(format!(
+                        "failed to find node {} in the graph schema",
+                        *input
+                    ))
+                })?
                 .name
                 .as_ref()
-                .ok_or(Error::MissingData)?;
+                .ok_or_else(|| Error::MissingNodeInfo("node is missing a name".to_string()))?;
             map_name_to_id.insert(name.clone(), *input);
         }
 
@@ -44,10 +49,15 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*output)
-                .ok_or(Error::MissingNode)?
+                .ok_or_else(|| {
+                    Error::UnknownNode(format!(
+                        "failed to find node {} in the graph schema",
+                        *output
+                    ))
+                })?
                 .name
                 .as_ref()
-                .ok_or(Error::MissingData)?;
+                .ok_or_else(|| Error::MissingNodeInfo("node is missing a name".to_string()))?;
             map_name_to_id.insert(name.clone(), *output);
         }
 
@@ -102,17 +112,24 @@ where
 {
     fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().inputs().count() {
-            return Err(Error::MissingData);
+            debug!("user input: {input:?}");
+            return Err(Error::Input(
+                "expected inputs and user inputs do not match".to_string(),
+            ));
         }
 
         for (input_name, value) in input {
             let node_id = self
                 .instance_state
                 .get_io_node_id(&input_name)
-                .ok_or(Error::MissingNode)?;
+                .ok_or_else(|| {
+                    Error::UnknownNode(format!("failed to find a node ID for input `{input_name}`"))
+                })?;
 
             if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::MissingNode);
+                return Err(Error::UnknownNode(format!(
+                    "failed to find an input node for `{node_id}`"
+                )));
             }
 
             self.execution_state.load_value(node_id, value)?;
@@ -125,11 +142,22 @@ where
         let mut result = HashMap::new();
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {
-                None => return Err(Error::MissingData),
+                None => {
+                    return Err(Error::UnknownNode(format!(
+                        "failed to find an output node for `{output}`"
+                    )))
+                }
                 Some(node) => {
                     let value = self.execution_state.get_value(output)?;
                     result.insert(
-                        node.value().name().ok_or(Error::MissingData)?.to_string(),
+                        node.value()
+                            .name()
+                            .ok_or_else(|| {
+                                Error::MissingNodeInfo(format!(
+                                    "output node {output} is missing a name"
+                                ))
+                            })?
+                            .to_string(),
                         value,
                     );
                 }
@@ -146,7 +174,7 @@ where
             .instance_state
             ._plan()
             .device(0)
-            .expect("We always have one device");
+            .expect("we always have one device");
 
         // Go through the nodes and execute the computation.
         // Todo: use the Plan to know which nodes to compute the output.

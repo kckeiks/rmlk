@@ -35,15 +35,15 @@ impl<T> TensorStore<T> {
             );
 
             let data = match ir_tensor.float_data.is_empty() {
-                true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or(Error::MissingData)?),
+                true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
+                    Error::Internal("failed to parse tensor raw data".to_string())
+                })?),
                 false => {
                     // Todo: remove allocation.
                     ir_tensor.float_data.clone()
                 }
             };
-            let data = provider
-                .htod_float(data)
-                .map_err(|_| Error::AllocationFailed)?;
+            let data = provider.htod_float(data)?;
 
             let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
             tensor.init(data);
@@ -64,7 +64,11 @@ impl<T> TensorStore<T> {
                     };
                     tensors[node_id].replace(tensor);
                 }
-                None => return Err(Error::MissingNode),
+                None => {
+                    return Err(Error::UnknownNode(format!(
+                        "failed to create tensor store: failed to find input node `{node_id}`"
+                    )))
+                }
             }
         }
 
@@ -82,11 +86,15 @@ impl<T> TensorStore<T> {
                     };
                     tensors[node_id].replace(tensor);
                 }
-                None => return Err(Error::MissingNode),
+                None => {
+                    return Err(Error::UnknownNode(format!(
+                        "failed to create tensor store: failed to find output node `{node_id}`"
+                    )))
+                }
             }
         }
 
-        for node in graph.nodes() {
+        for (node_id, node) in graph.node_iter() {
             // We already loaded the initializers.
             if matches!(node.value().op(), Op::Const | Op::NoOp) {
                 continue;
@@ -95,11 +103,24 @@ impl<T> TensorStore<T> {
             for output in node.outputs() {
                 match graph.get_node(*output) {
                     Some(_) => {
-                        if tensors.get(*output).ok_or(Error::MissingNode)?.is_none() {
+                        if tensors.get(*output)
+                            .ok_or_else(|| {
+                                Error::UnknownTensor(
+                                    format!("failed to create tensor store: node {} is referring to an output node ID that is unknown", *output)
+                                )
+                            })?
+                            .is_none()
+                        {
                             tensors[*output].replace(Tensor::new(DataType::Undefined));
                         }
                     }
-                    None => return Err(Error::MissingNode),
+                    None => {
+                        return Err(Error::UnknownNode(format!(
+                            "failed to create tensor store: failed to find output node `{}` for node {}",
+                            *output,
+                            node_id
+                        )))
+                    }
                 }
             }
         }
