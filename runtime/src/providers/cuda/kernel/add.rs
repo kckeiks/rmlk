@@ -1,3 +1,4 @@
+use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -32,7 +33,12 @@ impl AddKernel {
                 KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
-            let mut out_slice = unsafe { self.device.alloc::<f32>(elem_count)? };
+            let mut out_slice = unsafe {
+                self.device
+                    .alloc::<f32>(elem_count)
+                    .map_err(rmlk_cuda::Error::from)
+                    .map_err(DeviceServiceError::from)?
+            };
 
             rmlk_cuda::kernels::add::compute::<f32>(
                 self.device,

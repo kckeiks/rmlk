@@ -1,4 +1,5 @@
 use crate::attributes::gemm::GemmAttributes;
+use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -60,7 +61,11 @@ impl GemmKernel {
                 KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
-            let mut out_slice = self.device.alloc_zeros(output_size)?;
+            let mut out_slice = self
+                .device
+                .alloc_zeros(output_size)
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
 
             let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
 

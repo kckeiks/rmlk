@@ -1,3 +1,4 @@
+use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -37,7 +38,9 @@ impl GlobalAveragePoolKernel {
 
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())?;
+                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
 
             rmlk_cuda::kernels::global_average_pool::compute::<f32>(
                 self.device,

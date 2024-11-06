@@ -1,4 +1,5 @@
 use crate::attributes::conv::ConvAttributes;
+use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -64,7 +65,9 @@ impl ConvKernel {
 
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())?;
+                .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
 
             match ctx.get_input(2).ok() {
                 None => {

@@ -1,4 +1,5 @@
 use crate::attributes::pooling::MaxPoolAttributes;
+use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -57,9 +58,12 @@ impl MaxPoolKernel {
                 KernelError::Other("expected tensor data to be of type `float32`".to_string())
             })?;
 
+            // Todo: move this to DeviceService trait.
             let mut y_data = self
                 .device
-                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())?;
+                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
 
             rmlk_cuda::kernels::max_pool::compute::<f32>(
                 self.device,
