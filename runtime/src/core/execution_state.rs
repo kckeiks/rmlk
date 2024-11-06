@@ -144,7 +144,7 @@ where
         let ptr = tensor.data().take().ok_or(Error::MissingData)?;
 
         match tensor.dtype() {
-            DataType::Float => provider.dtoh_float(ptr)?.into(),
+            DataType::Float => Ok(provider.dtoh_float(ptr)?.into()?),
             _ => unimplemented!(),
         }
     }
