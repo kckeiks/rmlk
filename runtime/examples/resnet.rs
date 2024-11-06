@@ -48,7 +48,7 @@ fn main() {
     )]
     .into();
     let mut output = model_instance.run(input).unwrap();
-    let data: Vec<f32> = output.get("output").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output.remove("output").unwrap().try_into().unwrap();
     let mut output = data.into_iter().enumerate().collect::<Vec<_>>();
     output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());
 
