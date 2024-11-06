@@ -74,7 +74,7 @@ impl DeviceService for Cuda {
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolKernel::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
-                return Err(Error::NoSupport("no support for op `{op}`".to_string()));
+                return Err(Error::NoSupport(format!("no support for op `{op:?}`")));
             }
         };
 
