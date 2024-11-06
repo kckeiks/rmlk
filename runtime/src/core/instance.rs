@@ -9,7 +9,7 @@ use crate::core::values::{Value, Values};
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::trace;
-use rmlk_graph::{Graph, Node};
+use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::sync::Arc;
