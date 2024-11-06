@@ -114,18 +114,19 @@ where
     }
 
     pub fn load_inner_value(&mut self, node_id: usize, value: Value) -> Result<()> {
-        let tensor = self
-            .get_value_from_node_id_mut(node_id)
-            .ok_or(Error::MissingData)?;
-
-        let provider = self
-            .instance_state
-            ._plan()
-            .device(0)
-            .expect("We always have one device");
-
         match value.inner {
-            InnerValue::F32(data) => tensor.init(provider.htod_float(data)?),
+            InnerValue::F32(data) => {
+                let data = self
+                    .instance_state
+                    ._plan()
+                    .device(0)
+                    .expect("We always have one device")
+                    .htod_float(data)?;
+                let tensor = self
+                    .get_value_from_node_id_mut(node_id)
+                    .ok_or(Error::MissingData)?;
+                tensor.init(data)
+            }
             _ => unimplemented!(),
         }
 
@@ -143,7 +144,7 @@ where
         let ptr = tensor.data().take().ok_or(Error::MissingData)?;
 
         match tensor.dtype() {
-            DataType::Float => provider.dtoh_float(ptr)?.try_into(),
+            DataType::Float => provider.dtoh_float(ptr)?.into(),
             _ => unimplemented!(),
         }
     }
