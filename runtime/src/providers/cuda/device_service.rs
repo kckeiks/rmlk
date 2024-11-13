@@ -1,4 +1,5 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError, Result};
+use crate::ops::activation::ActivationOp;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
@@ -52,7 +53,9 @@ impl DeviceService for Cuda {
                 CudaKernel::Add(AddKernel::new(self.device.clone(), f))
             }
             Op::Gemm => CudaKernel::Gemm(GemmKernel::new(self.device.clone())),
-            Op::Relu => CudaKernel::Relu(ActivationKernel::new(self.device.clone())),
+            Op::Relu => CudaKernel::Relu(ActivationOp::new(ActivationKernel::new(
+                self.device.clone(),
+            ))),
             Op::Conv => CudaKernel::Conv(ConvKernel::new(self.device.clone())),
             Op::GlobalAveragePool => {
                 CudaKernel::GlobalAveragePool(GlobalAveragePoolKernel::new(self.device.clone()))
@@ -75,6 +78,13 @@ impl DeviceService for Cuda {
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         self.dtoh_float(data)
+    }
+
+    fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
+        self.device
+            .alloc_zeros(len)
+            .map_err(|e| DeviceServiceError::Cuda(e.into()))
+            .map(CudaData::F32)
     }
 }
 

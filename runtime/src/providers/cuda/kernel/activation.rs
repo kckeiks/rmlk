@@ -1,11 +1,8 @@
-use crate::core::device_service::DeviceServiceError;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::ops::activation::Activation;
 use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
-use log::trace;
-use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct ActivationKernel {
@@ -16,47 +13,37 @@ impl ActivationKernel {
     pub fn new(device: Arc<CudaDevice>) -> Self {
         Self { device }
     }
+}
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let x = ctx.get_input(0)?;
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+impl Activation for ActivationKernel {
+    type Data = CudaData;
+    fn compute(
+        &self,
+        x_data: &Self::Data,
+        x_shape: &[i32],
+        x_stride: &[i32],
+    ) -> Result<Self::Data> {
+        match x_data {
+            CudaData::F32(x_data) => {
+                let mut y_data = self
+                    .device
+                    .alloc_zeros::<f32>(x_shape.iter().product())
+                    .map_err(rmlk_cuda::Error::from)
+                    .map_err(DeviceServiceError::from)?;
 
-        trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
+                rmlk_cuda::kernels::activation::compute::<f32>(
+                    self.device.clone(),
+                    (1.0, 0.0),
+                    x_data,
+                    x_shape,
+                    x_stride,
+                    &mut y_data,
+                )?;
 
-        if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected tensor data to be of type `float32`".to_string())
-            })?;
-
-            let mut y_data = self
-                .device
-                .alloc_zeros(x.shape().iter().product())
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?;
-
-            rmlk_cuda::kernels::activation::compute(
-                self.device,
-                (1.0, 0.0),
-                x_data,
-                &x_shape,
-                &x_stride,
-                &mut y_data,
-            )?;
-
-            let output_shape = x.shape().clone();
-            let output = ctx.get_output_mut(0)?;
-            output.init(CudaData::F32(y_data));
-            output._reshape(output_shape);
-            output.set_dtype(DataType::Float);
-        } else {
-            return Err(KernelError::Other(format!(
-                "unsupported dtype `{:?}`",
-                x.dtype()
-            )));
+                Ok(CudaData::F32(y_data))
+            }
+            _ => Err(KernelError::Other("".to_string())),
         }
-
-        Ok(())
     }
 }
 
@@ -64,7 +51,7 @@ impl ActivationKernel {
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::activation::ActivationKernel;
+    use crate::providers::cuda::kernel::activation::ActivationOp;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
@@ -94,7 +81,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let cuda_kernel = ActivationKernel::new(device.clone());
+        let cuda_kernel = ActivationOp::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

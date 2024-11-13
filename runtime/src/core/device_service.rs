@@ -30,4 +30,6 @@ pub trait DeviceService {
 
     /// Copies `f32` data from device to host.
     fn dtoh_float(&self, data: &Self::Data) -> Result<Vec<f32>>;
+
+    fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data>;
 }
