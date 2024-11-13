@@ -11,6 +11,7 @@ use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
 use crate::ops::conv::ConvolutionOp;
 use crate::ops::flatten::FlattenOp;
+use crate::ops::gemm::GemmOp;
 use crate::providers::cuda::kernel::conv::ConvKernel;
 use crate::providers::cuda::kernel::gemm::GemmKernel;
 use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
@@ -21,7 +22,7 @@ pub enum CudaKernel {
     Add(AddOp<add::AddKernel>),
     Relu(ActivationOp<activation::ActivationKernel>),
     Conv(ConvolutionOp<ConvKernel>),
-    Gemm(GemmKernel),
+    Gemm(GemmOp<GemmKernel>),
     GlobalAveragePool(GlobalAveragePoolKernel),
     MaxPool(MaxPoolKernel),
     Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?

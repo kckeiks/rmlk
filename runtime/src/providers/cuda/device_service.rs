@@ -3,6 +3,7 @@ use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
 use crate::ops::conv::ConvolutionOp;
 use crate::ops::flatten::FlattenOp;
+use crate::ops::gemm::GemmOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
 use crate::providers::cuda::data::CudaData;
@@ -54,7 +55,7 @@ impl DeviceService for Cuda {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Add(AddOp::new(AddKernel::new(self.device.clone(), f)))
             }
-            Op::Gemm => CudaKernel::Gemm(GemmKernel::new(self.device.clone())),
+            Op::Gemm => CudaKernel::Gemm(GemmOp::new(GemmKernel::new(self.device.clone()))),
             Op::Relu => CudaKernel::Relu(ActivationOp::new(ActivationKernel::new(
                 self.device.clone(),
             ))),

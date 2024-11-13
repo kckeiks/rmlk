@@ -2,6 +2,7 @@ use crate::attributes::gemm::GemmAttributes;
 use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
+use crate::ops::gemm::Gemm;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
@@ -83,6 +84,52 @@ impl GemmKernel {
         }
 
         Ok(())
+    }
+}
+
+impl Gemm for GemmKernel {
+    type Data = CudaData;
+
+    fn compute(
+        self,
+        lhs: &Self::Data,
+        lhs_shape: &[usize],
+        lhs_stride: &[usize],
+        rhs: &Self::Data,
+        rhs_shape: &[usize],
+        rhs_stride: &[usize],
+        trans_a: bool,
+        trans_b: bool,
+        alpha: f32,
+        beta: f32,
+    ) -> Result<(Self::Data, [usize; 3])> {
+        let op = GemmOp::new(
+            lhs_shape, lhs_stride, rhs_shape, rhs_stride, trans_a, trans_b,
+        );
+        let output_size = op.calculate_output_shape().iter().product();
+
+        if lhs.f32().is_some() {
+            let mut out_slice = self
+                .device
+                .alloc_zeros(output_size)
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
+
+            let config = op.strided_batch_config((alpha, beta))?;
+
+            let lhs_data = lhs.f32().ok_or_else(|| {
+                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
+            })?;
+            let rhs_data = rhs.f32().ok_or_else(|| {
+                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
+            })?;
+
+            op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
+
+            Ok((CudaData::F32(out_slice), op.calculate_output_shape()))
+        } else {
+            return Err(KernelError::Other("unsupported dtype for gemm".to_string()));
+        }
     }
 }
 
