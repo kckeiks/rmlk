@@ -8,8 +8,8 @@ pub mod max_pool;
 use crate::core::kernel::{Kernel, KernelError, Result};
 use crate::core::Context;
 use crate::ops::activation::ActivationOp;
+use crate::ops::add::AddOp;
 use crate::ops::flatten::FlattenOp;
-use crate::providers::cuda::kernel::add::AddKernel;
 use crate::providers::cuda::kernel::conv::ConvKernel;
 use crate::providers::cuda::kernel::gemm::GemmKernel;
 use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
@@ -17,7 +17,7 @@ use crate::providers::cuda::kernel::max_pool::MaxPoolKernel;
 use crate::providers::cuda::Cuda;
 
 pub enum CudaKernel {
-    Add(AddKernel),
+    Add(AddOp<add::AddKernel>),
     Relu(ActivationOp<activation::ActivationKernel>),
     Conv(ConvKernel),
     Gemm(GemmKernel),

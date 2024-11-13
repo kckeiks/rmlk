@@ -1,8 +1,7 @@
 use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::ops::add::Add;
 use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::Cuda;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_schema::DataType;
 use std::sync::Arc;
@@ -16,20 +15,27 @@ impl AddKernel {
     pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
         Self { device, f }
     }
+}
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(1)?;
+impl Add for AddKernel {
+    type Data = CudaData;
 
-        debug_assert!(lhs.shape() == rhs.shape());
+    fn compute(
+        self,
+        lhs: Self::Data,
+        lhs_shape: &[usize],
+        lhs_dtype: DataType,
+        rhs: Self::Data,
+        _rhs_shape: &[usize],
+        _rhs_dtype: DataType,
+    ) -> Result<Self::Data> {
+        let elem_count: usize = lhs_shape.iter().product();
 
-        let elem_count: usize = lhs.shape().iter().product();
-
-        if matches!(lhs.dtype(), &DataType::Float) {
-            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+        if matches!(lhs_dtype, DataType::Float) {
+            let lhs_data = lhs.f32().ok_or_else(|| {
                 KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
             })?;
-            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+            let rhs_data = rhs.f32().ok_or_else(|| {
                 KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
@@ -52,19 +58,13 @@ impl AddKernel {
                 &mut out_slice,
             )?;
 
-            let result_shape = lhs.shape().clone();
-            let result = ctx.get_output_mut(0)?;
-            result.init(CudaData::F32(out_slice));
-            result._reshape(result_shape);
-            result.set_dtype(DataType::Float);
+            CudaData::F32(out_slice)
         } else {
             return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",
                 lhs.dtype()
             )));
         }
-
-        Ok(())
     }
 }
 

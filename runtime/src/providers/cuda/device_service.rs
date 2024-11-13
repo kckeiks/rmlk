@@ -1,5 +1,6 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError, Result};
 use crate::ops::activation::ActivationOp;
+use crate::ops::add::AddOp;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
@@ -50,7 +51,7 @@ impl DeviceService for Cuda {
             Op::Add => {
                 // Todo: At what point should we load the kernel on device?
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Add(AddKernel::new(self.device.clone(), f))
+                CudaKernel::Add(AddOp::new(AddKernel::new(self.device.clone(), f)))
             }
             Op::Gemm => CudaKernel::Gemm(GemmKernel::new(self.device.clone())),
             Op::Relu => CudaKernel::Relu(ActivationOp::new(ActivationKernel::new(
