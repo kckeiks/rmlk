@@ -1,6 +1,7 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError, Result};
 use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
+use crate::ops::conv::ConvolutionOp;
 use crate::ops::flatten::FlattenOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
@@ -57,7 +58,7 @@ impl DeviceService for Cuda {
             Op::Relu => CudaKernel::Relu(ActivationOp::new(ActivationKernel::new(
                 self.device.clone(),
             ))),
-            Op::Conv => CudaKernel::Conv(ConvKernel::new(self.device.clone())),
+            Op::Conv => CudaKernel::Conv(ConvolutionOp::new(ConvKernel::new(self.device.clone()))),
             Op::GlobalAveragePool => {
                 CudaKernel::GlobalAveragePool(GlobalAveragePoolKernel::new(self.device.clone()))
             }

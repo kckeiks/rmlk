@@ -2,6 +2,7 @@ use crate::attributes::conv::ConvAttributes;
 use crate::core::device_service::DeviceServiceError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
+use crate::ops::conv::Convolution;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -20,46 +21,199 @@ impl ConvKernel {
         Self { device }
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let x = ctx.get_input(0)?;
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+    // pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    //     let x = ctx.get_input(0)?;
+    //     let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+    //     let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+    //
+    //     let w = ctx.get_input(1)?;
+    //
+    //     let filter_dims = match x.shape().len() {
+    //         4 => 2,
+    //         5 => 3,
+    //         _ => {
+    //             unreachable!("we already checked the dimensions of x for the supported dimensions")
+    //         }
+    //     };
+    //
+    //     let attrs = ConvAttributes::new(
+    //         ctx.get_attributes().ok_or(KernelError::MissingAttributes)?,
+    //         filter_dims,
+    //     )?;
+    //
+    //     let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+    //
+    //     let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+    //     rmlk_cuda::kernels::conv::calculate_output_shape(
+    //         &x_shape,
+    //         &w_shape,
+    //         attrs.pads(),
+    //         attrs.strides(),
+    //         attrs.dilations(),
+    //         &mut y_shape,
+    //     )?;
+    //
+    //     let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+    //     utils::calculate_stride(&y_shape, &mut y_stride);
+    //
+    //     if matches!(x.dtype(), DataType::Float) {
+    //         let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+    //             KernelError::Other("expected x tensor data to be of type `float32`".to_string())
+    //         })?;
+    //         let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
+    //             KernelError::Other("expected w tensor data to be of type `float32`".to_string())
+    //         })?;
+    //
+    //         let mut y_data = self
+    //             .device
+    //             .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+    //             .map_err(rmlk_cuda::Error::from)
+    //             .map_err(DeviceServiceError::from)?;
+    //
+    //         match ctx.get_input(2).ok() {
+    //             None => {
+    //                 trace!(
+    //                     "x_data_len={:?},\
+    //                     x_shape={x_shape:?},\
+    //                     x_stride={x_stride:?},\
+    //                     w_data_len={:?},\
+    //                     w_shape={w_shape:?},\
+    //                     pads={:?},\
+    //                     strides={:?},\
+    //                     dilations={:?},\
+    //                     group={:?},\
+    //                     y_data_len={:?},\
+    //                     y_shape={y_shape:?},\
+    //                     y_stride={y_stride:?}",
+    //                     x_data.len(),
+    //                     w_data.len(),
+    //                     attrs.pads(),
+    //                     attrs.strides(),
+    //                     attrs.dilations(),
+    //                     attrs.group(),
+    //                     y_data.len(),
+    //                 );
+    //
+    //                 rmlk_cuda::kernels::conv::compute::<f32>(
+    //                     self.device,
+    //                     (1.0, 0.0),
+    //                     &x_data,
+    //                     &x_shape,
+    //                     &x_stride,
+    //                     &w_data,
+    //                     &w_shape,
+    //                     attrs.pads(),
+    //                     attrs.strides(),
+    //                     attrs.dilations(),
+    //                     attrs.group(),
+    //                     None,
+    //                     &mut y_data,
+    //                     &y_shape,
+    //                     &y_stride,
+    //                 )?;
+    //             }
+    //             Some(bias) => {
+    //                 let mut bias_shape = vec![1i32; x_shape.len()];
+    //                 // Todo: Urgent. We need to make this generic.
+    //                 bias_shape[1] = bias.shape()[0] as i32;
+    //
+    //                 let mut bias_stride = vec![0i32; x_shape.len()];
+    //                 utils::calculate_stride(&bias_shape, &mut bias_stride);
+    //
+    //                 let bias_data = bias.data().and_then(|data| data.f32()).ok_or_else(|| {
+    //                     KernelError::Other(
+    //                         "expected tensor data to be of type `float32`".to_string(),
+    //                     )
+    //                 })?;
+    //
+    //                 trace!(
+    //                     "x_data_len={:?},\
+    //                     x_shape={x_shape:?},\
+    //                     x_stride={x_stride:?},\
+    //                     w_data_len={:?},\
+    //                     w_shape={w_shape:?},\
+    //                     pads={:?},\
+    //                     strides={:?},\
+    //                     dilations={:?},\
+    //                     group={:?},\
+    //                     y_data_len={:?},\
+    //                     y_shape={y_shape:?},\
+    //                     y_stride={y_stride:?}\
+    //                     bias_shape={bias_shape:?},\
+    //                     bias_stride={bias_stride:?}",
+    //                     x_data.len(),
+    //                     w_data.len(),
+    //                     attrs.pads(),
+    //                     attrs.strides(),
+    //                     attrs.dilations(),
+    //                     attrs.group(),
+    //                     y_data.len(),
+    //                 );
+    //
+    //                 let bias = BiasInput {
+    //                     data: bias_data,
+    //                     shape: &bias_shape,
+    //                     stride: &bias_stride,
+    //                 };
+    //
+    //                 rmlk_cuda::kernels::conv::compute::<f32>(
+    //                     self.device,
+    //                     (1.0, 0.0),
+    //                     &x_data,
+    //                     &x_shape,
+    //                     &x_stride,
+    //                     &w_data,
+    //                     &w_shape,
+    //                     attrs.pads(),
+    //                     attrs.strides(),
+    //                     attrs.dilations(),
+    //                     attrs.group(),
+    //                     Some(bias),
+    //                     &mut y_data,
+    //                     &y_shape,
+    //                     &y_stride,
+    //                 )?;
+    //             }
+    //         }
+    //
+    //         let output = ctx.get_output_mut(0)?;
+    //         output.init(CudaData::F32(y_data));
+    //         output._reshape(y_shape.iter().map(|d| *d as usize).collect());
+    //         output.set_dtype(DataType::Float);
+    //     } else {
+    //         return Err(KernelError::Other(format!(
+    //             "unsupported dtype `{:?}`",
+    //             x.dtype()
+    //         )));
+    //     }
+    //
+    //     Ok(())
+    // }
+}
 
-        let w = ctx.get_input(1)?;
+impl Convolution for ConvKernel {
+    type Data = CudaData;
 
-        let filter_dims = match x.shape().len() {
-            4 => 2,
-            5 => 3,
-            _ => {
-                unreachable!("we already checked the dimensions of x for the supported dimensions")
-            }
-        };
-
-        let attrs = ConvAttributes::new(
-            ctx.get_attributes().ok_or(KernelError::MissingAttributes)?,
-            filter_dims,
-        )?;
-
-        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-        rmlk_cuda::kernels::conv::calculate_output_shape(
-            &x_shape,
-            &w_shape,
-            attrs.pads(),
-            attrs.strides(),
-            attrs.dilations(),
-            &mut y_shape,
-        )?;
-
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-        utils::calculate_stride(&y_shape, &mut y_stride);
-
-        if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+    fn compute(
+        self,
+        x_data: &Self::Data,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        w_data: &Self::Data,
+        w_shape: &[i32],
+        pads: &[i32],
+        strides: &[i32],
+        dilations: &[i32],
+        group: i32,
+        bias: Option<crate::ops::conv::BiasInput<Self::Data>>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<Self::Data> {
+        if x_data.f32().is_some() {
+            let x_data = x_data.f32().ok_or_else(|| {
                 KernelError::Other("expected x tensor data to be of type `float32`".to_string())
             })?;
-            let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
+            let w_data = w_data.f32().ok_or_else(|| {
                 KernelError::Other("expected w tensor data to be of type `float32`".to_string())
             })?;
 
@@ -69,124 +223,44 @@ impl ConvKernel {
                 .map_err(rmlk_cuda::Error::from)
                 .map_err(DeviceServiceError::from)?;
 
-            match ctx.get_input(2).ok() {
-                None => {
-                    trace!(
-                        "x_data_len={:?},\
-                        x_shape={x_shape:?},\
-                        x_stride={x_stride:?},\
-                        w_data_len={:?},\
-                        w_shape={w_shape:?},\
-                        pads={:?},\
-                        strides={:?},\
-                        dilations={:?},\
-                        group={:?},\
-                        y_data_len={:?},\
-                        y_shape={y_shape:?},\
-                        y_stride={y_stride:?}",
-                        x_data.len(),
-                        w_data.len(),
-                        attrs.pads(),
-                        attrs.strides(),
-                        attrs.dilations(),
-                        attrs.group(),
-                        y_data.len(),
-                    );
-
-                    rmlk_cuda::kernels::conv::compute::<f32>(
-                        self.device,
-                        (1.0, 0.0),
-                        &x_data,
-                        &x_shape,
-                        &x_stride,
-                        &w_data,
-                        &w_shape,
-                        attrs.pads(),
-                        attrs.strides(),
-                        attrs.dilations(),
-                        attrs.group(),
-                        None,
-                        &mut y_data,
-                        &y_shape,
-                        &y_stride,
-                    )?;
-                }
-                Some(bias) => {
-                    let mut bias_shape = vec![1i32; x_shape.len()];
-                    // Todo: Urgent. We need to make this generic.
-                    bias_shape[1] = bias.shape()[0] as i32;
-
-                    let mut bias_stride = vec![0i32; x_shape.len()];
-                    utils::calculate_stride(&bias_shape, &mut bias_stride);
-
-                    let bias_data = bias.data().and_then(|data| data.f32()).ok_or_else(|| {
+            let bias = match bias {
+                None => None,
+                Some(b) => {
+                    let data = b.data.f32().ok_or_else(|| {
                         KernelError::Other(
-                            "expected tensor data to be of type `float32`".to_string(),
+                            "expected w tensor data to be of type `float32`".to_string(),
                         )
                     })?;
-
-                    trace!(
-                        "x_data_len={:?},\
-                        x_shape={x_shape:?},\
-                        x_stride={x_stride:?},\
-                        w_data_len={:?},\
-                        w_shape={w_shape:?},\
-                        pads={:?},\
-                        strides={:?},\
-                        dilations={:?},\
-                        group={:?},\
-                        y_data_len={:?},\
-                        y_shape={y_shape:?},\
-                        y_stride={y_stride:?}\
-                        bias_shape={bias_shape:?},\
-                        bias_stride={bias_stride:?}",
-                        x_data.len(),
-                        w_data.len(),
-                        attrs.pads(),
-                        attrs.strides(),
-                        attrs.dilations(),
-                        attrs.group(),
-                        y_data.len(),
-                    );
-
-                    let bias = BiasInput {
-                        data: bias_data,
-                        shape: &bias_shape,
-                        stride: &bias_stride,
-                    };
-
-                    rmlk_cuda::kernels::conv::compute::<f32>(
-                        self.device,
-                        (1.0, 0.0),
-                        &x_data,
-                        &x_shape,
-                        &x_stride,
-                        &w_data,
-                        &w_shape,
-                        attrs.pads(),
-                        attrs.strides(),
-                        attrs.dilations(),
-                        attrs.group(),
-                        Some(bias),
-                        &mut y_data,
-                        &y_shape,
-                        &y_stride,
-                    )?;
+                    Some(BiasInput {
+                        data,
+                        shape: b.shape,
+                        stride: b.stride,
+                    })
                 }
-            }
+            };
 
-            let output = ctx.get_output_mut(0)?;
-            output.init(CudaData::F32(y_data));
-            output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-            output.set_dtype(DataType::Float);
+            rmlk_cuda::kernels::conv::compute::<f32>(
+                self.device,
+                (1.0, 0.0),
+                &x_data,
+                &x_shape,
+                &x_stride,
+                &w_data,
+                &w_shape,
+                pads,
+                strides,
+                dilations,
+                group,
+                bias,
+                &mut y_data,
+                &y_shape,
+                &y_stride,
+            )?;
+
+            return Ok(CudaData::F32(y_data));
         } else {
-            return Err(KernelError::Other(format!(
-                "unsupported dtype `{:?}`",
-                x.dtype()
-            )));
+            return Err(KernelError::Other("unsupported dtype".to_string()));
         }
-
-        Ok(())
     }
 }
 

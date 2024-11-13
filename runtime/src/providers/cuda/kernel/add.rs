@@ -22,10 +22,10 @@ impl Add for AddKernel {
 
     fn compute(
         self,
-        lhs: Self::Data,
+        lhs: &Self::Data,
         lhs_shape: &[usize],
         lhs_dtype: DataType,
-        rhs: Self::Data,
+        rhs: &Self::Data,
         _rhs_shape: &[usize],
         _rhs_dtype: DataType,
     ) -> Result<Self::Data> {

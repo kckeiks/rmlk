@@ -7,10 +7,10 @@ pub trait Add {
     type Data;
     fn compute(
         self,
-        lhs: Self::Data,
+        lhs: &Self::Data,
         lhs_shape: &[usize],
         lhs_dtype: DataType,
-        rhs: Self::Data,
+        rhs: &Self::Data,
         rhs_shape: &[usize],
         rhs_dtype: DataType,
     ) -> Result<Self::Data>;
@@ -34,11 +34,19 @@ where
 
         debug_assert!(lhs.shape() == rhs.shape());
 
+        let lhs_data = lhs
+            .data()
+            .ok_or_else(|| KernelError::Other("expected data in the tensor".to_string()))?;
+
+        let rhs_data = rhs
+            .data()
+            .ok_or_else(|| KernelError::Other("expected data in the tensor".to_string()))?;
+
         let output = self.kernel.compute(
-            lhs,
+            lhs_data,
             lhs.shape().as_slice(),
             *lhs.dtype(),
-            rhs,
+            rhs_data,
             rhs.shape().as_slice(),
             *rhs.dtype(),
         )?;

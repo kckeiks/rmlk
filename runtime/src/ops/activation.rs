@@ -29,9 +29,9 @@ where
 
         trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
 
-        let x_data = x.data().ok_or_else(|| {
-            KernelError::Other("expected tensor data to be of type `float32`".to_string())
-        })?;
+        let x_data = x
+            .data()
+            .ok_or_else(|| KernelError::Other("expected data in the tensor".to_string()))?;
 
         let y_data = self.kernel.compute(x_data, &x_shape, &x_stride)?;
 
