@@ -1,14 +1,9 @@
-use crate::attributes::pooling::MaxPoolAttributes;
-use crate::core::device_service::DeviceServiceError;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
 use crate::ops::max_pool::MaxPool;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use crate::utils;
 use cudarc::driver::CudaDevice;
-use log::trace;
-use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct MaxPoolKernel {
@@ -93,11 +88,11 @@ impl MaxPoolKernel {
 }
 
 impl MaxPool for MaxPoolKernel {
-    type Data = CudaData;
+    type Service = Cuda;
 
     fn compute(
         self,
-        x_data: &Self::Data,
+        x_data: &<Self::Service as DeviceService>::Data,
         x_shape: &[i32],
         x_stride: &[i32],
         kernel_shape: &[i32],
@@ -105,7 +100,7 @@ impl MaxPool for MaxPoolKernel {
         strides: &[i32],
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<Self::Data> {
+    ) -> Result<<Self::Service as DeviceService>::Data> {
         if x_data.f32().is_some() {
             let x_data = x_data.f32().ok_or_else(|| {
                 KernelError::Other("expected tensor data to be of type `float32`".to_string())

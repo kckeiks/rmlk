@@ -8,10 +8,10 @@ use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub trait MaxPool {
-    type Data;
+    type Service: DeviceService;
     fn compute(
         self,
-        x_data: &Self::Data,
+        x_data: &<Self::Service as DeviceService>::Data,
         x_shape: &[i32],
         x_stride: &[i32],
         kernel_shape: &[i32],
@@ -19,7 +19,7 @@ pub trait MaxPool {
         strides: &[i32],
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<Self::Data>;
+    ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
 pub struct MaxPoolOp<T> {
@@ -34,7 +34,7 @@ where
         Self { kernel }
     }
 
-    pub fn compute<D: DeviceService>(self, ctx: &mut Context<D>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();

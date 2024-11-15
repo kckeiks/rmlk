@@ -1,5 +1,5 @@
 use crate::attributes::conv::ConvAttributes;
-use crate::core::device_service::DeviceServiceError;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::ops::conv::Convolution;
@@ -192,14 +192,14 @@ impl ConvKernel {
 }
 
 impl Convolution for ConvKernel {
-    type Data = CudaData;
+    type Service = Cuda;
 
     fn compute(
         self,
-        x_data: &Self::Data,
+        x_data: &<Self::Service as DeviceService>::Data,
         x_shape: &[i32],
         x_stride: &[i32],
-        w_data: &Self::Data,
+        w_data: &<Self::Service as DeviceService>::Data,
         w_shape: &[i32],
         pads: &[i32],
         strides: &[i32],
@@ -208,7 +208,7 @@ impl Convolution for ConvKernel {
         bias: Option<crate::ops::conv::BiasInput<Self::Data>>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<Self::Data> {
+    ) -> Result<<Self::Service as DeviceService>::Data> {
         if x_data.f32().is_some() {
             let x_data = x_data.f32().ok_or_else(|| {
                 KernelError::Other("expected x tensor data to be of type `float32`".to_string())

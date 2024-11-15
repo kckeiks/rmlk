@@ -4,16 +4,16 @@ use crate::core::Context;
 use rmlk_schema::DataType;
 
 pub trait Add {
-    type Data;
+    type Service: DeviceService;
     fn compute(
         self,
-        lhs: &Self::Data,
+        lhs: &<Self::Service as DeviceService>::Data,
         lhs_shape: &[usize],
         lhs_dtype: DataType,
-        rhs: &Self::Data,
+        rhs: &<Self::Service as DeviceService>::Data,
         rhs_shape: &[usize],
         rhs_dtype: DataType,
-    ) -> Result<Self::Data>;
+    ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
 pub struct AddOp<T> {
@@ -28,7 +28,7 @@ where
         Self { kernel }
     }
 
-    pub fn compute<D: DeviceService>(self, ctx: &mut Context<D>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 

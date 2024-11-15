@@ -4,21 +4,21 @@ use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 
 pub trait Gemm {
-    type Data;
+    type Service: DeviceService;
     // Todo: refactor so you can remove the shape output.
     fn compute(
         self,
-        lhs: &Self::Data,
+        lhs: &<Self::Service as DeviceService>::Data,
         lhs_shape: &[usize],
         lhs_stride: &[usize],
-        rhs: &Self::Data,
+        rhs: &<Self::Service as DeviceService>::Data,
         rhs_shape: &[usize],
         rhs_stride: &[usize],
         trans_a: bool,
         trans_b: bool,
         alpha: f32,
         beta: f32,
-    ) -> Result<(Self::Data, [usize; 3])>;
+    ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])>;
 }
 
 pub struct GemmOp<T> {
@@ -33,7 +33,7 @@ where
         Self { kernel }
     }
 
-    pub fn compute<D: DeviceService>(self, ctx: &mut Context<D>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 

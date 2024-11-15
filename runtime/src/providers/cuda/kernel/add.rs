@@ -1,7 +1,8 @@
-use crate::core::device_service::DeviceServiceError;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
 use crate::ops::add::Add;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
 use cudarc::driver::{CudaDevice, CudaFunction};
 use rmlk_schema::DataType;
 use std::sync::Arc;
@@ -18,17 +19,17 @@ impl AddKernel {
 }
 
 impl Add for AddKernel {
-    type Data = CudaData;
+    type Service = Cuda;
 
     fn compute(
         self,
-        lhs: &Self::Data,
+        lhs: &CudaData,
         lhs_shape: &[usize],
         lhs_dtype: DataType,
-        rhs: &Self::Data,
+        rhs: &CudaData,
         _rhs_shape: &[usize],
         _rhs_dtype: DataType,
-    ) -> Result<Self::Data> {
+    ) -> Result<CudaData> {
         let elem_count: usize = lhs_shape.iter().product();
 
         if matches!(lhs_dtype, DataType::Float) {

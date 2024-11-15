@@ -1,5 +1,5 @@
 use crate::attributes::gemm::GemmAttributes;
-use crate::core::device_service::DeviceServiceError;
+use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
 use crate::core::Context;
 use crate::ops::gemm::Gemm;
@@ -20,89 +20,89 @@ impl GemmKernel {
         Self { device }
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(1)?;
-
-        let attrs =
-            GemmAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
-
-        let op = GemmOp::new(
-            lhs.shape(),
-            lhs.stride(),
-            rhs.shape(),
-            rhs.stride(),
-            attrs.trans_a(),
-            attrs.trans_b(),
-        );
-        let output_size = op.calculate_output_shape().iter().product();
-
-        trace!(
-            "lhs_dtype={:?},\
-            lhs_shape={:?},\
-            lhs_stride={:?},\
-            rhs_shape={:?},\
-            rhs_stride={:?},\
-            trans_a={:?},\
-            trans_b={:?}",
-            lhs.dtype(),
-            lhs.shape(),
-            lhs.stride(),
-            rhs.shape(),
-            rhs.stride(),
-            attrs.trans_a(),
-            attrs.trans_b(),
-        );
-
-        if matches!(lhs.dtype(), DataType::Float) {
-            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
-            })?;
-            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
-            })?;
-
-            let mut out_slice = self
-                .device
-                .alloc_zeros(output_size)
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?;
-
-            let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
-
-            op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
-
-            let output = ctx.get_output_mut(0)?;
-            output.init(CudaData::F32(out_slice));
-            output._reshape(op.calculate_output_shape().to_vec());
-            output.set_dtype(DataType::Float);
-        } else {
-            return Err(KernelError::Other(format!(
-                "unsupported dtype `{:?}`",
-                lhs.dtype()
-            )));
-        }
-
-        Ok(())
-    }
+    // pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    //     let lhs = ctx.get_input(0)?;
+    //     let rhs = ctx.get_input(1)?;
+    //
+    //     let attrs =
+    //         GemmAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
+    //
+    //     let op = GemmOp::new(
+    //         lhs.shape(),
+    //         lhs.stride(),
+    //         rhs.shape(),
+    //         rhs.stride(),
+    //         attrs.trans_a(),
+    //         attrs.trans_b(),
+    //     );
+    //     let output_size = op.calculate_output_shape().iter().product();
+    //
+    //     trace!(
+    //         "lhs_dtype={:?},\
+    //         lhs_shape={:?},\
+    //         lhs_stride={:?},\
+    //         rhs_shape={:?},\
+    //         rhs_stride={:?},\
+    //         trans_a={:?},\
+    //         trans_b={:?}",
+    //         lhs.dtype(),
+    //         lhs.shape(),
+    //         lhs.stride(),
+    //         rhs.shape(),
+    //         rhs.stride(),
+    //         attrs.trans_a(),
+    //         attrs.trans_b(),
+    //     );
+    //
+    //     if matches!(lhs.dtype(), DataType::Float) {
+    //         let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+    //             KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
+    //         })?;
+    //         let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+    //             KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
+    //         })?;
+    //
+    //         let mut out_slice = self
+    //             .device
+    //             .alloc_zeros(output_size)
+    //             .map_err(rmlk_cuda::Error::from)
+    //             .map_err(DeviceServiceError::from)?;
+    //
+    //         let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
+    //
+    //         op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
+    //
+    //         let output = ctx.get_output_mut(0)?;
+    //         output.init(CudaData::F32(out_slice));
+    //         output._reshape(op.calculate_output_shape().to_vec());
+    //         output.set_dtype(DataType::Float);
+    //     } else {
+    //         return Err(KernelError::Other(format!(
+    //             "unsupported dtype `{:?}`",
+    //             lhs.dtype()
+    //         )));
+    //     }
+    //
+    //     Ok(())
+    // }
 }
 
 impl Gemm for GemmKernel {
-    type Data = CudaData;
+    type Service = Cuda;
 
     fn compute(
         self,
-        lhs: &Self::Data,
+        lhs: &<Self::Service as DeviceService>::Data,
         lhs_shape: &[usize],
         lhs_stride: &[usize],
-        rhs: &Self::Data,
+        rhs: &<Self::Service as DeviceService>::Data,
         rhs_shape: &[usize],
         rhs_stride: &[usize],
         trans_a: bool,
         trans_b: bool,
         alpha: f32,
         beta: f32,
-    ) -> Result<(Self::Data, [usize; 3])> {
+    ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])> {
         let op = GemmOp::new(
             lhs_shape, lhs_stride, rhs_shape, rhs_stride, trans_a, trans_b,
         );

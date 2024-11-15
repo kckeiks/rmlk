@@ -5,9 +5,13 @@ use log::trace;
 use rmlk_schema::DataType;
 
 pub trait Activation {
-    type Data;
-    fn compute(&self, x_data: &Self::Data, x_shape: &[i32], x_stride: &[i32])
-        -> Result<Self::Data>;
+    type Service: DeviceService;
+    fn compute(
+        &self,
+        x_data: &<Self::Service as DeviceService>::Data,
+        x_shape: &[i32],
+        x_stride: &[i32],
+    ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
 pub struct ActivationOp<T> {
@@ -22,7 +26,7 @@ where
         Self { kernel }
     }
 
-    pub fn compute<D: DeviceService>(self, ctx: &mut Context<D>) -> Result<()> {
+    pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();

@@ -2,6 +2,7 @@ use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
 use crate::ops::activation::Activation;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use std::sync::Arc;
 
@@ -16,13 +17,13 @@ impl ActivationKernel {
 }
 
 impl Activation for ActivationKernel {
-    type Data = CudaData;
+    type Service = Cuda;
     fn compute(
         &self,
-        x_data: &Self::Data,
+        x_data: &<Self::Service as DeviceService>::Data,
         x_shape: &[i32],
         x_stride: &[i32],
-    ) -> Result<Self::Data> {
+    ) -> Result<<Self::Service as DeviceService>::Data> {
         match x_data {
             CudaData::F32(x_data) => {
                 let mut y_data = self
