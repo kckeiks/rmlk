@@ -5,6 +5,7 @@ use crate::ops::conv::ConvolutionOp;
 use crate::ops::flatten::FlattenOp;
 use crate::ops::gemm::GemmOp;
 use crate::ops::global_average::GlobalAverageOp;
+use crate::ops::max_pool::MaxPoolOp;
 use crate::providers::cuda::activation::ActivationKernel;
 use crate::providers::cuda::conv::ConvKernel;
 use crate::providers::cuda::data::CudaData;
@@ -64,7 +65,9 @@ impl DeviceService for Cuda {
             Op::GlobalAveragePool => CudaKernel::GlobalAveragePool(GlobalAverageOp::new(
                 GlobalAveragePoolKernel::new(self.device.clone()),
             )),
-            Op::MaxPool => CudaKernel::MaxPool(MaxPoolKernel::new(self.device.clone())),
+            Op::MaxPool => {
+                CudaKernel::MaxPool(MaxPoolOp::new(MaxPoolKernel::new(self.device.clone())))
+            }
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
                 return Err(DeviceServiceError::Other(format!(
