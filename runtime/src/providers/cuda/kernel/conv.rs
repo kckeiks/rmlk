@@ -205,7 +205,7 @@ impl Convolution for ConvKernel {
         strides: &[i32],
         dilations: &[i32],
         group: i32,
-        bias: Option<crate::ops::conv::BiasInput<Self::Data>>,
+        bias: Option<crate::ops::conv::BiasInput<<Self::Service as DeviceService>::Data>>,
         y_shape: &[i32],
         y_stride: &[i32],
     ) -> Result<<Self::Service as DeviceService>::Data> {

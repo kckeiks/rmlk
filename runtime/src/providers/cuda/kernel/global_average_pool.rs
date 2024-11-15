@@ -70,7 +70,7 @@ impl GlobalAveragePoolKernel {
 }
 
 impl GlobalAverage for GlobalAveragePoolKernel {
-    type Service = CudaData;
+    type Service = Cuda;
 
     fn compute(
         self,
