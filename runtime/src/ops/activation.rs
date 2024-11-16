@@ -1,5 +1,5 @@
 use crate::core::device_service::DeviceService;
-use crate::core::kernel::{KernelError, Result};
+use crate::core::kernel::Result;
 use crate::core::{Context, Tensor};
 use log::trace;
 use rmlk_schema::DataType;

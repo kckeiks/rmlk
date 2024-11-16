@@ -1,11 +1,9 @@
 use crate::attributes::pooling::MaxPoolAttributes;
-use crate::core::device_service::{DeviceService, DeviceServiceError};
+use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{Context, Tensor};
 use crate::utils;
 use log::trace;
-use rmlk_schema::DataType;
-use std::sync::Arc;
 
 pub trait MaxPool {
     type Service: DeviceService;

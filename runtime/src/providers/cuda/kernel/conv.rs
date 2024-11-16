@@ -4,7 +4,7 @@ use crate::core::Tensor;
 use crate::ops::conv::Convolution;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, DeviceSlice};
+use cudarc::driver::CudaDevice;
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::DataType;
 use std::sync::Arc;

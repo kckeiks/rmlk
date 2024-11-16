@@ -74,13 +74,6 @@ where
         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
         utils::calculate_stride(&y_shape, &mut y_stride);
 
-        let x_data = x.data().ok_or_else(|| {
-            KernelError::Other("expected x tensor data to be of type `float32`".to_string())
-        })?;
-        let w_data = w.data().ok_or_else(|| {
-            KernelError::Other("expected w tensor data to be of type `float32`".to_string())
-        })?;
-
         let y_data = match ctx.get_input(2).ok() {
             None => self.kernel.compute(
                 &x,

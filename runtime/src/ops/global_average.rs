@@ -1,8 +1,7 @@
-use crate::core::device_service::{DeviceService, DeviceServiceError};
-use crate::core::kernel::{KernelError, Result};
+use crate::core::device_service::DeviceService;
+use crate::core::kernel::Result;
 use crate::core::{Context, Tensor};
 use crate::utils;
-use rmlk_schema::DataType;
 
 pub trait GlobalAverage {
     type Service: DeviceService;
