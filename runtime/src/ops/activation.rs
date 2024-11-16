@@ -27,7 +27,7 @@ where
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
-        trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
+        trace!("x_shape={:?},x_stride={:?}", x.shape(), x.stride());
 
         let y_data = self.kernel.compute(x)?;
 
