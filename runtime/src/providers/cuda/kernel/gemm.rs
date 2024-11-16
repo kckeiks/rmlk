@@ -6,6 +6,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use rmlk_cuda::kernels::gemm::GemmOp;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct GemmKernel {
@@ -40,7 +41,7 @@ impl Gemm for GemmKernel {
         );
         let output_size = op.calculate_output_shape().iter().product();
 
-        if lhs.f32().is_some() {
+        if matches!(lhs.dtype(), DataType::Float) {
             let mut out_slice = self
                 .device
                 .alloc_zeros(output_size)
@@ -49,10 +50,10 @@ impl Gemm for GemmKernel {
 
             let config = op.strided_batch_config((alpha, beta))?;
 
-            let lhs_data = lhs.f32().ok_or_else(|| {
+            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
             })?;
-            let rhs_data = rhs.f32().ok_or_else(|| {
+            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
@@ -60,7 +61,7 @@ impl Gemm for GemmKernel {
 
             Ok((CudaData::F32(out_slice), op.calculate_output_shape()))
         } else {
-            return Err(KernelError::Other("unsupported dtype for gemm".to_string()));
+            Err(KernelError::Other("unsupported dtype for gemm".to_string()))
         }
     }
 }

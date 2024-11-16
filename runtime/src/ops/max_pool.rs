@@ -70,13 +70,9 @@ where
             attrs.strides()
         );
 
-        let x_data = x.data().ok_or_else(|| {
-            KernelError::Other("expected tensor data to be of type `float32`".to_string())
-        })?;
-
         // Todo: move this to DeviceService trait.
         let y_data = self.kernel.compute(
-            &x_data,
+            &x,
             attrs.kernel_shape(),
             attrs.pads(),
             attrs.strides(),

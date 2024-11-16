@@ -36,20 +36,9 @@ where
         let attrs =
             GemmAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
 
-        let lhs_data = lhs.data().ok_or_else(|| {
-            KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
-        })?;
-        let rhs_data = rhs.data().ok_or_else(|| {
-            KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
-        })?;
-
         let (out_data, output_shape) = self.kernel.compute(
-            lhs_data,
-            lhs.shape(),
-            lhs.stride(),
-            rhs_data,
-            rhs.shape(),
-            rhs.stride(),
+            lhs,
+            rhs,
             attrs.trans_a(),
             attrs.trans_b(),
             attrs.alpha(),
