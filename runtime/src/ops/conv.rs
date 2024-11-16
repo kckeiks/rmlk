@@ -134,12 +134,12 @@ where
             }
         };
 
-        let output_dtype = x.dtype();
+        let output_dtype = *x.dtype();
 
         let output = ctx.get_output_mut(0)?;
         output.init(y_data);
         output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-        output.set_dtype(*output_dtype);
+        output.set_dtype(output_dtype);
 
         Ok(())
     }

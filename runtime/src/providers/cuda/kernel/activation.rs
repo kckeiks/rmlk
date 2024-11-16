@@ -29,7 +29,7 @@ impl Activation for ActivationKernel {
                 let mut y_data = self
                     .device
                     .alloc_zeros::<f32>(
-                        usize::try_from(x_shape.iter().product())
+                        usize::try_from(x_shape.iter().copied().product::<i32>())
                             .map_err(|e| KernelError::Other(format!("failed convert: {e:?}")))?,
                     )
                     .map_err(rmlk_cuda::Error::from)
