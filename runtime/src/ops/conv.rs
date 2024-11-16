@@ -1,9 +1,8 @@
 use crate::attributes::conv::ConvAttributes;
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::core::{Context, Tensor};
 use crate::utils;
-use rmlk_schema::DataType;
 
 pub struct BiasInput<'a, T> {
     pub data: &'a T,
@@ -15,11 +14,8 @@ pub trait Convolution {
     type Service: DeviceService;
     fn compute(
         self,
-        x_data: &<Self::Service as DeviceService>::Data,
-        x_shape: &[i32],
-        x_stride: &[i32],
-        w_data: &<Self::Service as DeviceService>::Data,
-        w_shape: &[i32],
+        x: &Tensor<<Self::Service as DeviceService>::Data>,
+        w: &Tensor<<Self::Service as DeviceService>::Data>,
         pads: &[i32],
         strides: &[i32],
         dilations: &[i32],
@@ -44,8 +40,8 @@ where
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
+        // Todo: reuse buffers.
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let w = ctx.get_input(1)?;
 
@@ -62,6 +58,7 @@ where
             filter_dims,
         )?;
 
+        // Todo: reuse buffers.
         let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
@@ -86,11 +83,8 @@ where
 
         let y_data = match ctx.get_input(2).ok() {
             None => self.kernel.compute(
-                &x_data,
-                &x_shape,
-                &x_stride,
-                &w_data,
-                &w_shape,
+                &x,
+                &w,
                 attrs.pads(),
                 attrs.strides(),
                 attrs.dilations(),
@@ -118,11 +112,8 @@ where
                 };
 
                 self.kernel.compute(
-                    &x_data,
-                    &x_shape,
-                    &x_stride,
-                    &w_data,
-                    &w_shape,
+                    &x,
+                    &w,
                     attrs.pads(),
                     attrs.strides(),
                     attrs.dilations(),
