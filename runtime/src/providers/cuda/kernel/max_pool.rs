@@ -1,9 +1,11 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
+use crate::core::Tensor;
 use crate::ops::max_pool::MaxPool;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct MaxPoolKernel {
@@ -14,77 +16,6 @@ impl MaxPoolKernel {
     pub fn new(device: Arc<CudaDevice>) -> Self {
         Self { device }
     }
-
-    // pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-    //     let x = ctx.get_input(0)?;
-    //     let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-    //     let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-    //
-    //     let attrs =
-    //         MaxPoolAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
-    //
-    //     let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-    //     rmlk_cuda::kernels::max_pool::compute_output_shape(
-    //         &x_shape,
-    //         attrs.kernel_shape(),
-    //         attrs.pads(),
-    //         attrs.strides(),
-    //         &mut y_shape,
-    //         false,
-    //     )?;
-    //
-    //     let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-    //     utils::calculate_stride(&y_shape, &mut y_stride);
-    //
-    //     trace!(
-    //         "x_shape={x_shape:?},\
-    //         x_stride={x_stride:?},\
-    //         kernel_shape={:?},\
-    //         pads={:?},\
-    //         strides={:?}\
-    //         y_shape={y_shape:?}\
-    //         y_stride={y_stride:?}",
-    //         attrs.kernel_shape(),
-    //         attrs.pads(),
-    //         attrs.strides()
-    //     );
-    //
-    //     if matches!(x.dtype(), DataType::Float) {
-    //         let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-    //             KernelError::Other("expected tensor data to be of type `float32`".to_string())
-    //         })?;
-    //
-    //         // Todo: move this to DeviceService trait.
-    //         let mut y_data = self
-    //             .device
-    //             .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-    //             .map_err(rmlk_cuda::Error::from)
-    //             .map_err(DeviceServiceError::from)?;
-    //
-    //         rmlk_cuda::kernels::max_pool::compute::<f32>(
-    //             self.device,
-    //             (1.0, 0.0),
-    //             &x_data,
-    //             &x_shape,
-    //             &x_stride,
-    //             attrs.kernel_shape(),
-    //             attrs.pads(),
-    //             attrs.strides(),
-    //             &mut y_data,
-    //             &y_shape,
-    //             &y_stride,
-    //         )?;
-    //
-    //         let output = ctx.get_output_mut(0)?;
-    //         output.init(CudaData::F32(y_data));
-    //         output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-    //         output.set_dtype(DataType::Float);
-    //     } else {
-    //         todo!()
-    //     }
-    //
-    //     Ok(())
-    // }
 }
 
 impl MaxPool for MaxPoolKernel {
@@ -92,17 +23,18 @@ impl MaxPool for MaxPoolKernel {
 
     fn compute(
         self,
-        x_data: &<Self::Service as DeviceService>::Data,
-        x_shape: &[i32],
-        x_stride: &[i32],
+        x: &Tensor<<Self::Service as DeviceService>::Data>,
         kernel_shape: &[i32],
         pads: &[i32],
         strides: &[i32],
         y_shape: &[i32],
         y_stride: &[i32],
     ) -> Result<<Self::Service as DeviceService>::Data> {
-        if x_data.f32().is_some() {
-            let x_data = x_data.f32().ok_or_else(|| {
+        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+
+        if matches!(x.dtype(), DataType::Float) {
+            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected tensor data to be of type `float32`".to_string())
             })?;
 

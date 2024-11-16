@@ -1,19 +1,15 @@
 use crate::attributes::gemm::GemmAttributes;
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::core::{Context, Tensor};
 
 pub trait Gemm {
     type Service: DeviceService;
     // Todo: refactor so you can remove the shape output.
     fn compute(
         self,
-        lhs: &<Self::Service as DeviceService>::Data,
-        lhs_shape: &[usize],
-        lhs_stride: &[usize],
-        rhs: &<Self::Service as DeviceService>::Data,
-        rhs_shape: &[usize],
-        rhs_stride: &[usize],
+        lhs: &Tensor<<Self::Service as DeviceService>::Data>,
+        rhs: &Tensor<<Self::Service as DeviceService>::Data>,
         trans_a: bool,
         trans_b: bool,
         alpha: f32,

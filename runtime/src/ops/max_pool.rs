@@ -1,7 +1,7 @@
 use crate::attributes::pooling::MaxPoolAttributes;
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::core::{Context, Tensor};
 use crate::utils;
 use log::trace;
 use rmlk_schema::DataType;
@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 pub trait MaxPool {
     type Service: DeviceService;
+
+    // Todo: change all params to use usize.
     fn compute(
         self,
-        x_data: &<Self::Service as DeviceService>::Data,
-        x_shape: &[i32],
-        x_stride: &[i32],
+        x: &Tensor<<Self::Service as DeviceService>::Data>,
         kernel_shape: &[i32],
         pads: &[i32],
         strides: &[i32],
@@ -77,8 +77,6 @@ where
         // Todo: move this to DeviceService trait.
         let y_data = self.kernel.compute(
             &x_data,
-            &x_shape,
-            &x_stride,
             attrs.kernel_shape(),
             attrs.pads(),
             attrs.strides(),
