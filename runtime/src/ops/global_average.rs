@@ -51,11 +51,11 @@ where
             .kernel
             .compute(&x_data, &x_shape, &x_stride, &y_shape, &y_stride)?;
 
-        let dtype = x.dtype();
+        let dtype = *x.dtype();
         let output = ctx.get_output_mut(0)?;
         output.init(y_data);
         output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-        output.set_dtype(*dtype);
+        output.set_dtype(dtype);
 
         Ok(())
     }

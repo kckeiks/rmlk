@@ -1,5 +1,6 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
+use crate::core::Tensor;
 use crate::ops::add::Add;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
@@ -23,20 +24,16 @@ impl Add for AddKernel {
 
     fn compute(
         self,
-        lhs: &CudaData,
-        lhs_shape: &[usize],
-        lhs_dtype: DataType,
-        rhs: &CudaData,
-        _rhs_shape: &[usize],
-        _rhs_dtype: DataType,
+        lhs: &Tensor<<Self::Service as DeviceService>::Data>,
+        rhs: &Tensor<<Self::Service as DeviceService>::Data>,
     ) -> Result<CudaData> {
-        let elem_count: usize = lhs_shape.iter().product();
+        let elem_count: usize = lhs.shape().iter().product();
 
-        if matches!(lhs_dtype, DataType::Float) {
-            let lhs_data = lhs.f32().ok_or_else(|| {
+        if matches!(lhs.dtype(), DataType::Float) {
+            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
             })?;
-            let rhs_data = rhs.f32().ok_or_else(|| {
+            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
             })?;
 
@@ -59,7 +56,7 @@ impl Add for AddKernel {
                 &mut out_slice,
             )?;
 
-            CudaData::F32(out_slice)
+            Ok(CudaData::F32(out_slice))
         } else {
             return Err(KernelError::Other(format!(
                 "unsupported dtype `{:?}`",

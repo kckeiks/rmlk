@@ -60,11 +60,11 @@ where
             attrs.beta(),
         )?;
 
-        let output_dtype = lhs.dtype();
+        let output_dtype = *lhs.dtype();
         let output = ctx.get_output_mut(0)?;
         output.init(out_data);
         output._reshape(output_shape.to_vec());
-        output.set_dtype(*output_dtype);
+        output.set_dtype(output_dtype);
 
         Ok(())
     }

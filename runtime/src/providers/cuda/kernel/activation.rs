@@ -28,7 +28,10 @@ impl Activation for ActivationKernel {
             CudaData::F32(x_data) => {
                 let mut y_data = self
                     .device
-                    .alloc_zeros::<f32>(x_shape.iter().product())
+                    .alloc_zeros::<f32>(
+                        usize::try_from(x_shape.iter().product())
+                            .map_err(|e| KernelError::Other(format!("failed convert: {e:?}")))?,
+                    )
                     .map_err(rmlk_cuda::Error::from)
                     .map_err(DeviceServiceError::from)?;
 

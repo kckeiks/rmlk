@@ -107,7 +107,7 @@ where
                 let mut bias_stride = vec![0i32; x_shape.len()];
                 utils::calculate_stride(&bias_shape, &mut bias_stride);
 
-                let bias_data = bias.data().and_then(|data| data.f32()).ok_or_else(|| {
+                let bias_data = bias.data().ok_or_else(|| {
                     KernelError::Other("expected tensor data to be of type `float32`".to_string())
                 })?;
 
