@@ -1,9 +1,11 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
+use crate::core::Tensor;
 use crate::ops::activation::Activation;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct ActivationKernel {
@@ -20,33 +22,36 @@ impl Activation for ActivationKernel {
     type Service = Cuda;
     fn compute(
         &self,
-        x_data: &<Self::Service as DeviceService>::Data,
-        x_shape: &[i32],
-        x_stride: &[i32],
+        x: &Tensor<<Self::Service as DeviceService>::Data>,
     ) -> Result<<Self::Service as DeviceService>::Data> {
-        match x_data {
-            CudaData::F32(x_data) => {
-                let mut y_data = self
-                    .device
-                    .alloc_zeros::<f32>(
-                        usize::try_from(x_shape.iter().copied().product::<i32>())
-                            .map_err(|e| KernelError::Other(format!("failed convert: {e:?}")))?,
-                    )
-                    .map_err(rmlk_cuda::Error::from)
-                    .map_err(DeviceServiceError::from)?;
+        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
-                rmlk_cuda::kernels::activation::compute::<f32>(
-                    self.device.clone(),
-                    (1.0, 0.0),
-                    x_data,
-                    x_shape,
-                    x_stride,
-                    &mut y_data,
-                )?;
+        if matches!(x.dtype(), DataType::Float) {
+            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
+                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
+            })?;
 
-                Ok(CudaData::F32(y_data))
-            }
-            _ => Err(KernelError::Other("".to_string())),
+            let mut y_data = self
+                .device
+                .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(DeviceServiceError::from)?;
+
+            rmlk_cuda::kernels::activation::compute::<f32>(
+                self.device.clone(),
+                (1.0, 0.0),
+                x_data,
+                &x_shape,
+                &x_stride,
+                &mut y_data,
+            )?;
+
+            Ok(CudaData::F32(y_data))
+        } else {
+            Err(KernelError::Other(
+                "unsupported data type for `activation`".to_string(),
+            ))
         }
     }
 }

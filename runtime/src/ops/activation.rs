@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Context;
+use crate::core::{Context, Tensor};
 use log::trace;
 use rmlk_schema::DataType;
 
@@ -8,9 +8,7 @@ pub trait Activation {
     type Service: DeviceService;
     fn compute(
         &self,
-        x_data: &<Self::Service as DeviceService>::Data,
-        x_shape: &[i32],
-        x_stride: &[i32],
+        x: &Tensor<<Self::Service as DeviceService>::Data>,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -28,16 +26,10 @@ where
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
         trace!("x_shape={x_shape:?},x_stride={x_stride:?}");
 
-        let x_data = x
-            .data()
-            .ok_or_else(|| KernelError::Other("expected data in the tensor".to_string()))?;
-
-        let y_data = self.kernel.compute(x_data, &x_shape, &x_stride)?;
+        let y_data = self.kernel.compute(x)?;
 
         let output_shape = x.shape().clone();
         let output = ctx.get_output_mut(0)?;
