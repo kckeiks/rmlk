@@ -1,6 +1,6 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Tensor;
+use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::global_average::GlobalAverage;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
@@ -26,12 +26,13 @@ impl GlobalAverage for GlobalAveragePoolKernel {
         x: &Tensor<<Self::Service as DeviceService>::Data>,
         y_shape: &[usize],
         y_stride: &[usize],
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data> {
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(x.shape().as_slice())?;
+        let x_stride = scratch_alloc.allocate_and_convert_from_slice(x.stride().as_slice())?;
 
-        let y_shape = y_shape.iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let y_stride = y_stride.iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y_stride)?;
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {

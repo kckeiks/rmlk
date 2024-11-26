@@ -1,7 +1,7 @@
 use crate::attributes::pooling::MaxPoolAttributes;
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 use log::trace;
 
@@ -17,6 +17,7 @@ pub trait MaxPool {
         strides: &[i32],
         y_shape: &[i32],
         y_stride: &[i32],
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -76,6 +77,7 @@ where
             attrs.strides(),
             &y_shape,
             &y_stride,
+            ctx.execution_state().scratch_alloc(),
         )?;
 
         let output_dtype = *x.dtype();

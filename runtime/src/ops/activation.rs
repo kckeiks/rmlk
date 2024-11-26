@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::Result;
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 use log::trace;
 use rmlk_schema::DataType;
 
@@ -9,6 +9,7 @@ pub trait Activation {
     fn compute(
         &self,
         x: &Tensor<<Self::Service as DeviceService>::Data>,
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -29,7 +30,9 @@ where
 
         trace!("x_shape={:?},x_stride={:?}", x.shape(), x.stride());
 
-        let y_data = self.kernel.compute(x)?;
+        let y_data = self
+            .kernel
+            .compute(x, ctx.execution_state().scratch_alloc())?;
 
         let output_shape = x.shape().clone();
         let output = ctx.get_output_mut(0)?;

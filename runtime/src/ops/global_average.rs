@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::Result;
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 
 pub trait GlobalAverage {
@@ -10,6 +10,7 @@ pub trait GlobalAverage {
         x: &Tensor<<Self::Service as DeviceService>::Data>,
         y_shape: &[usize],
         y_stride: &[usize],
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -38,7 +39,12 @@ where
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
 
-        let y_data = self.kernel.compute(&x, &y_shape, &y_stride)?;
+        let y_data = self.kernel.compute(
+            &x,
+            &y_shape,
+            &y_stride,
+            ctx.execution_state().scratch_alloc(),
+        )?;
 
         let dtype = *x.dtype();
         let output = ctx.get_output_mut(0)?;

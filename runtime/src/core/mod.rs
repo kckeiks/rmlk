@@ -8,9 +8,11 @@ mod store;
 mod tensor;
 mod value;
 
+mod allocator;
 pub mod device_service;
 pub mod kernel;
 
+pub use allocator::ScratchAllocator;
 pub use context::Context;
 pub use error::{Error, Result};
 #[cfg(test)]

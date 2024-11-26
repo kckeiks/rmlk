@@ -136,4 +136,8 @@ where
             .value()
             .attrs()
     }
+
+    pub fn execution_state(&self) -> &ExecutionState<D> {
+        self.execution_state
+    }
 }

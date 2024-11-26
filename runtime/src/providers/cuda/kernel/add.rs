@@ -1,6 +1,6 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Tensor;
+use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::add::Add;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
@@ -26,6 +26,7 @@ impl Add for AddKernel {
         self,
         lhs: &Tensor<<Self::Service as DeviceService>::Data>,
         rhs: &Tensor<<Self::Service as DeviceService>::Data>,
+        _scratch_alloc: &ScratchAllocator,
     ) -> Result<CudaData> {
         let elem_count: usize = lhs.shape().iter().product();
 

@@ -1,7 +1,7 @@
 use crate::attributes::gemm::GemmAttributes;
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 
 pub trait Gemm {
     type Service: DeviceService;
@@ -14,6 +14,7 @@ pub trait Gemm {
         trans_b: bool,
         alpha: f32,
         beta: f32,
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])>;
 }
 
@@ -43,6 +44,7 @@ where
             attrs.trans_b(),
             attrs.alpha(),
             attrs.beta(),
+            ctx.execution_state().scratch_alloc(),
         )?;
 
         let output_dtype = *lhs.dtype();

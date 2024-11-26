@@ -1,3 +1,4 @@
+use crate::core::allocator::ScratchAllocator;
 use crate::core::device_service::DeviceService;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::store::TensorStore;
@@ -20,7 +21,7 @@ pub struct ExecutionState<T: DeviceService> {
     ///
     /// This includes the inputs, outputs and
     /// intermediate values of the entire graph.
-    tensor: TensorStore<T::Data>,
+    tensor_store: TensorStore<T::Data>,
     /// Tensor indices for finding an operation's tensor values.
     ///
     /// The order is inputs, optional inputs and outputs.
@@ -30,6 +31,8 @@ pub struct ExecutionState<T: DeviceService> {
     node_to_tensor_index_map: HashMap<usize, usize>,
     /// Reference to the model instance state.
     instance_state: Arc<ModelInstanceState<T>>,
+    /// Scratch buffer allocator.
+    scratch_alloc: ScratchAllocator,
 }
 
 impl<T> ExecutionState<T>
@@ -85,10 +88,11 @@ where
         trace!("node_to_value_index_map={:?}", node_to_value_index_map);
 
         Ok(Self {
-            tensor: store,
+            tensor_store: store,
             node_to_tensor_index_map: node_to_value_index_map,
             op_tensors: node_values.into_boxed_slice(),
             instance_state,
+            scratch_alloc: ScratchAllocator::new(),
         })
     }
 
@@ -103,7 +107,7 @@ where
     /// found using [`ExecutionState::get_tensor_index`].
     pub fn get_tensor(&self, value_index: usize) -> Option<&Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
-        self.tensor.get(index)
+        self.tensor_store.get(index)
     }
 
     /// Get a mutable tensor value.
@@ -112,7 +116,7 @@ where
     /// found using [`ExecutionState::get_tensor_index`].
     pub fn get_tensor_mut(&mut self, value_index: usize) -> Option<&mut Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
-        self.tensor.get_mut(index)
+        self.tensor_store.get_mut(index)
     }
 
     /// Get the starting index for the values of a node.
@@ -170,14 +174,19 @@ where
         self.instance_state.graph()
     }
 
+    /// Get a read-only reference to the scratch allocator.
+    pub fn scratch_alloc(&self) -> &ScratchAllocator {
+        &self.scratch_alloc
+    }
+
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id(&self, node_id: usize) -> Option<&Tensor<T::Data>> {
-        self.tensor.get(node_id)
+        self.tensor_store.get(node_id)
     }
 
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
-        self.tensor.get_mut(node_id)
+        self.tensor_store.get_mut(node_id)
     }
 
     /// Get the index of the actual value.

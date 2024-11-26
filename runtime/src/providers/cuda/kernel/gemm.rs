@@ -1,6 +1,6 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
 use crate::core::kernel::{KernelError, Result};
-use crate::core::Tensor;
+use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::gemm::Gemm;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
@@ -30,6 +30,7 @@ impl Gemm for GemmKernel {
         trans_b: bool,
         alpha: f32,
         beta: f32,
+        _scratch_alloc: &ScratchAllocator,
     ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])> {
         let op = GemmOp::new(
             lhs.shape(),

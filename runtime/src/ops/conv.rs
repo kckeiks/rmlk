@@ -1,7 +1,7 @@
 use crate::attributes::conv::ConvAttributes;
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::{KernelError, Result};
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 
 pub struct BiasInput<'a, T> {
@@ -23,6 +23,7 @@ pub trait Convolution {
         bias: Option<BiasInput<<Self::Service as DeviceService>::Data>>,
         y_shape: &[i32],
         y_stride: &[i32],
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -85,6 +86,7 @@ where
                 None,
                 &y_shape,
                 &y_stride,
+                ctx.execution_state().scratch_alloc(),
             )?,
             Some(bias) => {
                 let mut bias_shape = vec![1i32; x_shape.len()];
@@ -114,6 +116,7 @@ where
                     Some(bias),
                     &y_shape,
                     &y_stride,
+                    ctx.execution_state().scratch_alloc(),
                 )?
             }
         };

@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::kernel::Result;
-use crate::core::{Context, Tensor};
+use crate::core::{Context, ScratchAllocator, Tensor};
 use rmlk_schema::DataType;
 
 pub trait Add {
@@ -9,6 +9,7 @@ pub trait Add {
         self,
         lhs: &Tensor<<Self::Service as DeviceService>::Data>,
         rhs: &Tensor<<Self::Service as DeviceService>::Data>,
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
@@ -30,7 +31,9 @@ where
 
         debug_assert!(lhs.shape() == rhs.shape());
 
-        let output = self.kernel.compute(lhs, rhs)?;
+        let output = self
+            .kernel
+            .compute(lhs, rhs, ctx.execution_state().scratch_alloc())?;
 
         let result_shape = lhs.shape().clone();
         let result = ctx.get_output_mut(0)?;
