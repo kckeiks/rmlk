@@ -26,9 +26,11 @@ impl Add for AddKernel {
         self,
         lhs: &Tensor<<Self::Service as DeviceService>::Data>,
         rhs: &Tensor<<Self::Service as DeviceService>::Data>,
-        _scratch_alloc: &ScratchAllocator,
+        scratch_alloc: &ScratchAllocator,
     ) -> Result<CudaData> {
         let elem_count: usize = lhs.shape().iter().product();
+
+        let info_buffer = scratch_alloc.allocate(3 * lhs.shape().len())?;
 
         if matches!(lhs.dtype(), DataType::Float) {
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
@@ -55,6 +57,7 @@ impl Add for AddKernel {
                 rhs.shape(),
                 rhs.stride(),
                 &mut out_slice,
+                info_buffer,
             )?;
 
             Ok(CudaData::F32(out_slice))

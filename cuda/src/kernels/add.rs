@@ -20,6 +20,7 @@ pub fn compute<T>(
     rhs_shape: &[usize],
     rhs_stride: &[usize],
     out_data: &mut CudaSlice<T>,
+    info_buffer: &mut [usize],
 ) -> Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
@@ -34,6 +35,12 @@ where
     info.extend(lhs_shape);
     info.extend(lhs_stride);
     info.extend(rhs_stride);
+
+    let shape_rank = lhs_shape.len();
+
+    info_buffer[..shape_rank].copy_from_slice(lhs_shape);
+    info_buffer[shape_rank..2 * shape_rank].copy_from_slice(lhs_shape);
+    info_buffer[2 * shape_rank..3 * shape_rank].copy_from_slice(lhs_shape);
 
     let info = device.htod_copy(info.as_slice().to_vec())?;
 

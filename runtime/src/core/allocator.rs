@@ -22,6 +22,15 @@ impl ScratchAllocator {
         Ok(self.inner.alloc_slice_fill_default::<T>(len))
     }
 
+    pub fn allocate_fill<T: Copy>(&self, len: usize, value: T) -> Result<&mut [T]> {
+        Ok(self.inner.alloc_slice_fill_copy(len, value))
+    }
+
+    /// Allocate a scratch buffer and copy slice into the buffer while
+    /// converting each element.
+    ///
+    /// Warning: This allocator uses [`Bump`] which does not call
+    /// `Drop` on the objects that it allocates.
     pub fn allocate_and_convert_from_slice<S, T>(&self, src: &[S]) -> Result<&mut [T]>
     where
         S: Copy,

@@ -42,9 +42,12 @@ pub fn compute_output_shape<T: AddAssign + Copy + Debug + Num>(
 pub fn compute<T>(
     device: Arc<CudaDevice>,
     (alpha, beta): (T, T),
+    pads: &[i32],
+    strides: &[i32],
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
     x_stride: &[i32],
+    kernel_shape: &[i32],
     y_data: &mut CudaSlice<T>,
     y_shape: &[i32],
     y_stride: &[i32],
@@ -55,10 +58,7 @@ where
     let cudnn = cudnn::Cudnn::new(device.clone())?;
 
     debug_assert!(x_shape.len() == 4 || x_shape.len() == 5);
-
-    let kernel_shape = x_shape[2..].as_ref();
-    let pads = x_shape[2..].iter().map(|_| 0).collect::<Box<[i32]>>();
-    let strides = x_shape[2..].iter().map(|_| 1).collect::<Box<[i32]>>();
+    debug_assert!(kernel_shape.len() == 2 || kernel_shape.len() == 3);
 
     trace!(
         "x_shape={x_shape:?},\

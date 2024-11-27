@@ -34,6 +34,10 @@ impl GlobalAverage for GlobalAveragePoolKernel {
         let y_shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         let y_stride = scratch_alloc.allocate_and_convert_from_slice(y_stride)?;
 
+        let pads = scratch_alloc.allocate_fill(x_shape[2..].len(), 0)?;
+        let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
+        let kernel_shape = &x_shape[2..];
+
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 KernelError::Other("expected tensor data to be of type `float32`".to_string())
@@ -48,9 +52,12 @@ impl GlobalAverage for GlobalAveragePoolKernel {
             rmlk_cuda::kernels::global_average_pool::compute::<f32>(
                 self.device,
                 (1.0, 0.0),
+                pads,
+                strides,
                 &x_data,
                 &x_shape,
                 &x_stride,
+                kernel_shape,
                 &mut y_data,
                 &y_shape,
                 &y_stride,
