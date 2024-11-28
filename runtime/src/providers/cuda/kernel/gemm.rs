@@ -33,10 +33,10 @@ impl Gemm for GemmKernel {
         _scratch_alloc: &ScratchAllocator,
     ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])> {
         let op = GemmOp::new(
-            lhs.shape(),
-            lhs.stride(),
-            rhs.shape(),
-            rhs.stride(),
+            &lhs.shape(),
+            &lhs.stride(),
+            &rhs.shape(),
+            &rhs.stride(),
             trans_a,
             trans_b,
         );

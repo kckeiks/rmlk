@@ -25,8 +25,8 @@ impl Activation for ActivationKernel {
         x: &Tensor<<Self::Service as DeviceService>::Data>,
         scratch_alloc: &ScratchAllocator,
     ) -> Result<<Self::Service as DeviceService>::Data> {
-        let x_shape = scratch_alloc.allocate_and_convert_from_slice(x.shape().as_slice())?;
-        let x_stride = scratch_alloc.allocate_and_convert_from_slice(x.stride().as_slice())?;
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+        let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {

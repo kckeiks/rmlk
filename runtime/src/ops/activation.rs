@@ -34,10 +34,11 @@ where
             .kernel
             .compute(x, ctx.execution_state().scratch_alloc())?;
 
-        let output_shape = x.shape().clone();
+        let output = ctx.get_output(0)?;
+        output.reshape_from_slice(&x.shape());
+
         let output = ctx.get_output_mut(0)?;
         output.init(y_data);
-        output._reshape(output_shape);
         output.set_dtype(DataType::Float);
 
         Ok(())

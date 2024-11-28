@@ -31,18 +31,14 @@ where
     // Todo: Validate that the tensors are valid for the operation.
     // Todo: should we directly initialize this in the device?
     // Todo: pass in vector.
-    let mut info: Vec<usize> = Vec::with_capacity(3 * lhs_shape.len());
-    info.extend(lhs_shape);
-    info.extend(lhs_stride);
-    info.extend(rhs_stride);
-
     let shape_rank = lhs_shape.len();
 
     info_buffer[..shape_rank].copy_from_slice(lhs_shape);
-    info_buffer[shape_rank..2 * shape_rank].copy_from_slice(lhs_shape);
-    info_buffer[2 * shape_rank..3 * shape_rank].copy_from_slice(lhs_shape);
+    info_buffer[shape_rank..2 * shape_rank].copy_from_slice(lhs_stride);
+    info_buffer[2 * shape_rank..3 * shape_rank].copy_from_slice(rhs_stride);
 
-    let info = device.htod_copy(info.as_slice().to_vec())?;
+    // Unfortunately, the asynchronous API only accepts owned vectors.
+    let info = device.htod_copy(info_buffer.to_vec())?;
 
     let elem_count: usize = lhs_shape.iter().product();
     let num_threads = 128;

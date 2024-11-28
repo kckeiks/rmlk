@@ -50,7 +50,7 @@ where
         let output_dtype = *lhs.dtype();
         let output = ctx.get_output_mut(0)?;
         output.init(out_data);
-        output._reshape(output_shape.to_vec());
+        output._reshape(output_shape.to_vec().into_boxed_slice());
         output.set_dtype(output_dtype);
 
         Ok(())

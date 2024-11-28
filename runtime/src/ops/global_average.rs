@@ -32,7 +32,7 @@ where
         let mut y_shape = vec![0; x.shape().len()];
         // Todo: move this to utils.
         rmlk_cuda::kernels::global_average_pool::compute_output_shape(
-            x.shape().as_slice(),
+            &x.shape(),
             y_shape.as_mut_slice(),
         )?;
 

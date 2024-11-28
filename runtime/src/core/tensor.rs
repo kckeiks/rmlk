@@ -1,5 +1,6 @@
 use crate::utils;
 use rmlk_schema::DataType;
+use std::cell::{Ref, RefCell};
 
 /// Tensor.
 ///
@@ -9,8 +10,8 @@ use rmlk_schema::DataType;
 pub struct Tensor<T> {
     data: Option<T>,
     dtype: DataType,
-    shape: Vec<usize>,
-    stride: Vec<usize>,
+    shape: RefCell<Box<[usize]>>,
+    stride: RefCell<Box<[usize]>>,
 }
 
 impl<T> Tensor<T> {
@@ -18,11 +19,12 @@ impl<T> Tensor<T> {
         Self {
             data: None,
             dtype,
-            shape: Vec::new(),
-            stride: Vec::new(),
+            shape: RefCell::new(Box::new([])),
+            stride: RefCell::new(Box::new([])),
         }
     }
 
+    // Todo: Update when we have a special allocator for long-lived data.
     pub fn new_with_shape(dtype: DataType, shape: Vec<usize>) -> Self {
         let dims = shape.len();
         let mut stride = vec![0usize; dims];
@@ -31,17 +33,8 @@ impl<T> Tensor<T> {
         Self {
             data: None,
             dtype,
-            shape,
-            stride,
-        }
-    }
-
-    pub fn _new_init(data: T, dtype: DataType, shape: Vec<usize>, stride: Vec<usize>) -> Self {
-        Self {
-            data: Some(data),
-            dtype,
-            shape,
-            stride,
+            shape: RefCell::new(shape.into_boxed_slice()),
+            stride: RefCell::new(stride.into_boxed_slice()),
         }
     }
 
@@ -65,20 +58,12 @@ impl<T> Tensor<T> {
         self.data.take()
     }
 
-    pub fn shape(&self) -> &Vec<usize> {
-        &self.shape
+    pub fn shape(&self) -> Ref<'_, [usize]> {
+        Ref::map(self.shape.borrow(), |borrow| borrow.as_ref())
     }
 
-    pub fn _reshape(&mut self, shape: Vec<usize>) {
-        self.shape = shape;
-        let dims = self.shape.len();
-        let mut stride = vec![0usize; dims];
-        utils::calculate_stride(self.shape.as_slice(), &mut stride.as_mut_slice());
-        self.stride = stride;
-    }
-
-    pub fn stride(&self) -> &Vec<usize> {
-        &self.stride
+    pub fn stride(&self) -> Ref<'_, [usize]> {
+        Ref::map(self.stride.borrow(), |borrow| borrow.as_ref())
     }
 
     pub fn dtype(&self) -> &DataType {
@@ -87,5 +72,24 @@ impl<T> Tensor<T> {
 
     pub fn set_dtype(&mut self, dtype: DataType) {
         self.dtype = dtype;
+    }
+
+    pub fn _reshape(&mut self, shape: Box<[usize]>) {
+        *self.shape.borrow_mut() = shape;
+
+        let dims = self.shape.borrow().as_ref().len();
+        let mut stride = vec![0usize; dims];
+        utils::calculate_stride(self.shape.borrow().as_ref(), &mut stride.as_mut_slice());
+
+        *self.stride.borrow_mut() = stride.into_boxed_slice();
+    }
+
+    pub fn reshape_from_slice(&self, src: &[usize]) {
+        // Todo: remove this once we initialize buffers properly.
+        *self.shape.borrow_mut() = vec![0; src.len()].into_boxed_slice();
+        *self.stride.borrow_mut() = vec![0; src.len()].into_boxed_slice();
+
+        self.shape.borrow_mut().as_mut().copy_from_slice(src);
+        utils::calculate_stride(src, self.stride.borrow_mut().as_mut());
     }
 }

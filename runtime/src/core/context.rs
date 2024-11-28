@@ -96,7 +96,6 @@ where
             })
     }
 
-    #[cfg(test)]
     pub fn get_output(&self, index: usize) -> Result<&Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {

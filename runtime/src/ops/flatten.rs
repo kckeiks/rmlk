@@ -16,7 +16,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {
-        return Err(KernelError::InvalidTensorDimensions(x.shape().clone()));
+        return Err(KernelError::InvalidTensorDimensions(x.shape().to_vec()));
     }
 
     let mut y_shape = Box::new([0; 2]);
@@ -49,7 +49,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         ._take_data()
         .ok_or_else(|| KernelError::Other("expected tensor to have data".to_string()))?;
     let y = ctx.get_output_mut(0)?;
-    y._reshape(y_shape.to_vec());
+    y._reshape(y_shape.to_vec().into_boxed_slice());
     y.init(data);
     y.set_dtype(y_dtype);
     Ok(())

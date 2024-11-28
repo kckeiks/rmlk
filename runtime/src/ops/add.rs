@@ -29,16 +29,16 @@ where
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 
-        debug_assert!(lhs.shape() == rhs.shape());
+        debug_assert!(lhs.shape().as_ref() == rhs.shape().as_ref());
 
         let output = self
             .kernel
             .compute(lhs, rhs, ctx.execution_state().scratch_alloc())?;
 
-        let result_shape = lhs.shape().clone();
+        let result_shape = lhs.shape().to_vec();
         let result = ctx.get_output_mut(0)?;
         result.init(output);
-        result._reshape(result_shape);
+        result._reshape(result_shape.into_boxed_slice());
         result.set_dtype(DataType::Float);
 
         Ok(())
