@@ -14,7 +14,7 @@ pub mod kernel;
 
 pub use allocator::ScratchAllocator;
 pub use context::Context;
-pub use error::{Error, Result};
+pub use error::Error;
 #[cfg(test)]
 pub use execution_state::ExecutionState;
 pub use instance::{Builder, ModelInstance};

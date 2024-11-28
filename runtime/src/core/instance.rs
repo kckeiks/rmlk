@@ -1,6 +1,6 @@
 use crate::core::context::Context;
 use crate::core::device_service::{DeviceService, DeviceServiceError};
-use crate::core::error::{Error, Result};
+use crate::core::error::Error;
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
@@ -14,6 +14,8 @@ use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+type Result<T> = std::result::Result<T, Error>;
 
 /// Model instance builder.
 pub struct Builder {

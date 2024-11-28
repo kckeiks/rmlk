@@ -1,10 +1,11 @@
 use crate::core::allocator::ScratchAllocator;
 use crate::core::device_service::DeviceService;
+use crate::core::error::InternalError;
+use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
 use crate::core::value::{InnerValue, Value};
-use crate::{Error, Result};
 use log::trace;
 use rmlk_graph::{Graph, Node};
 use rmlk_schema::Op;
@@ -63,7 +64,7 @@ where
                 if graph.get_node(*input).is_some() {
                     node_values.push(*input);
                 } else {
-                    return Err(Error::Internal(format!(
+                    return Err(InternalError::ExecutionState(format!(
                         "the input `{}` for node `{node_id}` does not exist in the graph",
                         *input
                     )));
@@ -76,7 +77,7 @@ where
                 if graph.get_node(*output).is_some() {
                     node_values.push(*output);
                 } else {
-                    return Err(Error::Internal(format!(
+                    return Err(InternalError::ExecutionState(format!(
                         "the output `{}` for node `{node_id}` does not exist in the graph",
                         *output
                     )));
@@ -119,6 +120,17 @@ where
         self.tensor_store.get_mut(index)
     }
 
+    /// Update the state with the tensor value.
+    ///
+    /// The value index for a given computation can be
+    /// found using [`ExecutionState::get_tensor_index`].
+    pub fn update_tensor(&mut self, value_index: usize, tensor: Tensor<T::Data>) -> Result<()> {
+        let index = self.get_inner_index(value_index).ok_or_else(|| {
+            InternalError::ExecutionState(format!("invalid value_index: {value_index}"))
+        })?;
+        self.tensor_store.update(index, tensor).map_err(Into::into)
+    }
+
     /// Get the starting index for the values of a node.
     pub fn get_tensor_index(&self, node_id: &usize) -> Option<usize> {
         self.node_to_tensor_index_map.get(node_id).copied()
@@ -134,7 +146,7 @@ where
                     .expect("We always have one device")
                     .htod_float(data)?;
                 let tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
-                    Error::Internal(format!(
+                    InternalError::ExecutionState(format!(
                         "failed to load value: missing tensor for node {node_id}"
                     ))
                 })?;
@@ -154,12 +166,12 @@ where
             .expect("We always have one device");
 
         let tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-            Error::Internal(format!(
+            InternalError::ExecutionState(format!(
                 "failed to get value: missing tensor for node {node_id}"
             ))
         })?;
         let ptr = tensor.data().take().ok_or_else(|| {
-            Error::Internal(format!(
+            InternalError::ExecutionState(format!(
                 "failed to get value: empty tensor for node {node_id}"
             ))
         })?;

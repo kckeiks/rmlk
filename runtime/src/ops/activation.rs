@@ -35,7 +35,7 @@ where
             .compute(x, ctx.execution_state().scratch_alloc())?;
 
         let output = ctx.get_output(0)?;
-        output.reshape_from_slice(&x.shape());
+        output.reshape(&x.shape());
 
         let output = ctx.get_output_mut(0)?;
         output.init(y_data);

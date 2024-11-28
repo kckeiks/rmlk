@@ -84,7 +84,7 @@ impl<T> Tensor<T> {
         *self.stride.borrow_mut() = stride.into_boxed_slice();
     }
 
-    pub fn reshape_from_slice(&self, src: &[usize]) {
+    pub fn reshape(&self, src: &[usize]) {
         // Todo: remove this once we initialize buffers properly.
         *self.shape.borrow_mut() = vec![0; src.len()].into_boxed_slice();
         *self.stride.borrow_mut() = vec![0; src.len()].into_boxed_slice();

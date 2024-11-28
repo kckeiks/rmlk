@@ -128,6 +128,20 @@ where
             })
     }
 
+    pub fn update_output(&mut self, index: usize, tensor: Tensor<D::Data>) -> Result<()> {
+        let node_index = self.output_start_index + index;
+        if self.input_start_index + self.max_values < node_index {
+            return Err(KernelError::Other(format!(
+                "context error: invalid node index {node_index}"
+            )));
+        }
+
+        // Todo: update error.
+        self.execution_state
+            .update_tensor(node_index, tensor)
+            .map_err(|e| KernelError::Other(e.to_string()))
+    }
+
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
         self.execution_state
             .graph()

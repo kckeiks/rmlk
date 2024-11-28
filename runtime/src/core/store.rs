@@ -1,5 +1,6 @@
+use crate::core::error::InternalError;
+use crate::core::error::Result;
 use crate::core::{device_service::DeviceService, Tensor};
-use crate::Error;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::collections::HashMap;
@@ -16,7 +17,7 @@ impl<T> TensorStore<T> {
         provider: &D,
         graph: &Graph<Definition>,
         initializers: HashMap<usize, rmlk_schema::Tensor>,
-    ) -> crate::Result<TensorStore<D::Data>> {
+    ) -> Result<TensorStore<D::Data>> {
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
@@ -36,7 +37,7 @@ impl<T> TensorStore<T> {
 
             let data = match ir_tensor.float_data.is_empty() {
                 true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
-                    Error::Internal("failed to parse tensor raw data".to_string())
+                    InternalError::TensorStore("failed to parse tensor raw data".to_string())
                 })?),
                 false => {
                     // Todo: remove allocation.
@@ -65,7 +66,7 @@ impl<T> TensorStore<T> {
                     tensors[node_id].replace(tensor);
                 }
                 None => {
-                    return Err(Error::Internal(format!(
+                    return Err(InternalError::TensorStore(format!(
                         "failed to create tensor store: failed to find input node `{node_id}`"
                     )))
                 }
@@ -87,7 +88,7 @@ impl<T> TensorStore<T> {
                     tensors[node_id].replace(tensor);
                 }
                 None => {
-                    return Err(Error::Internal(format!(
+                    return Err(InternalError::TensorStore(format!(
                         "failed to create tensor store: failed to find output node `{node_id}`"
                     )))
                 }
@@ -105,7 +106,7 @@ impl<T> TensorStore<T> {
                     Some(_) => {
                         if tensors.get(*output)
                             .ok_or_else(|| {
-                                Error::Internal(
+                                InternalError::TensorStore(
                                     format!("failed to create tensor store: node {} is referring to an output node ID that is unknown", *output)
                                 )
                             })?
@@ -115,7 +116,7 @@ impl<T> TensorStore<T> {
                         }
                     }
                     None => {
-                        return Err(Error::Internal(format!(
+                        return Err(InternalError::TensorStore(format!(
                             "failed to create tensor store: failed to find output node `{}` for node {}",
                             *output,
                             node_id
@@ -136,6 +137,14 @@ impl<T> TensorStore<T> {
 
     pub fn get_mut(&mut self, id: usize) -> Option<&mut Tensor<T>> {
         self.tensors.get_mut(id).map(|r| r.as_mut()).flatten()
+    }
+
+    pub fn update(&mut self, id: usize, tensor: Tensor<T>) -> Result<()> {
+        self.tensors
+            .get_mut(id)
+            .ok_or_else(|| InternalError::TensorStore(format!("invalid tensor id `{id}`")))?
+            .replace(tensor);
+        Ok(())
     }
 }
 
