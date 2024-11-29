@@ -1,4 +1,5 @@
-use crate::core::kernel::{KernelError, Result};
+use crate::core::error::{InternalError, Result};
+use log::debug;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -31,9 +32,10 @@ impl GemmAttributes {
                 Some(1) => Some(true),
                 None => None,
                 Some(n) => {
-                    return Err(KernelError::Other(format!(
-                        "invalid value {n} for the `transA` attribute"
-                    )))
+                    debug!("invalid value {n} for the `transA` attribute");
+                    return Err(InternalError::InvalidAttribute {
+                        name: "transA".to_string(),
+                    });
                 }
             };
         }
@@ -44,9 +46,10 @@ impl GemmAttributes {
                 Some(1) => Some(true),
                 None => None,
                 Some(n) => {
-                    return Err(KernelError::Other(format!(
-                        "invalid value {n} for the `transB` attribute"
-                    )))
+                    debug!("invalid value {n} for the `transB` attribute");
+                    return Err(InternalError::InvalidAttribute {
+                        name: "transB".to_string(),
+                    });
                 }
             };
         }

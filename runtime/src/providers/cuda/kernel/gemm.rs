@@ -1,6 +1,5 @@
-use crate::core::device_service::{DeviceService, DeviceServiceError};
-use crate::core::error::InternalError;
-use crate::core::kernel::{KernelError, Result};
+use crate::core::device_service::DeviceService;
+use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::gemm::Gemm;
 use crate::providers::cuda::data::CudaData;

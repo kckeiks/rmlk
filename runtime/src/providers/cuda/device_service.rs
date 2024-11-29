@@ -1,5 +1,5 @@
-use crate::core::device_service::{DeviceService, Result};
-use crate::core::error::InternalError;
+use crate::core::device_service::DeviceService;
+use crate::core::error::{InternalError, Result};
 use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
 use crate::ops::conv::ConvolutionOp;

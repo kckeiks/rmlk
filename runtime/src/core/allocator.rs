@@ -1,6 +1,5 @@
 use crate::core::error::{InternalError, Result};
 use bumpalo::Bump;
-use std::fmt::Debug;
 
 pub struct ScratchAllocator {
     inner: Bump,

@@ -1,6 +1,5 @@
 use crate::core::device_service::DeviceService;
-use crate::core::error::InternalError;
-use crate::core::kernel::Result;
+use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::global_average::GlobalAverage;
 use crate::providers::cuda::data::CudaData;

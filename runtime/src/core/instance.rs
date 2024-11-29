@@ -73,7 +73,11 @@ impl Builder {
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
-        let provider = Cuda::new(CudaDevice::new(0).map_err(rmlk_cuda::Error::from)?);
+        let provider = Cuda::new(
+            CudaDevice::new(0)
+                .map_err(rmlk_cuda::Error::from)
+                .map_err(InternalError::from)?,
+        );
         let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
@@ -136,7 +140,7 @@ where
                     result.insert(
                         node.value()
                             .name()
-                            .ok_or_else(|| Error::ExpectedName { node_id: *output })?
+                            .ok_or_else(|| Error::ExpectedName { node_id: output })?
                             .to_string(),
                         value,
                     );

@@ -1,4 +1,4 @@
-use crate::core::kernel::{KernelError, Result};
+use crate::core::error::{InternalError, Result};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -23,10 +23,8 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("dilations") {
             dilations = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `dilations` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "dilations".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),
@@ -34,18 +32,19 @@ impl ConvAttributes {
         }
 
         if let Some(attr) = attrs.get("group") {
-            group = Some(attr.int().ok_or_else(|| {
-                KernelError::Other("expected `group` attribute to be of type `[int]`".to_string())
-            })?);
+            group = Some(
+                attr.int()
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "group".to_string(),
+                    })?,
+            );
         }
 
         if let Some(attr) = attrs.get("kernel_shape") {
             kernel_shape = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `kernel_shape` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "kernel_shape".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),
@@ -55,10 +54,8 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("pads") {
             pads = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `pads` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "pads".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),
@@ -68,10 +65,8 @@ impl ConvAttributes {
         if let Some(attr) = attrs.get("strides") {
             strides = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `strides` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "strides".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),

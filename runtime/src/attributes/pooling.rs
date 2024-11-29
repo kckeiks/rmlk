@@ -1,5 +1,5 @@
-use crate::core::kernel::{KernelError, Result};
-use log::warn;
+use crate::core::error::{InternalError, Result};
+use log::{debug, warn};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
@@ -17,18 +17,16 @@ impl MaxPoolAttributes {
         let kernel_shape = match attrs.get("kernel_shape") {
             Some(attr) => attr
                 .ints()
-                .ok_or_else(|| {
-                    KernelError::Other(
-                        "expected `dilations` attribute to be of type `[int]`".to_string(),
-                    )
+                .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                    name: "kernel_shape".to_string(),
                 })?
                 // Todo: remove the allocation here.
                 .to_vec()
                 .into_boxed_slice(),
             None => {
-                return Err(KernelError::Other(
-                    "missing attribute `kernel_shape`".to_string(),
-                ))
+                return Err(InternalError::MissingAttribute {
+                    name: "kernel_shape".to_string(),
+                })
             }
         };
 
@@ -41,9 +39,10 @@ impl MaxPoolAttributes {
             ceil_mode = match attr.int() {
                 Some(0) => Some(false),
                 Some(n) => {
-                    return Err(KernelError::Other(format!(
-                        "unsupported attribute type `{n}` for `ceil_mode`"
-                    )))
+                    debug!("unsupported attribute type `{n}` for `ceil_mode`");
+                    return Err(InternalError::InvalidAttribute {
+                        name: "ceil_mode".to_string(),
+                    });
                 }
                 None => None,
             }
@@ -57,10 +56,8 @@ impl MaxPoolAttributes {
         if let Some(attr) = attrs.get("pads") {
             pads = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `pads` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "pads".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),
@@ -70,10 +67,8 @@ impl MaxPoolAttributes {
         if let Some(attr) = attrs.get("strides") {
             strides = Some(
                 attr.ints()
-                    .ok_or_else(|| {
-                        KernelError::Other(
-                            "expected `strides` attribute to be of type `[int]`".to_string(),
-                        )
+                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                        name: "strides".to_string(),
                     })?
                     .to_vec()
                     .into_boxed_slice(),

@@ -30,6 +30,9 @@ pub enum InternalError {
     TensorIndexNotFound { node_id: usize },
     InvalidTensorIndex { index: usize },
     MissingAttributes,
+    MissingAttribute { name: String },
+    InvalidAttribute { name: String },
+    InvalidAttributeDataType { name: String },
     MissingData,
     UnableToConvertValue,
     UnexpectedTensorDataType { expected: DataType },
@@ -52,14 +55,14 @@ impl Display for InternalError {
             InternalError::Device { error: msg } => {
                 write!(f, "device error `{msg:?}`")
             }
-            InternalError::TensorNotFound(id) => {
+            InternalError::TensorNotFound { id } => {
                 write!(f, "failed to find tensor: {id:?}")
             }
-            InternalError::TensorIndexNotFound(id) => {
-                write!(f, "failed to find tensor index: {id:?}")
+            InternalError::TensorIndexNotFound { node_id } => {
+                write!(f, "failed to find tensor index: {node_id:?}")
             }
-            InternalError::InvalidTensorIndex(id) => {
-                write!(f, "invalid tensor index: {id:?}")
+            InternalError::InvalidTensorIndex { index } => {
+                write!(f, "invalid tensor index: {index:?}")
             }
             InternalError::UnableToConvertValue => {
                 write!(f, "unable to convert value")
@@ -70,20 +73,32 @@ impl Display for InternalError {
             InternalError::MissingAttributes => {
                 write!(f, "missing attributes")
             }
-            InternalError::UnexpectedTensorDataType => {
-                write!(f, "unexpected tensor data type")
+            InternalError::MissingAttribute { name } => {
+                write!(f, "missing `{name}` attribute")
+            }
+            InternalError::InvalidAttribute { name } => {
+                write!(f, "invalid attribute `{name}`")
+            }
+            InternalError::InvalidAttributeDataType { name } => {
+                write!(f, "invalid data type for `{name}` attribute")
+            }
+            InternalError::UnexpectedTensorDataType { expected } => {
+                write!(
+                    f,
+                    "unexpected tensor data type when expected `{expected:?}`"
+                )
             }
             InternalError::UnsupportedDataType { dtype } => {
-                write!(f, "unsupported data type `{dtype}`")
+                write!(f, "unsupported `{dtype:?}` data type")
             }
             InternalError::UnsupportedOp { op } => {
-                write!(f, "unsupported op `{op}`")
+                write!(f, "unsupported `{op:?}` op")
             }
             InternalError::UnsupportedOpForDataType { op, dtype } => {
-                write!(f, "unsupported data type `{dtype}` for op `{op}`")
+                write!(f, "unsupported data type `{dtype:?}` for op `{op:?}`")
             }
             InternalError::InvalidTensorShape { shape } => {
-                write!(f, "invalid tensor shape `{shape}`")
+                write!(f, "invalid tensor shape `{shape:?}`")
             }
             InternalError::InvalidAxis { axis } => {
                 write!(f, "invalid axis `{axis}`")

@@ -1,5 +1,4 @@
-use crate::core::error::InternalError;
-use crate::core::kernel::Result;
+use crate::core::error::{InternalError, Result};
 use crate::core::{device_service::DeviceService, Context};
 
 pub struct FlattenOp(());

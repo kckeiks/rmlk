@@ -1,7 +1,6 @@
 use crate::attributes::conv::ConvAttributes;
 use crate::core::device_service::DeviceService;
-use crate::core::error::InternalError;
-use crate::core::kernel::Result;
+use crate::core::error::{InternalError, Result};
 use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 use rmlk_schema::DataType;

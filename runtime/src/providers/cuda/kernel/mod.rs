@@ -5,7 +5,8 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 
-use crate::core::kernel::{Kernel, KernelError, Result};
+use crate::core::error::Result;
+use crate::core::kernel::Kernel;
 use crate::core::Context;
 use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
@@ -43,11 +44,5 @@ impl Kernel for CudaKernel {
             CudaKernel::MaxPool(kernel) => kernel.compute(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
         }
-    }
-}
-
-impl From<rmlk_cuda::Error> for KernelError {
-    fn from(value: rmlk_cuda::Error) -> Self {
-        Self::Device(value.into())
     }
 }

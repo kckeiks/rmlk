@@ -1,5 +1,5 @@
 use crate::core::device_service::DeviceService;
-use crate::core::kernel::Result;
+use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 use rmlk_schema::DataType;
 
