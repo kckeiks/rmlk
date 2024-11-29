@@ -1,19 +1,6 @@
+use crate::core::error::Result;
 use crate::core::kernel::Kernel;
 use rmlk_schema::{DataType, Op};
-
-pub type Result<T> = std::result::Result<T, DeviceServiceError>;
-
-#[derive(Debug)]
-pub enum DeviceServiceError {
-    Cuda(rmlk_cuda::Error),
-    Other(String),
-}
-
-impl From<rmlk_cuda::Error> for DeviceServiceError {
-    fn from(value: rmlk_cuda::Error) -> Self {
-        DeviceServiceError::Cuda(value)
-    }
-}
 
 /// Services for using an accelerator device's resources.
 pub trait DeviceService {

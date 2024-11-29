@@ -1,7 +1,6 @@
+use crate::core::error::{InternalError, Result};
 use bumpalo::Bump;
-use std::fmt::{Debug, Formatter};
-
-type Result<T> = std::result::Result<T, AllocatorError>;
+use std::fmt::Debug;
 
 pub struct ScratchAllocator {
     inner: Bump,
@@ -42,21 +41,12 @@ impl ScratchAllocator {
     {
         let target = self.inner.alloc_slice_fill_default::<T>(src.len());
         for (i, elem) in src.iter().enumerate() {
-            target[i] =
-                T::try_from(*elem).map_err(|_| AllocatorError("failed to convert element"))?;
+            target[i] = T::try_from(*elem).map_err(|_| InternalError::UnableToConvertValue)?;
         }
         Ok(target)
     }
 
     pub fn reset(&mut self) {
         self.inner.reset()
-    }
-}
-
-pub struct AllocatorError(&'static str);
-
-impl Debug for AllocatorError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "host allocator error: {}", self.0)
     }
 }

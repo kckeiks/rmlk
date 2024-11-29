@@ -1,32 +1,23 @@
-use crate::core::device_service::DeviceServiceError;
-use crate::core::kernel::KernelError;
+use crate::Value;
+use rmlk_schema::{DataType, Op};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 pub type Result<T> = std::result::Result<T, InternalError>;
 
 #[derive(Debug)]
 pub enum Error {
-    Device(DeviceServiceError),
-    Internal(String),
-    Kernel(KernelError),
+    Internal(InternalError),
     ModelDeserializationFailed,
-}
-
-impl From<KernelError> for Error {
-    fn from(value: KernelError) -> Self {
-        Self::Kernel(value)
-    }
-}
-
-impl From<DeviceServiceError> for Error {
-    fn from(value: DeviceServiceError) -> Self {
-        Self::Device(value)
-    }
+    NodeNotFound { id: usize },
+    ExpectedName { node_id: usize },
+    InvalidUserInput { input: HashMap<String, Value> },
+    FailedToFindNodeId { name: String },
 }
 
 impl From<InternalError> for Error {
     fn from(value: InternalError) -> Self {
-        Self::Internal(value.to_string())
+        Self::Internal(value)
     }
 }
 
@@ -34,7 +25,19 @@ impl From<InternalError> for Error {
 pub enum InternalError {
     TensorStore(String),
     ExecutionState(String),
-    Device(DeviceServiceError),
+    Device(rmlk_cuda::Error),
+    TensorNotFound(usize),
+    TensorIndexNotFound(usize),
+    InvalidTensorIndex(usize),
+    UnableToConvertValue,
+    MissingAttributes,
+    MissingData,
+    UnexpectedTensorDataType { expected: DataType },
+    UnsupportedDataType { dtype: DataType },
+    UnsupportedOp { op: Op },
+    UnsupportedOpForDataType { op: Op, dtype: DataType },
+    InvalidTensorShape(Vec<usize>),
+    InvalidAxis(i32),
 }
 
 impl Display for InternalError {
@@ -49,12 +52,24 @@ impl Display for InternalError {
             InternalError::Device(msg) => {
                 write!(f, "device error: {msg:?}")
             }
+            InternalError::TensorNotFound(id) => {
+                write!(f, "failed to find tensor: {id:?}")
+            }
+            InternalError::TensorIndexNotFound(id) => {
+                write!(f, "failed to find tensor index: {id:?}")
+            }
+            InternalError::InvalidTensorIndex(id) => {
+                write!(f, "invalid tensor index: {id:?}")
+            }
+            InternalError::UnableToConvertValue => {
+                write!(f, "unable to convert value")
+            }
         }
     }
 }
 
-impl From<DeviceServiceError> for InternalError {
-    fn from(value: DeviceServiceError) -> Self {
+impl From<rmlk_cuda::Error> for InternalError {
+    fn from(value: rmlk_cuda::Error) -> Self {
         Self::Device(value)
     }
 }

@@ -1,11 +1,12 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::max_pool::MaxPool;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
-use rmlk_schema::DataType;
+use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct MaxPoolKernel {
@@ -36,15 +37,16 @@ impl MaxPool for MaxPoolKernel {
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
 
             // Todo: move this to DeviceService trait.
             let mut y_data = self
                 .device
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?;
+                .map_err(rmlk_cuda::Error::from)?;
 
             rmlk_cuda::kernels::max_pool::compute::<f32>(
                 self.device,
@@ -62,7 +64,10 @@ impl MaxPool for MaxPoolKernel {
 
             Ok(CudaData::F32(y_data))
         } else {
-            todo!()
+            Err(InternalError::UnsupportedOpForDataType {
+                op: Op::GlobalAveragePool,
+                dtype: *x.dtype(),
+            })
         }
     }
 }

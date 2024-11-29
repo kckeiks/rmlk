@@ -1,8 +1,10 @@
 use crate::attributes::conv::ConvAttributes;
 use crate::core::device_service::DeviceService;
-use crate::core::kernel::{KernelError, Result};
+use crate::core::error::InternalError;
+use crate::core::kernel::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
+use rmlk_schema::DataType;
 
 pub struct BiasInput<'a, T> {
     pub data: &'a T,
@@ -55,7 +57,8 @@ where
         };
 
         let attrs = ConvAttributes::new(
-            ctx.get_attributes().ok_or(KernelError::MissingAttributes)?,
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
             filter_dims,
         )?;
 
@@ -96,9 +99,11 @@ where
                 let mut bias_stride = vec![0i32; x_shape.len()];
                 utils::calculate_stride(&bias_shape, &mut bias_stride);
 
-                let bias_data = bias.data().ok_or_else(|| {
-                    KernelError::Other("expected tensor data to be of type `float32`".to_string())
-                })?;
+                let bias_data =
+                    bias.data()
+                        .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                            expected: DataType::Float,
+                        })?;
 
                 let bias = BiasInput {
                     data: bias_data,

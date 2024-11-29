@@ -1,9 +1,11 @@
 use crate::core::device_service::DeviceService;
+use crate::core::error::InternalError;
 use crate::core::execution_state::ExecutionState;
-use crate::core::kernel::{KernelError, Result};
 use crate::core::tensor::Tensor;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
+
+type Result<T> = std::result::Result<T, InternalError>;
 
 /// Computation context.
 ///
@@ -36,12 +38,7 @@ where
     pub fn new(execution_state: &'a mut ExecutionState<D>, node_id: usize) -> Result<Self> {
         let node_index = execution_state
             .get_tensor_index(&node_id)
-            .ok_or_else(|| {
-                KernelError::Other(format!(
-                    "failed to create a context: failed to find tensor for node {node_id}"
-                ))
-            })
-            .unwrap();
+            .ok_or_else(|| InternalError::TensorIndexNotFound(node_id))?;
         let input_count = execution_state
             .graph()
             .get_node(node_id)
@@ -67,79 +64,54 @@ where
     pub fn get_input(&self, index: usize) -> Result<&Tensor<D::Data>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
-            return Err(KernelError::Other(format!(
-                "context error: invalid node index {node_index}"
-            )));
+            return Err(InternalError::InvalidTensorIndex(node_index));
         }
 
-        self.execution_state.get_tensor(node_index).ok_or_else(|| {
-            KernelError::Other(format!(
-                "context error: failed to find tensor for node {node_index}"
-            ))
-        })
+        self.execution_state
+            .get_tensor(node_index)
+            .ok_or_else(|| InternalError::TensorNotFound(node_index))
     }
 
     pub fn get_input_mut(&mut self, index: usize) -> Result<&mut Tensor<D::Data>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
-            return Err(KernelError::Other(format!(
-                "context error: invalid node index {node_index}"
-            )));
+            return Err(InternalError::InvalidTensorIndex(node_index));
         }
 
         self.execution_state
             .get_tensor_mut(node_index)
-            .ok_or_else(|| {
-                KernelError::Other(format!(
-                    "context error: failed to find tensor for node {node_index}"
-                ))
-            })
+            .ok_or_else(|| InternalError::TensorNotFound(node_index))
     }
 
     pub fn get_output(&self, index: usize) -> Result<&Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
-            return Err(KernelError::Other(format!(
-                "context error: invalid node index {node_index}"
-            )));
+            return Err(InternalError::InvalidTensorIndex(node_index));
         }
 
-        self.execution_state.get_tensor(node_index).ok_or_else(|| {
-            KernelError::Other(format!(
-                "context error: failed to find tensor for node {node_index}"
-            ))
-        })
+        self.execution_state
+            .get_tensor(node_index)
+            .ok_or_else(|| InternalError::TensorNotFound(node_index))
     }
 
     pub fn get_output_mut(&mut self, index: usize) -> Result<&mut Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
-            return Err(KernelError::Other(format!(
-                "context error: invalid node index {node_index}"
-            )));
+            return Err(InternalError::InvalidTensorIndex(node_index));
         }
 
         self.execution_state
             .get_tensor_mut(node_index)
-            .ok_or_else(|| {
-                KernelError::Other(format!(
-                    "context error: failed to find tensor for node {node_index}"
-                ))
-            })
+            .ok_or_else(|| InternalError::TensorNotFound(node_index))
     }
 
     pub fn update_output(&mut self, index: usize, tensor: Tensor<D::Data>) -> Result<()> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
-            return Err(KernelError::Other(format!(
-                "context error: invalid node index {node_index}"
-            )));
+            return Err(InternalError::InvalidTensorIndex(node_index));
         }
 
-        // Todo: update error.
-        self.execution_state
-            .update_tensor(node_index, tensor)
-            .map_err(|e| KernelError::Other(e.to_string()))
+        self.execution_state.update_tensor(node_index, tensor)
     }
 
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {

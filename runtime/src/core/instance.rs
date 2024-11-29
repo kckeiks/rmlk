@@ -1,6 +1,6 @@
 use crate::core::context::Context;
-use crate::core::device_service::{DeviceService, DeviceServiceError};
-use crate::core::error::Error;
+use crate::core::device_service::DeviceService;
+use crate::core::error::{Error, InternalError};
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::kernel::Kernel;
@@ -35,15 +35,10 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*input)
-                .ok_or_else(|| {
-                    Error::Internal(format!(
-                        "failed to find node {} in the graph schema",
-                        *input
-                    ))
-                })?
+                .ok_or_else(|| Error::NodeNotFound { id: *input })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::Internal("node is missing a name".to_string()))?;
+                .ok_or_else(|| Error::ExpectedName { node_id: *input })?;
             map_name_to_id.insert(name.clone(), *input);
         }
 
@@ -51,15 +46,10 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*output)
-                .ok_or_else(|| {
-                    Error::Internal(format!(
-                        "failed to find node {} in the graph schema",
-                        *output
-                    ))
-                })?
+                .ok_or_else(|| Error::NodeNotFound { id: *output })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::Internal("node is missing a name".to_string()))?;
+                .ok_or_else(|| Error::ExpectedName { node_id: *output })?;
             map_name_to_id.insert(name.clone(), *output);
         }
 
@@ -83,11 +73,7 @@ impl Builder {
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
-        let provider = Cuda::new(
-            CudaDevice::new(0)
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?,
-        );
+        let provider = Cuda::new(CudaDevice::new(0).map_err(rmlk_cuda::Error::from)?);
         let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
@@ -119,23 +105,17 @@ where
     fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().inputs().count() {
             debug!("user input: {input:?}");
-            return Err(Error::Internal(
-                "expected inputs and user inputs do not match".to_string(),
-            ));
+            return Err(Error::InvalidUserInput { input });
         }
 
         for (input_name, value) in input {
             let node_id = self
                 .instance_state
                 .get_io_node_id(&input_name)
-                .ok_or_else(|| {
-                    Error::Internal(format!("failed to find a node ID for input `{input_name}`"))
-                })?;
+                .ok_or_else(|| Error::FailedToFindNodeId { name: input_name })?;
 
             if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::Internal(format!(
-                    "failed to find an input node for `{node_id}`"
-                )));
+                return Err(Error::NodeNotFound { id: node_id });
             }
 
             self.execution_state.load_value(node_id, value)?;
@@ -149,18 +129,14 @@ where
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {
                 None => {
-                    return Err(Error::Internal(format!(
-                        "failed to find an output node for `{output}`"
-                    )))
+                    return Err(Error::NodeNotFound { id: output });
                 }
                 Some(node) => {
                     let value = self.execution_state.get_value(output)?;
                     result.insert(
                         node.value()
                             .name()
-                            .ok_or_else(|| {
-                                Error::Internal(format!("output node {output} is missing a name"))
-                            })?
+                            .ok_or_else(|| Error::ExpectedName { node_id: *output })?
                             .to_string(),
                         value,
                     );

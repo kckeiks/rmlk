@@ -1,4 +1,5 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::conv::Convolution;
@@ -6,7 +7,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use rmlk_cuda::kernels::conv::BiasInput;
-use rmlk_schema::DataType;
+use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct ConvKernel {
@@ -41,26 +42,30 @@ impl Convolution for ConvKernel {
 
         if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected x tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
             let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected w tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
 
             let mut y_data = self
                 .device
                 .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?;
+                .map_err(rmlk_cuda::Error::from)?;
 
             let bias = match bias {
                 None => None,
                 Some(b) => {
-                    let data = b.data.f32().ok_or_else(|| {
-                        KernelError::Other(
-                            "expected w tensor data to be of type `float32`".to_string(),
-                        )
-                    })?;
+                    let data =
+                        b.data
+                            .f32()
+                            .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                                expected: DataType::Float,
+                            })?;
                     Some(BiasInput {
                         data,
                         shape: b.shape,
@@ -89,7 +94,10 @@ impl Convolution for ConvKernel {
 
             Ok(CudaData::F32(y_data))
         } else {
-            Err(KernelError::Other("unsupported dtype".to_string()))
+            Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Conv,
+                dtype: *x.dtype(),
+            })
         }
     }
 }

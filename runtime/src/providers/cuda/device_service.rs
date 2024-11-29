@@ -1,4 +1,5 @@
-use crate::core::device_service::{DeviceService, DeviceServiceError, Result};
+use crate::core::device_service::{DeviceService, Result};
+use crate::core::error::InternalError;
 use crate::ops::activation::ActivationOp;
 use crate::ops::add::AddOp;
 use crate::ops::conv::ConvolutionOp;
@@ -39,9 +40,12 @@ impl Cuda {
     pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         match data {
             CudaData::F32(ptr) => Ok(self.device.dtoh_sync_copy::<f32, _>(ptr)?),
-            _ => Err(DeviceServiceError::Other(
-                "unsupported data type".to_string(),
-            )),
+            CudaData::F16(_) => Err(InternalError::UnsupportedDataType {
+                dtype: DataType::Float16,
+            }),
+            CudaData::F64(_) => Err(InternalError::UnsupportedDataType {
+                dtype: DataType::Double,
+            }),
         }
     }
 }
@@ -70,9 +74,7 @@ impl DeviceService for Cuda {
             }
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
-                return Err(DeviceServiceError::Other(format!(
-                    "no support for op `{op:?}`"
-                )));
+                return Err(InternalError::UnsupportedOp { op });
             }
         };
 
@@ -90,12 +92,12 @@ impl DeviceService for Cuda {
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
         self.device
             .alloc_zeros(len)
-            .map_err(|e| DeviceServiceError::Cuda(e.into()))
+            .map_err(Into::into)
             .map(CudaData::F32)
     }
 }
 
-impl From<DriverError> for DeviceServiceError {
+impl From<DriverError> for InternalError {
     fn from(value: DriverError) -> Self {
         rmlk_cuda::Error::Cuda(value.0 as u32).into()
     }

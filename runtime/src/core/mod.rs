@@ -1,5 +1,4 @@
 mod context;
-mod error;
 mod execution_state;
 mod instance;
 mod instance_state;
@@ -10,11 +9,11 @@ mod value;
 
 mod allocator;
 pub mod device_service;
+pub mod error;
 pub mod kernel;
 
 pub use allocator::ScratchAllocator;
 pub use context::Context;
-pub use error::Error;
 #[cfg(test)]
 pub use execution_state::ExecutionState;
 pub use instance::{Builder, ModelInstance};

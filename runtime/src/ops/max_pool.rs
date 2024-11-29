@@ -1,5 +1,6 @@
 use crate::attributes::pooling::MaxPoolAttributes;
 use crate::core::device_service::DeviceService;
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
@@ -38,8 +39,10 @@ where
         let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
         let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
 
-        let attrs =
-            MaxPoolAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
+        let attrs = MaxPoolAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+        )?;
 
         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
 

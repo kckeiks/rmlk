@@ -1,11 +1,12 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::add::Add;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::{CudaDevice, CudaFunction};
-use rmlk_schema::DataType;
+use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct AddKernel {
@@ -34,17 +35,20 @@ impl Add for AddKernel {
 
         if matches!(lhs.dtype(), DataType::Float) {
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
             let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
 
             let mut out_slice = unsafe {
                 self.device
                     .alloc::<f32>(elem_count)
-                    .map_err(rmlk_cuda::Error::from)
-                    .map_err(DeviceServiceError::from)?
+                    .map_err(rmlk_cuda::Error::from)?
             };
 
             rmlk_cuda::kernels::add::compute::<f32>(
@@ -62,10 +66,10 @@ impl Add for AddKernel {
 
             Ok(CudaData::F32(out_slice))
         } else {
-            return Err(KernelError::Other(format!(
-                "unsupported dtype `{:?}`",
-                lhs.dtype()
-            )));
+            Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Add,
+                dtype: *lhs.dtype(),
+            })
         }
     }
 }

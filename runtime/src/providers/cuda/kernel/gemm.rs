@@ -1,4 +1,5 @@
 use crate::core::device_service::{DeviceService, DeviceServiceError};
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::gemm::Gemm;
@@ -6,7 +7,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use rmlk_cuda::kernels::gemm::GemmOp;
-use rmlk_schema::DataType;
+use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct GemmKernel {
@@ -46,23 +47,29 @@ impl Gemm for GemmKernel {
             let mut out_slice = self
                 .device
                 .alloc_zeros(output_size)
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(DeviceServiceError::from)?;
+                .map_err(rmlk_cuda::Error::from)?;
 
             let config = op.strided_batch_config((alpha, beta))?;
 
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected lhs tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
             let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                KernelError::Other("expected rhs tensor data to be of type `float32`".to_string())
+                InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                }
             })?;
 
             op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
 
             Ok((CudaData::F32(out_slice), op.calculate_output_shape()))
         } else {
-            Err(KernelError::Other("unsupported dtype for gemm".to_string()))
+            Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Gemm,
+                dtype: *lhs.dtype(),
+            })
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::attributes::gemm::GemmAttributes;
 use crate::core::device_service::DeviceService;
+use crate::core::error::InternalError;
 use crate::core::kernel::{KernelError, Result};
 use crate::core::{Context, ScratchAllocator, Tensor};
 
@@ -34,8 +35,10 @@ where
         let lhs = ctx.get_input(0)?;
         let rhs = ctx.get_input(1)?;
 
-        let attrs =
-            GemmAttributes::new(ctx.get_attributes().ok_or(KernelError::MissingAttributes)?)?;
+        let attrs = GemmAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+        )?;
 
         let (out_data, output_shape) = self.kernel.compute(
             lhs,
