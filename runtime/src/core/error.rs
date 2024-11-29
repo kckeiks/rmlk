@@ -7,7 +7,7 @@ pub type Result<T> = std::result::Result<T, InternalError>;
 
 #[derive(Debug)]
 pub enum Error {
-    Internal(InternalError),
+    Internal { error: InternalError },
     ModelDeserializationFailed,
     NodeNotFound { id: usize },
     ExpectedName { node_id: usize },
@@ -17,7 +17,7 @@ pub enum Error {
 
 impl From<InternalError> for Error {
     fn from(value: InternalError) -> Self {
-        Self::Internal(value)
+        Self::Internal { error: value }
     }
 }
 
@@ -25,32 +25,32 @@ impl From<InternalError> for Error {
 pub enum InternalError {
     TensorStore(String),
     ExecutionState(String),
-    Device(rmlk_cuda::Error),
-    TensorNotFound(usize),
-    TensorIndexNotFound(usize),
-    InvalidTensorIndex(usize),
-    UnableToConvertValue,
+    Device { error: rmlk_cuda::Error },
+    TensorNotFound { id: usize },
+    TensorIndexNotFound { node_id: usize },
+    InvalidTensorIndex { index: usize },
     MissingAttributes,
     MissingData,
+    UnableToConvertValue,
     UnexpectedTensorDataType { expected: DataType },
     UnsupportedDataType { dtype: DataType },
     UnsupportedOp { op: Op },
     UnsupportedOpForDataType { op: Op, dtype: DataType },
-    InvalidTensorShape(Vec<usize>),
-    InvalidAxis(i32),
+    InvalidTensorShape { shape: Vec<usize> },
+    InvalidAxis { axis: i32 },
 }
 
 impl Display for InternalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             InternalError::TensorStore(msg) => {
-                write!(f, "tensor store error: {msg}")
+                write!(f, "tensor store error `{msg}`")
             }
             InternalError::ExecutionState(msg) => {
-                write!(f, "execution state error: {msg}")
+                write!(f, "execution state error `{msg}`")
             }
-            InternalError::Device(msg) => {
-                write!(f, "device error: {msg:?}")
+            InternalError::Device { error: msg } => {
+                write!(f, "device error `{msg:?}`")
             }
             InternalError::TensorNotFound(id) => {
                 write!(f, "failed to find tensor: {id:?}")
@@ -64,12 +64,36 @@ impl Display for InternalError {
             InternalError::UnableToConvertValue => {
                 write!(f, "unable to convert value")
             }
+            InternalError::MissingData => {
+                write!(f, "missing data")
+            }
+            InternalError::MissingAttributes => {
+                write!(f, "missing attributes")
+            }
+            InternalError::UnexpectedTensorDataType => {
+                write!(f, "unexpected tensor data type")
+            }
+            InternalError::UnsupportedDataType { dtype } => {
+                write!(f, "unsupported data type `{dtype}`")
+            }
+            InternalError::UnsupportedOp { op } => {
+                write!(f, "unsupported op `{op}`")
+            }
+            InternalError::UnsupportedOpForDataType { op, dtype } => {
+                write!(f, "unsupported data type `{dtype}` for op `{op}`")
+            }
+            InternalError::InvalidTensorShape { shape } => {
+                write!(f, "invalid tensor shape `{shape}`")
+            }
+            InternalError::InvalidAxis { axis } => {
+                write!(f, "invalid axis `{axis}`")
+            }
         }
     }
 }
 
 impl From<rmlk_cuda::Error> for InternalError {
     fn from(value: rmlk_cuda::Error) -> Self {
-        Self::Device(value)
+        Self::Device { error: value }
     }
 }

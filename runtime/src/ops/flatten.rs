@@ -17,7 +17,9 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {
-        return Err(InternalError::InvalidTensorShape(x.shape().to_vec()));
+        return Err(InternalError::InvalidTensorShape {
+            shape: x.shape().to_vec(),
+        });
     }
 
     let mut y_shape = Box::new([0; 2]);
@@ -33,7 +35,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
             y_shape[1] = x.shape().iter().product();
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
-            return Err(InternalError::InvalidAxis(axis));
+            return Err(InternalError::InvalidAxis { axis });
         }
         axis => {
             let axis = axis.unsigned_abs() as usize;
