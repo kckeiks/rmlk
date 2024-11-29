@@ -35,15 +35,16 @@ where
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-        let x_stride = x.stride().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
 
         let attrs = MaxPoolAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
         )?;
 
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
 
         // Todo: Move this to utils.
         rmlk_cuda::kernels::max_pool::compute_output_shape(
@@ -55,24 +56,24 @@ where
             false,
         )?;
 
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
         utils::calculate_stride(&y_shape, &mut y_stride);
 
         trace!(
             "x_shape={x_shape:?},\
-            x_stride={x_stride:?},\
+            x_stride={:?},\
             kernel_shape={:?},\
             pads={:?},\
             strides={:?}\
             y_shape={y_shape:?}\
             y_stride={y_stride:?}",
+            x.stride(),
             attrs.kernel_shape(),
             attrs.pads(),
             attrs.strides()
         );
 
-        // Todo: move this to DeviceService trait.
-        let y_data = self.kernel.compute(
+        let dev_data = self.kernel.compute(
             &x,
             attrs.kernel_shape(),
             attrs.pads(),
@@ -82,11 +83,14 @@ where
             ctx.execution_state().scratch_alloc(),
         )?;
 
-        let output_dtype = *x.dtype();
-        let output = ctx.get_output_mut(0)?;
-        output.init(y_data);
-        output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-        output.set_dtype(output_dtype);
+        let y = ctx.get_output(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        y.reshape(shape)?;
+
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
 
         Ok(())
     }

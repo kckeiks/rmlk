@@ -42,10 +42,6 @@ where
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
         let x = ctx.get_input(0)?;
-        // Todo: reuse buffers.
-        let x_shape = x.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
-
-        let w = ctx.get_input(1)?;
 
         let filter_dims = match x.shape().len() {
             4 => 2,
@@ -61,10 +57,13 @@ where
             filter_dims,
         )?;
 
-        // Todo: reuse buffers.
-        let w_shape = w.shape().iter().map(|d| *d as i32).collect::<Box<[i32]>>();
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+        let mut y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
 
-        let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
+        let w = ctx.get_input(1)?;
+        let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
+
         rmlk_cuda::kernels::conv::calculate_output_shape(
             &x_shape,
             &w_shape,
@@ -74,10 +73,10 @@ where
             &mut y_shape,
         )?;
 
-        let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
+        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
         utils::calculate_stride(&y_shape, &mut y_stride);
 
-        let y_data = match ctx.get_input(2).ok() {
+        let dev_data = match ctx.get_input(2).ok() {
             None => self.kernel.compute(
                 &x,
                 &w,
@@ -91,21 +90,22 @@ where
                 ctx.execution_state().scratch_alloc(),
             )?,
             Some(bias) => {
-                let mut bias_shape = vec![1i32; x_shape.len()];
+                let scratch_alloc = ctx.execution_state().scratch_alloc();
+                let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
                 // Todo: Urgent. We need to make this generic.
                 bias_shape[1] = bias.shape()[0] as i32;
 
-                let mut bias_stride = vec![0i32; x_shape.len()];
-                utils::calculate_stride(&bias_shape, &mut bias_stride);
+                let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+                utils::calculate_stride(&bias_shape, bias_stride);
 
-                let bias_data =
+                let device_data =
                     bias.data()
                         .ok_or_else(|| InternalError::UnexpectedTensorDataType {
                             expected: DataType::Float,
                         })?;
 
                 let bias = BiasInput {
-                    data: bias_data,
+                    data: device_data,
                     shape: &bias_shape,
                     stride: &bias_stride,
                 };
@@ -125,12 +125,14 @@ where
             }
         };
 
-        let output_dtype = *x.dtype();
+        let y = ctx.get_output(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        y.reshape(shape)?;
 
-        let output = ctx.get_output_mut(0)?;
-        output.init(y_data);
-        output._reshape(y_shape.iter().map(|d| *d as usize).collect());
-        output.set_dtype(output_dtype);
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
 
         Ok(())
     }

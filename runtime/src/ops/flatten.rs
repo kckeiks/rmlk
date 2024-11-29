@@ -21,7 +21,7 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         });
     }
 
-    let mut y_shape = Box::new([0; 2]);
+    let mut y_shape = [0; 2];
     let axis = ctx
         .get_attributes()
         .map(|attrs| attrs.get("axis"))
@@ -46,12 +46,20 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     // Todo: This tensor needs to point to data in input, x.
     // This way we can avoid making a copy of the same data.
     let x = ctx.get_input_mut(0)?;
-    let y_dtype = *x.dtype();
-    let data = x._take_data().ok_or_else(|| InternalError::MissingData)?;
+    let dtype = *x.dtype();
+    let dev_data = x._take_data().ok_or_else(|| InternalError::MissingData)?;
+
+    let y = ctx.get_output(0)?;
+    let shape = ctx
+        .execution_state()
+        .scratch_alloc()
+        .allocate_from_slice(y_shape.as_slice())?;
+    y.reshape(shape)?;
+
     let y = ctx.get_output_mut(0)?;
-    y._reshape(y_shape.to_vec().into_boxed_slice());
-    y.init(data);
-    y.set_dtype(y_dtype);
+    y.init(dev_data);
+    y.set_dtype(dtype);
+
     Ok(())
 }
 

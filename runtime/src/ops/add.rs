@@ -1,7 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
-use rmlk_schema::DataType;
 
 pub trait Add {
     type Service: DeviceService;
@@ -26,20 +25,22 @@ where
     }
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
-        let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(1)?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
 
-        debug_assert!(lhs.shape().as_ref() == rhs.shape().as_ref());
+        debug_assert!(a.shape().as_ref() == b.shape().as_ref());
 
-        let output = self
+        let dev_data = self
             .kernel
-            .compute(lhs, rhs, ctx.execution_state().scratch_alloc())?;
+            .compute(a, b, ctx.execution_state().scratch_alloc())?;
 
-        let result_shape = lhs.shape().to_vec();
-        let result = ctx.get_output_mut(0)?;
-        result.init(output);
-        result._reshape(result_shape.into_boxed_slice());
-        result.set_dtype(DataType::Float);
+        let c = ctx.get_output(0)?;
+        c.reshape(&a.shape())?;
+
+        let dtype = *a.dtype();
+        let c = ctx.get_output_mut(0)?;
+        c.init(dev_data);
+        c.set_dtype(dtype);
 
         Ok(())
     }

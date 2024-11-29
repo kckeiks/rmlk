@@ -23,24 +23,25 @@ impl From<InternalError> for Error {
 
 #[derive(Debug)]
 pub enum InternalError {
-    TensorStore(String),
-    ExecutionState(String),
+    BufferSizeMismatch { expected: usize, actual: usize },
     Device { error: rmlk_cuda::Error },
-    TensorNotFound { id: usize },
-    TensorIndexNotFound { node_id: usize },
+    ExecutionState(String),
     InvalidTensorIndex { index: usize },
     MissingAttributes,
     MissingAttribute { name: String },
     InvalidAttribute { name: String },
     InvalidAttributeDataType { name: String },
+    InvalidTensorShape { shape: Vec<usize> },
+    InvalidAxis { axis: i32 },
     MissingData,
+    TensorStore(String),
+    TensorNotFound { id: usize },
+    TensorIndexNotFound { node_id: usize },
     UnableToConvertValue,
     UnexpectedTensorDataType { expected: DataType },
     UnsupportedDataType { dtype: DataType },
     UnsupportedOp { op: Op },
     UnsupportedOpForDataType { op: Op, dtype: DataType },
-    InvalidTensorShape { shape: Vec<usize> },
-    InvalidAxis { axis: i32 },
 }
 
 impl Display for InternalError {
@@ -102,6 +103,12 @@ impl Display for InternalError {
             }
             InternalError::InvalidAxis { axis } => {
                 write!(f, "invalid axis `{axis}`")
+            }
+            InternalError::BufferSizeMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "expected buffer of size `{expected}` instead of `{actual}`"
+                )
             }
         }
     }

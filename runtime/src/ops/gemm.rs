@@ -31,17 +31,17 @@ where
     }
 
     pub fn compute(self, ctx: &mut Context<T::Service>) -> Result<()> {
-        let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(1)?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
 
         let attrs = GemmAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
         )?;
 
-        let (out_data, output_shape) = self.kernel.compute(
-            lhs,
-            rhs,
+        let (dev_data, y_shape) = self.kernel.compute(
+            a,
+            b,
             attrs.trans_a(),
             attrs.trans_b(),
             attrs.alpha(),
@@ -49,11 +49,13 @@ where
             ctx.execution_state().scratch_alloc(),
         )?;
 
-        let output_dtype = *lhs.dtype();
-        let output = ctx.get_output_mut(0)?;
-        output.init(out_data);
-        output._reshape(output_shape.to_vec().into_boxed_slice());
-        output.set_dtype(output_dtype);
+        let y = ctx.get_output(0)?;
+        y.reshape(y_shape.as_slice())?;
+
+        let y_dtype = *a.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(y_dtype);
 
         Ok(())
     }

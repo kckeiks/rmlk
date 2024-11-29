@@ -2,7 +2,6 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 use log::trace;
-use rmlk_schema::DataType;
 
 pub trait Activation {
     type Service: DeviceService;
@@ -30,16 +29,17 @@ where
 
         trace!("x_shape={:?},x_stride={:?}", x.shape(), x.stride());
 
-        let y_data = self
+        let dev_data = self
             .kernel
             .compute(x, ctx.execution_state().scratch_alloc())?;
 
-        let output = ctx.get_output(0)?;
-        output.reshape(&x.shape());
+        let y = ctx.get_output(0)?;
+        y.reshape(&x.shape())?;
 
-        let output = ctx.get_output_mut(0)?;
-        output.init(y_data);
-        output.set_dtype(DataType::Float);
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
 
         Ok(())
     }

@@ -1,3 +1,4 @@
+use crate::core::error::Result;
 use crate::utils;
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell};
@@ -84,12 +85,20 @@ impl<T> Tensor<T> {
         *self.stride.borrow_mut() = stride.into_boxed_slice();
     }
 
-    pub fn reshape(&self, src: &[usize]) {
-        // Todo: remove this once we initialize buffers properly.
-        *self.shape.borrow_mut() = vec![0; src.len()].into_boxed_slice();
-        *self.stride.borrow_mut() = vec![0; src.len()].into_boxed_slice();
-
-        self.shape.borrow_mut().as_mut().copy_from_slice(src);
+    pub fn reshape(&self, src: &[usize]) -> Result<()> {
+        let mut shape = self.shape.borrow_mut();
+        if src.len() != shape.len() {
+            //  Todo: Remove this once we pre-allocate these buffers.
+            *shape = vec![0; src.len()].into_boxed_slice();
+            *self.stride.borrow_mut() = vec![0; src.len()].into_boxed_slice();
+            // return Err(InternalError::BufferSizeMismatch {
+            //     expected: src.len(),
+            //     actual: shape.len(),
+            // });
+        }
+        shape.as_mut().copy_from_slice(src);
         utils::calculate_stride(src, self.stride.borrow_mut().as_mut());
+
+        Ok(())
     }
 }
