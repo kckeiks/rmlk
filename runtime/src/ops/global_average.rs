@@ -3,7 +3,7 @@ use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 
-pub trait GlobalAverage {
+pub trait GlobalAverageBackend {
     type Service: DeviceService;
     fn compute(
         self,
@@ -20,7 +20,7 @@ pub struct GlobalAverageOp<T> {
 
 impl<T> GlobalAverageOp<T>
 where
-    T: GlobalAverage,
+    T: GlobalAverageBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

@@ -1,25 +1,35 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::conv::Convolution;
+use crate::ops::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::{CudaDevice, CudaSlice};
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
-pub struct ConvKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
+    kernel: T,
 }
 
-impl ConvKernel {
+impl<T> BackendHandler<T>
+where
+    T: ConvolutionKernel,
+{
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            kernel: T::default(),
+        }
     }
 }
 
-impl Convolution for ConvKernel {
+impl<T> ConvolutionBackend for BackendHandler<T>
+where
+    T: ConvolutionKernel,
+{
     type Service = Cuda;
 
     fn compute(
@@ -73,9 +83,10 @@ impl Convolution for ConvKernel {
                 }
             };
 
-            rmlk_cuda::kernels::conv::compute::<f32>(
+            T::execute::<f32>(
                 self.device,
-                (1.0, 0.0),
+                1.0,
+                0.0,
                 &x_data,
                 &x_shape,
                 &x_stride,
@@ -101,11 +112,99 @@ impl Convolution for ConvKernel {
     }
 }
 
+trait ConvolutionKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        w_data: &CudaSlice<T>,
+        w_shape: &[i32],
+        pads: &[i32],
+        strides: &[i32],
+        dilations: &[i32],
+        group: i32,
+        bias: Option<BiasInput<T>>,
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl ConvolutionKernel for ActiveKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        w_data: &CudaSlice<T>,
+        w_shape: &[i32],
+        pads: &[i32],
+        strides: &[i32],
+        dilations: &[i32],
+        group: i32,
+        bias: Option<BiasInput<T>>,
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()> {
+        rmlk_cuda::kernels::conv::compute::<f32>(
+            device,
+            (alpha, beta),
+            x_data,
+            x_shape,
+            x_stride,
+            w_data,
+            w_shape,
+            pads,
+            strides,
+            dilations,
+            group,
+            bias,
+            y_data,
+            y_shape,
+            y_stride,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl ConvolutionKernel for NoOpKernel {
+    fn execute<T>(
+        _: Arc<CudaDevice>,
+        _: T,
+        _: T,
+        _: &CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+        _: &CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: i32,
+        _: Option<BiasInput<T>>,
+        _: &mut CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::conv::ConvKernel;
+    use crate::providers::cuda::kernel::conv::BackendHandler;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestConvAttributes, TestNode, TestParams};
@@ -160,7 +259,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 4).unwrap();
 
-        let cuda_kernel = ConvKernel::new(device.clone());
+        let cuda_kernel = BackendHandler::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context
@@ -222,7 +321,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 3).unwrap();
 
-        let cuda_kernel = ConvKernel::new(device.clone());
+        let cuda_kernel = BackendHandler::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

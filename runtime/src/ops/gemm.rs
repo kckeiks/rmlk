@@ -3,7 +3,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{Context, ScratchAllocator, Tensor};
 
-pub trait Gemm {
+pub trait GemmBackend {
     type Service: DeviceService;
     // Todo: refactor so you can remove the shape output.
     fn compute(
@@ -24,7 +24,7 @@ pub struct GemmOp<T> {
 
 impl<T> GemmOp<T>
 where
-    T: Gemm,
+    T: GemmBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

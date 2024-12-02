@@ -1,24 +1,36 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::activation::Activation;
+use crate::ops::activation::ActivationBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaSlice};
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct ActivationKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
+    _marker: PhantomData<T>,
 }
 
-impl ActivationKernel {
+impl<T> BackendHandler<T>
+where
+    T: ActivationKernel,
+{
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl Activation for ActivationKernel {
+impl<T> ActivationBackend for BackendHandler<T>
+where
+    T: ActivationKernel,
+{
     type Service = Cuda;
     fn compute(
         &self,
@@ -40,9 +52,10 @@ impl Activation for ActivationKernel {
                 .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
                 .map_err(rmlk_cuda::Error::from)?;
 
-            rmlk_cuda::kernels::activation::compute::<f32>(
+            T::execute::<f32>(
                 self.device.clone(),
-                (1.0, 0.0),
+                1.0,
+                0.0,
                 x_data,
                 x_shape,
                 x_stride,
@@ -57,6 +70,58 @@ impl Activation for ActivationKernel {
                 dtype: *x.dtype(),
             })
         }
+    }
+}
+
+trait ActivationKernel {
+    fn execute<T: CudnnDataType>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        y_data: &mut CudaSlice<T>,
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl ActivationKernel for ActiveKernel {
+    fn execute<T: CudnnDataType>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        y_data: &mut CudaSlice<T>,
+    ) -> Result<()> {
+        rmlk_cuda::kernels::activation::compute(
+            device,
+            (alpha, beta),
+            x_data,
+            x_shape,
+            x_stride,
+            y_data,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl ActivationKernel for NoOpKernel {
+    fn execute<T: CudnnDataType>(
+        _: Arc<CudaDevice>,
+        _: T,
+        _: T,
+        _: &CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+        _: &mut CudaSlice<T>,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

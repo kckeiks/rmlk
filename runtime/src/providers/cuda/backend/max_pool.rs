@@ -1,24 +1,35 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::max_pool::MaxPool;
+use crate::ops::max_pool::MaxPoolBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::{CudaDevice, CudaSlice};
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct MaxPoolKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
+    _marker: PhantomData<T>,
 }
 
-impl MaxPoolKernel {
+impl<T> BackendHandler<T>
+where
+    T: MaxPoolKernel,
+{
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl MaxPool for MaxPoolKernel {
+impl<T> MaxPoolBackend for BackendHandler<T>
+where
+    T: MaxPoolKernel,
+{
     type Service = Cuda;
 
     fn compute(
@@ -47,9 +58,10 @@ impl MaxPool for MaxPoolKernel {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(rmlk_cuda::Error::from)?;
 
-            rmlk_cuda::kernels::max_pool::compute::<f32>(
+            T::execute::<f32>(
                 self.device,
-                (1.0, 0.0),
+                1.0,
+                0.0,
                 &x_data,
                 &x_shape,
                 &x_stride,
@@ -71,11 +83,83 @@ impl MaxPool for MaxPoolKernel {
     }
 }
 
+trait MaxPoolKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        kernel_shape: &[i32],
+        pads: &[i32],
+        strides: &[i32],
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl MaxPoolKernel for ActiveKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        kernel_shape: &[i32],
+        pads: &[i32],
+        strides: &[i32],
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()> {
+        rmlk_cuda::kernels::max_pool::compute::<f32>(
+            device,
+            (alpha, beta),
+            x_data,
+            x_shape,
+            x_stride,
+            kernel_shape,
+            pads,
+            strides,
+            y_data,
+            y_shape,
+            y_stride,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl MaxPoolKernel for NoOpKernel {
+    fn execute<T>(
+        _: Arc<CudaDevice>,
+        _: T,
+        _: T,
+        _: &CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: &mut CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::max_pool::MaxPoolKernel;
+    use crate::providers::cuda::kernel::max_pool::BackendHandler;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
@@ -119,7 +203,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let cuda_kernel = MaxPoolKernel::new(device.clone());
+        let cuda_kernel = BackendHandler::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

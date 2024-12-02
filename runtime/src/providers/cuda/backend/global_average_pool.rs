@@ -1,24 +1,35 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::global_average::GlobalAverage;
+use crate::ops::global_average::GlobalAverageBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::{CudaDevice, CudaSlice};
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct GlobalAveragePoolKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
+    _marker: PhantomData<T>,
 }
 
-impl GlobalAveragePoolKernel {
+impl<T> BackendHandler<T>
+where
+    T: GlobalAveragePoolKernel,
+{
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl GlobalAverage for GlobalAveragePoolKernel {
+impl<T> GlobalAverageBackend for BackendHandler<T>
+where
+    T: GlobalAveragePoolKernel,
+{
     type Service = Cuda;
 
     fn compute(
@@ -50,9 +61,10 @@ impl GlobalAverage for GlobalAveragePoolKernel {
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(rmlk_cuda::Error::from)?;
 
-            rmlk_cuda::kernels::global_average_pool::compute::<f32>(
+            T::execute::<f32>(
                 self.device,
-                (1.0, 0.0),
+                1.0,
+                0.0,
                 pads,
                 strides,
                 &x_data,
@@ -74,11 +86,83 @@ impl GlobalAverage for GlobalAveragePoolKernel {
     }
 }
 
+trait GlobalAveragePoolKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        pads: &[i32],
+        strides: &[i32],
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        kernel_shape: &[i32],
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl GlobalAveragePoolKernel for ActiveKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        alpha: T,
+        beta: T,
+        pads: &[i32],
+        strides: &[i32],
+        x_data: &CudaSlice<T>,
+        x_shape: &[i32],
+        x_stride: &[i32],
+        kernel_shape: &[i32],
+        y_data: &mut CudaSlice<T>,
+        y_shape: &[i32],
+        y_stride: &[i32],
+    ) -> Result<()> {
+        rmlk_cuda::kernels::global_average_pool::compute::<f32>(
+            device,
+            (alpha, beta),
+            pads,
+            strides,
+            x_data,
+            x_shape,
+            x_stride,
+            kernel_shape,
+            y_data,
+            y_shape,
+            y_stride,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl GlobalAveragePoolKernel for NoOpKernel {
+    fn execute<T>(
+        _: Arc<CudaDevice>,
+        _: T,
+        _: T,
+        _: &[i32],
+        _: &[i32],
+        _: &CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+        _: &[i32],
+        _: &mut CudaSlice<T>,
+        _: &[i32],
+        _: &[i32],
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::global_average_pool::GlobalAveragePoolKernel;
+    use crate::providers::cuda::kernel::global_average_pool::BackendHandler;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
@@ -110,7 +194,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 2).unwrap();
 
-        let cuda_kernel = GlobalAveragePoolKernel::new(device.clone());
+        let cuda_kernel = BackendHandler::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

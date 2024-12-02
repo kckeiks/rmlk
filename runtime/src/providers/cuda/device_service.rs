@@ -1,19 +1,19 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::ops::activation::ActivationOp;
-use crate::ops::add::AddOp;
+use crate::ops::add::AdditionOp;
 use crate::ops::conv::ConvolutionOp;
 use crate::ops::flatten::FlattenOp;
 use crate::ops::gemm::GemmOp;
 use crate::ops::global_average::GlobalAverageOp;
 use crate::ops::max_pool::MaxPoolOp;
-use crate::providers::cuda::activation::ActivationKernel;
-use crate::providers::cuda::conv::ConvKernel;
+use crate::providers::cuda::activation;
+use crate::providers::cuda::backend::add;
+use crate::providers::cuda::conv;
 use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::gemm::GemmKernel;
-use crate::providers::cuda::global_average_pool::GlobalAveragePoolKernel;
-use crate::providers::cuda::kernel::add::AddKernel;
-use crate::providers::cuda::max_pool::MaxPoolKernel;
+use crate::providers::cuda::gemm;
+use crate::providers::cuda::global_average_pool;
+use crate::providers::cuda::max_pool;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DriverError};
 use rmlk_schema::{DataType, Op};
@@ -52,26 +52,33 @@ impl Cuda {
 
 impl DeviceService for Cuda {
     type Data = CudaData;
-    type Kernel = CudaKernel;
+    type Backend = CudaKernel;
 
-    fn get_kernel(&self, op: Op, dtype: DataType) -> Result<Self::Kernel> {
+    fn get_kernel_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend> {
         let kernel = match op {
             Op::Add => {
                 // Todo: At what point should we load the kernel on device?
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Add(AddOp::new(AddKernel::new(self.device.clone(), f)))
+                CudaKernel::Add(AdditionOp::new(add::BackendHandler::new(
+                    self.device.clone(),
+                    f,
+                )))
             }
-            Op::Gemm => CudaKernel::Gemm(GemmOp::new(GemmKernel::new(self.device.clone()))),
-            Op::Relu => CudaKernel::Relu(ActivationOp::new(ActivationKernel::new(
+            Op::Gemm => {
+                CudaKernel::Gemm(GemmOp::new(gemm::BackendHandler::new(self.device.clone())))
+            }
+            Op::Relu => CudaKernel::Relu(ActivationOp::new(activation::BackendHandler::new(
                 self.device.clone(),
             ))),
-            Op::Conv => CudaKernel::Conv(ConvolutionOp::new(ConvKernel::new(self.device.clone()))),
+            Op::Conv => CudaKernel::Conv(ConvolutionOp::new(conv::BackendHandler::new(
+                self.device.clone(),
+            ))),
             Op::GlobalAveragePool => CudaKernel::GlobalAveragePool(GlobalAverageOp::new(
-                GlobalAveragePoolKernel::new(self.device.clone()),
+                global_average_pool::BackendHandler::new(self.device.clone()),
             )),
-            Op::MaxPool => {
-                CudaKernel::MaxPool(MaxPoolOp::new(MaxPoolKernel::new(self.device.clone())))
-            }
+            Op::MaxPool => CudaKernel::MaxPool(MaxPoolOp::new(max_pool::BackendHandler::new(
+                self.device.clone(),
+            ))),
             Op::Flatten => CudaKernel::Flatten(FlattenOp::new()),
             op => {
                 return Err(InternalError::UnsupportedOp { op });

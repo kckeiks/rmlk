@@ -2,7 +2,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 
-pub trait Add {
+pub trait AdditionBackend {
     type Service: DeviceService;
     fn compute(
         self,
@@ -12,13 +12,13 @@ pub trait Add {
     ) -> Result<<Self::Service as DeviceService>::Data>;
 }
 
-pub struct AddOp<T> {
+pub struct AdditionOp<T> {
     kernel: T,
 }
 
-impl<T> AddOp<T>
+impl<T> AdditionOp<T>
 where
-    T: Add,
+    T: AdditionBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

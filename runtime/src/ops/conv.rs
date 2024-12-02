@@ -11,7 +11,7 @@ pub struct BiasInput<'a, T> {
     pub stride: &'a [i32],
 }
 
-pub trait Convolution {
+pub trait ConvolutionBackend {
     type Service: DeviceService;
     fn compute(
         self,
@@ -34,7 +34,7 @@ pub struct ConvolutionOp<T> {
 
 impl<T> ConvolutionOp<T>
 where
-    T: Convolution,
+    T: ConvolutionBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

@@ -1,25 +1,37 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::add::Add;
+use crate::ops::add::AdditionBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, CudaFunction};
+use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice};
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct AddKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
     f: CudaFunction,
+    _marker: PhantomData<T>,
 }
 
-impl AddKernel {
+impl<T> BackendHandler<T>
+where
+    T: AdditionKernel,
+{
     pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
-        Self { device, f }
+        Self {
+            device,
+            f,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl Add for AddKernel {
+impl<T> AdditionBackend for BackendHandler<T>
+where
+    T: AdditionKernel,
+{
     type Service = Cuda;
 
     fn compute(
@@ -50,7 +62,7 @@ impl Add for AddKernel {
                     .map_err(rmlk_cuda::Error::from)?
             };
 
-            rmlk_cuda::kernels::add::compute::<f32>(
+            T::execute::<f32>(
                 self.device,
                 self.f,
                 lhs_data,
@@ -73,11 +85,76 @@ impl Add for AddKernel {
     }
 }
 
+trait AdditionKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        func: CudaFunction,
+        lhs_data: &CudaSlice<T>,
+        lhs_shape: &[usize],
+        lhs_stride: &[usize],
+        rhs_data: &CudaSlice<T>,
+        rhs_shape: &[usize],
+        rhs_stride: &[usize],
+        out_data: &mut CudaSlice<T>,
+        info_buffer: &mut [usize],
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl AdditionKernel for ActiveKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        func: CudaFunction,
+        lhs_data: &CudaSlice<T>,
+        lhs_shape: &[usize],
+        lhs_stride: &[usize],
+        rhs_data: &CudaSlice<T>,
+        rhs_shape: &[usize],
+        rhs_stride: &[usize],
+        out_data: &mut CudaSlice<T>,
+        info_buffer: &mut [usize],
+    ) -> Result<()> {
+        rmlk_cuda::kernels::add::compute(
+            device,
+            func,
+            lhs_data,
+            lhs_shape,
+            lhs_stride,
+            rhs_data,
+            rhs_shape,
+            rhs_stride,
+            out_data,
+            info_buffer,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl AdditionKernel for NoOpKernel {
+    fn execute<T>(
+        _: Arc<CudaDevice>,
+        _: CudaFunction,
+        _: &CudaSlice<T>,
+        _: &[usize],
+        _: &[usize],
+        _: &CudaSlice<T>,
+        _: &[usize],
+        _: &[usize],
+        _: &mut CudaSlice<T>,
+        _: &mut [usize],
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::add::AddKernel;
+    use crate::providers::cuda::kernel::add::BackendHandler;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
@@ -115,7 +192,7 @@ mod test {
         let mut context = Context::new(&mut state, 3).unwrap();
 
         let f = rmlk_cuda::load_kernel(&device, Op::Add, DataType::Float).unwrap();
-        let cuda_kernel = AddKernel::new(device.clone(), f);
+        let cuda_kernel = BackendHandler::new(device.clone(), f);
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

@@ -5,7 +5,7 @@ use crate::core::{Context, ScratchAllocator, Tensor};
 use crate::utils;
 use log::trace;
 
-pub trait MaxPool {
+pub trait MaxPoolBackend {
     type Service: DeviceService;
 
     // Todo: change all params to use usize.
@@ -27,7 +27,7 @@ pub struct MaxPoolOp<T> {
 
 impl<T> MaxPoolOp<T>
 where
-    T: MaxPool,
+    T: MaxPoolBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

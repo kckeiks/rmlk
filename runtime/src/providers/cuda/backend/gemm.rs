@@ -1,25 +1,37 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::gemm::Gemm;
+use crate::ops::gemm::GemmBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::cublas::StridedBatchedConfig;
+use cudarc::driver::{CudaDevice, CudaSlice};
 use rmlk_cuda::kernels::gemm::GemmOp;
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct GemmKernel {
+pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
+    _marker: PhantomData<T>,
 }
 
-impl GemmKernel {
+impl<T> BackendHandler<T>
+where
+    T: GemmKernel,
+{
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl Gemm for GemmKernel {
+impl<T> GemmBackend for BackendHandler<T>
+where
+    T: GemmKernel,
+{
     type Service = Cuda;
 
     fn compute(
@@ -61,7 +73,14 @@ impl Gemm for GemmKernel {
                 }
             })?;
 
-            op.compute_f32(self.device, lhs_data, rhs_data, &mut out_slice, config)?;
+            T::execute_with_float_tensors(
+                &op,
+                self.device,
+                lhs_data,
+                rhs_data,
+                &mut out_slice,
+                config,
+            )?;
 
             Ok((CudaData::F32(out_slice), op.calculate_output_shape()))
         } else {
@@ -73,11 +92,55 @@ impl Gemm for GemmKernel {
     }
 }
 
+trait GemmKernel {
+    fn execute_with_float_tensors(
+        // Todo: refactor this API.
+        gemm_op: &GemmOp,
+        device: Arc<CudaDevice>,
+        lhs_data: &CudaSlice<f32>,
+        rhs_data: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        config: StridedBatchedConfig<f32>,
+    ) -> Result<()>;
+}
+
+pub struct ActiveKernel(());
+
+impl GemmKernel for ActiveKernel {
+    fn execute_with_float_tensors(
+        gemm_op: &GemmOp,
+        device: Arc<CudaDevice>,
+        lhs_data: &CudaSlice<f32>,
+        rhs_data: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        config: StridedBatchedConfig<f32>,
+    ) -> Result<()> {
+        gemm_op
+            .compute_f32(device, lhs_data, rhs_data, out, config)
+            .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl GemmKernel for NoOpKernel {
+    fn execute_with_float_tensors(
+        _: &GemmOp,
+        _: Arc<CudaDevice>,
+        _: &CudaSlice<f32>,
+        _: &CudaSlice<f32>,
+        _: &mut CudaSlice<f32>,
+        _: StridedBatchedConfig<f32>,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::Context;
     use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::gemm::GemmKernel;
+    use crate::providers::cuda::kernel::gemm::BackendHandler;
     use crate::providers::cuda::Cuda;
     use crate::test_utils;
     use crate::test_utils::{TestNode, TestParams};
@@ -116,7 +179,7 @@ mod test {
         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
         let mut context = Context::new(&mut state, 3).unwrap();
 
-        let cuda_kernel = GemmKernel::new(device.clone());
+        let cuda_kernel = BackendHandler::new(device.clone());
         cuda_kernel.compute(&mut context).unwrap();
 
         let out_data = context

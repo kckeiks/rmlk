@@ -1,6 +1,6 @@
+mod backend;
 mod data;
 mod device_service;
-mod kernel;
 
+pub use backend::*;
 pub use device_service::Cuda;
-pub use kernel::*;

@@ -3,7 +3,7 @@ use crate::core::error::Result;
 use crate::core::{Context, ScratchAllocator, Tensor};
 use log::trace;
 
-pub trait Activation {
+pub trait ActivationBackend {
     type Service: DeviceService;
     fn compute(
         &self,
@@ -18,7 +18,7 @@ pub struct ActivationOp<T> {
 
 impl<T> ActivationOp<T>
 where
-    T: Activation,
+    T: ActivationBackend,
 {
     pub fn new(kernel: T) -> Self {
         Self { kernel }

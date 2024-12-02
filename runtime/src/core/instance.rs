@@ -3,7 +3,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::{Error, InternalError};
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::kernel::Kernel;
+use crate::core::kernel::KernelBackend;
 use crate::core::plan::Plan;
 use crate::core::store::TensorStore;
 use crate::core::value::Value;
@@ -178,7 +178,7 @@ where
             );
 
             provider
-                .get_kernel(op, DataType::Float)?
+                .get_kernel_backend(op, DataType::Float)?
                 .compute(&mut ctx)?;
         }
 
