@@ -45,6 +45,7 @@ impl KernelBackend for CudaKernel {
     }
 }
 
+#[allow(dead_code)]
 pub enum NoOpCudaKernel {
     Add(AdditionOp<add::BackendHandler<add::NoOpKernel>>),
     Relu(ActivationOp<activation::BackendHandler<activation::NoOpKernel>>),

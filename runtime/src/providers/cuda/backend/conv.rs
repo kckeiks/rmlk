@@ -4,14 +4,16 @@ use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, CudaSlice};
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::{DataType, Op};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub struct BackendHandler<T> {
     device: Arc<CudaDevice>,
-    kernel: T,
+    kernel: PhantomData<T>,
 }
 
 impl<T> BackendHandler<T>
@@ -21,7 +23,7 @@ where
     pub fn new(device: Arc<CudaDevice>) -> Self {
         Self {
             device,
-            kernel: T::default(),
+            kernel: PhantomData,
         }
     }
 }
@@ -112,7 +114,7 @@ where
     }
 }
 
-trait ConvolutionKernel {
+pub trait ConvolutionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         alpha: T,
@@ -130,7 +132,9 @@ trait ConvolutionKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
@@ -153,8 +157,11 @@ impl ConvolutionKernel for ActiveKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()> {
-        rmlk_cuda::kernels::conv::compute::<f32>(
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
+        rmlk_cuda::kernels::conv::compute::<T>(
             device,
             (alpha, beta),
             x_data,

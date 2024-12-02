@@ -4,7 +4,8 @@ use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::max_pool::MaxPoolBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, CudaSlice};
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -83,7 +84,7 @@ where
     }
 }
 
-trait MaxPoolKernel {
+pub trait MaxPoolKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         alpha: T,
@@ -97,7 +98,9 @@ trait MaxPoolKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
@@ -116,8 +119,11 @@ impl MaxPoolKernel for ActiveKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()> {
-        rmlk_cuda::kernels::max_pool::compute::<f32>(
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
+        rmlk_cuda::kernels::max_pool::compute::<T>(
             device,
             (alpha, beta),
             x_data,

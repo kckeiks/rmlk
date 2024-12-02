@@ -5,7 +5,7 @@ use crate::ops::activation::ActivationBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -73,8 +73,8 @@ where
     }
 }
 
-trait ActivationKernel {
-    fn execute<T: CudnnDataType>(
+pub trait ActivationKernel {
+    fn execute<T>(
         device: Arc<CudaDevice>,
         alpha: T,
         beta: T,
@@ -82,13 +82,15 @@ trait ActivationKernel {
         x_shape: &[i32],
         x_stride: &[i32],
         y_data: &mut CudaSlice<T>,
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
 
 impl ActivationKernel for ActiveKernel {
-    fn execute<T: CudnnDataType>(
+    fn execute<T>(
         device: Arc<CudaDevice>,
         alpha: T,
         beta: T,
@@ -96,7 +98,10 @@ impl ActivationKernel for ActiveKernel {
         x_shape: &[i32],
         x_stride: &[i32],
         y_data: &mut CudaSlice<T>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
         rmlk_cuda::kernels::activation::compute(
             device,
             (alpha, beta),

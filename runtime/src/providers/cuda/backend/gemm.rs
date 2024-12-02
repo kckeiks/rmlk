@@ -92,7 +92,7 @@ where
     }
 }
 
-trait GemmKernel {
+pub trait GemmKernel {
     fn execute_with_float_tensors(
         // Todo: refactor this API.
         gemm_op: &GemmOp,

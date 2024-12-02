@@ -4,7 +4,8 @@ use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::global_average::GlobalAverageBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, CudaSlice};
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -86,7 +87,7 @@ where
     }
 }
 
-trait GlobalAveragePoolKernel {
+pub trait GlobalAveragePoolKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         alpha: T,
@@ -100,7 +101,9 @@ trait GlobalAveragePoolKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
@@ -119,8 +122,11 @@ impl GlobalAveragePoolKernel for ActiveKernel {
         y_data: &mut CudaSlice<T>,
         y_shape: &[i32],
         y_stride: &[i32],
-    ) -> Result<()> {
-        rmlk_cuda::kernels::global_average_pool::compute::<f32>(
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
+        rmlk_cuda::kernels::global_average_pool::compute::<T>(
             device,
             (alpha, beta),
             pads,

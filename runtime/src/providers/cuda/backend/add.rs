@@ -4,7 +4,8 @@ use crate::core::{ScratchAllocator, Tensor};
 use crate::ops::add::AdditionBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice};
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -85,7 +86,7 @@ where
     }
 }
 
-trait AdditionKernel {
+pub trait AdditionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
@@ -97,7 +98,9 @@ trait AdditionKernel {
         rhs_stride: &[usize],
         out_data: &mut CudaSlice<T>,
         info_buffer: &mut [usize],
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
@@ -114,7 +117,10 @@ impl AdditionKernel for ActiveKernel {
         rhs_stride: &[usize],
         out_data: &mut CudaSlice<T>,
         info_buffer: &mut [usize],
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
         rmlk_cuda::kernels::add::compute(
             device,
             func,
