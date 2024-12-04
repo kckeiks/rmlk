@@ -5,8 +5,8 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 
+use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
-use crate::core::kernel::KernelBackend;
 use crate::core::Context;
 use crate::ops::activation::ActivationOp;
 use crate::ops::add::AdditionOp;
@@ -29,10 +29,8 @@ pub enum CudaKernel {
     Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?
 }
 
-impl KernelBackend for CudaKernel {
-    type Device = Cuda;
-
-    fn compute(self, ctx: &mut Context<Self::Device>) -> Result<()> {
+impl OperationBackend<Cuda> for CudaKernel {
+    fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
             CudaKernel::Add(kernel) => kernel.compute(ctx),
             CudaKernel::Relu(kernel) => kernel.compute(ctx),
@@ -58,10 +56,8 @@ pub enum NoOpCudaKernel {
     Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?
 }
 
-impl KernelBackend for NoOpCudaKernel {
-    type Device = Cuda;
-
-    fn compute(self, ctx: &mut Context<Self::Device>) -> Result<()> {
+impl OperationBackend<Cuda> for NoOpCudaKernel {
+    fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
             NoOpCudaKernel::Add(kernel) => kernel.compute(ctx),
             NoOpCudaKernel::Relu(kernel) => kernel.compute(ctx),

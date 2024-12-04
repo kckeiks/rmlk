@@ -1,16 +1,16 @@
+use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
-use crate::core::kernel::KernelBackend;
 use rmlk_schema::{DataType, Op};
 
 /// Services for using an accelerator device's resources.
-pub trait DeviceService {
+pub trait DeviceService: Sized {
     /// Data on device.
     type Data;
-    /// Kernel that can be executed on device.
-    type Backend: KernelBackend<Device = Self>;
+    /// Backends that executes kernels on device.
+    type Backend: OperationBackend<Self>;
 
-    /// Get the kernel backend given the operation and data type.
-    fn get_kernel_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend>;
+    /// Get the backend for an operation.
+    fn get_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend>;
 
     /// Copies `f32` data from host to device.
     fn htod_float(&self, data: Vec<f32>) -> Result<Self::Data>;

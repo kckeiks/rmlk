@@ -54,7 +54,7 @@ impl DeviceService for Cuda {
     type Data = CudaData;
     type Backend = CudaKernel;
 
-    fn get_kernel_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend> {
+    fn get_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend> {
         let kernel = match op {
             Op::Add => {
                 // Todo: At what point should we load the kernel on device?

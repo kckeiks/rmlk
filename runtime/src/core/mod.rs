@@ -8,9 +8,9 @@ mod tensor;
 mod value;
 
 mod allocator;
+pub mod backend;
 pub mod device_service;
 pub mod error;
-pub mod kernel;
 
 pub use allocator::ScratchAllocator;
 pub use context::Context;
