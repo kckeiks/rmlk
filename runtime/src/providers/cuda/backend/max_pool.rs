@@ -112,12 +112,10 @@ where
             });
         };
 
-        let y = ctx.get_output(0)?;
+        let dtype = *x.dtype();
+        let mut y = ctx.get_output_mut(0)?;
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         y.reshape(shape)?;
-
-        let dtype = *x.dtype();
-        let y = ctx.get_output_mut(0)?;
         y.init(dev_data);
         y.set_dtype(dtype);
 

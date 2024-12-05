@@ -88,11 +88,9 @@ where
             });
         };
 
-        let y = ctx.get_output(0)?;
-        y.reshape(y_shape_original)?;
-
         let dtype = *x.dtype();
-        let y = ctx.get_output_mut(0)?;
+        let mut y = ctx.get_output_mut(0)?;
+        y.reshape(y_shape_original)?;
         y.init(dev_data);
         y.set_dtype(dtype);
 

@@ -3,13 +3,14 @@ use crate::core::error::Result;
 use crate::core::{device_service::DeviceService, Tensor};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 
 /// Tensor store.
 ///
 /// This object stores a fixed-size collection of tensors.
 pub struct TensorStore<T> {
-    tensors: Box<[Option<Tensor<T>>]>,
+    tensors: Box<[Option<RefCell<Tensor<T>>>]>,
 }
 
 impl<T> TensorStore<T> {
@@ -48,7 +49,7 @@ impl<T> TensorStore<T> {
 
             let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
             tensor.init(data);
-            tensors[node_id].replace(tensor);
+            tensors[node_id].replace(RefCell::new(tensor));
         }
 
         for node_id in graph.inputs() {
@@ -63,7 +64,7 @@ impl<T> TensorStore<T> {
                     } else {
                         Tensor::new(dtype)
                     };
-                    tensors[node_id].replace(tensor);
+                    tensors[node_id].replace(RefCell::new(tensor));
                 }
                 None => {
                     return Err(InternalError::TensorStore(format!(
@@ -85,7 +86,7 @@ impl<T> TensorStore<T> {
                     } else {
                         Tensor::new(dtype)
                     };
-                    tensors[node_id].replace(tensor);
+                    tensors[node_id].replace(RefCell::new(tensor));
                 }
                 None => {
                     return Err(InternalError::TensorStore(format!(
@@ -112,7 +113,7 @@ impl<T> TensorStore<T> {
                             })?
                             .is_none()
                         {
-                            tensors[*output].replace(Tensor::new(DataType::Undefined));
+                            tensors[*output].replace(RefCell::new(Tensor::new(DataType::Undefined)));
                         }
                     }
                     None => {
@@ -131,20 +132,22 @@ impl<T> TensorStore<T> {
         })
     }
 
-    pub fn get(&self, id: usize) -> Option<&Tensor<T>> {
-        self.tensors.get(id).map(|r| r.as_ref()).flatten()
+    pub fn get(&self, id: usize) -> Option<Ref<'_, Tensor<T>>> {
+        self.tensors
+            .get(id)
+            .and_then(|x| x.as_ref().map(|y| y.borrow()))
     }
 
-    pub fn get_mut(&mut self, id: usize) -> Option<&mut Tensor<T>> {
-        self.tensors.get_mut(id).map(|r| r.as_mut()).flatten()
+    pub fn get_mut(&self, id: usize) -> Option<RefMut<'_, Tensor<T>>> {
+        self.tensors
+            .get(id)
+            .and_then(|x| x.as_ref().map(|y| y.borrow_mut()))
     }
 
-    pub fn update(&mut self, id: usize, tensor: Tensor<T>) -> Result<()> {
+    pub fn get_inner_mut(&mut self, id: usize) -> Option<&mut Tensor<T>> {
         self.tensors
             .get_mut(id)
-            .ok_or_else(|| InternalError::TensorStore(format!("invalid tensor id `{id}`")))?
-            .replace(tensor);
-        Ok(())
+            .and_then(|x| x.as_mut().map(|y| y.get_mut()))
     }
 }
 

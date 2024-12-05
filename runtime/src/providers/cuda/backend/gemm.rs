@@ -88,11 +88,9 @@ where
             });
         };
 
-        let y = ctx.get_output(0)?;
-        y.reshape(output_shape.as_slice())?;
-
         let y_dtype = *lhs.dtype();
-        let y = ctx.get_output_mut(0)?;
+        let mut y = ctx.get_output_mut(0)?;
+        y.reshape(output_shape.as_slice())?;
         y.init(dev_data);
         y.set_dtype(y_dtype);
 

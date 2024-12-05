@@ -75,7 +75,7 @@ where
 
         // Extract and prepare bias argument.
         // At this point, we still don't know the data type of bias.
-        let bias = match bias {
+        let bias = match bias.as_ref() {
             Some(bias_tensor) => {
                 let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
                 // Todo: Urgent. We need to make this generic.
@@ -162,13 +162,10 @@ where
             });
         };
 
-        // Todo: Remove this once we handle mutable-shared references to tensors.
-        let y = ctx.get_output(0)?;
-        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        y.reshape(shape)?;
-
         let dtype = *x.dtype();
-        let y = ctx.get_output_mut(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        let mut y = ctx.get_output_mut(0)?;
+        y.reshape(shape)?;
         y.init(dev_data);
         y.set_dtype(dtype);
 

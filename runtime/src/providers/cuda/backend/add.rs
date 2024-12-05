@@ -79,11 +79,9 @@ where
             });
         };
 
-        let c = ctx.get_output(0)?;
-        c.reshape(&a.shape())?;
-
         let dtype = *a.dtype();
-        let c = ctx.get_output_mut(0)?;
+        let mut c = ctx.get_output_mut(0)?;
+        c.reshape(&a.shape())?;
         c.init(dev_data);
         c.set_dtype(dtype);
 

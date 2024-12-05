@@ -10,6 +10,7 @@ use log::trace;
 use rmlk_graph::{Graph, Node};
 use rmlk_schema::Op;
 use rmlk_schema::{DataType, Definition};
+use std::cell::{Ref, RefMut};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -106,7 +107,7 @@ where
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor(&self, value_index: usize) -> Option<&Tensor<T::Data>> {
+    pub fn get_tensor(&self, value_index: usize) -> Option<Ref<'_, Tensor<T::Data>>> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get(index)
     }
@@ -115,20 +116,9 @@ where
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor_mut(&mut self, value_index: usize) -> Option<&mut Tensor<T::Data>> {
+    pub fn get_tensor_mut(&self, value_index: usize) -> Option<RefMut<'_, Tensor<T::Data>>> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get_mut(index)
-    }
-
-    /// Update the state with the tensor value.
-    ///
-    /// The value index for a given computation can be
-    /// found using [`ExecutionState::get_tensor_index`].
-    pub fn update_tensor(&mut self, value_index: usize, tensor: Tensor<T::Data>) -> Result<()> {
-        let index = self.get_inner_index(value_index).ok_or_else(|| {
-            InternalError::ExecutionState(format!("invalid value_index: {value_index}"))
-        })?;
-        self.tensor_store.update(index, tensor).map_err(Into::into)
     }
 
     /// Get the starting index for the values of a node.
@@ -192,13 +182,13 @@ where
     }
 
     /// Get the tensor value given a node ID.
-    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<&Tensor<T::Data>> {
+    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Ref<'_, Tensor<T::Data>>> {
         self.tensor_store.get(node_id)
     }
 
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
-        self.tensor_store.get_mut(node_id)
+        self.tensor_store.get_inner_mut(node_id)
     }
 
     /// Get the index of the actual value.
