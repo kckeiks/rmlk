@@ -1,7 +1,6 @@
 use crate::core::error::Result;
 use crate::utils;
 use rmlk_schema::DataType;
-use std::cell::{Ref, RefCell};
 
 /// Tensor.
 ///
@@ -11,8 +10,8 @@ use std::cell::{Ref, RefCell};
 pub struct Tensor<T> {
     data: Option<T>,
     dtype: DataType,
-    shape: RefCell<Box<[usize]>>,
-    stride: RefCell<Box<[usize]>>,
+    shape: Box<[usize]>,
+    stride: Box<[usize]>,
 }
 
 impl<T> Tensor<T> {
@@ -20,8 +19,8 @@ impl<T> Tensor<T> {
         Self {
             data: None,
             dtype,
-            shape: RefCell::new(Box::new([])),
-            stride: RefCell::new(Box::new([])),
+            shape: Box::new([]),
+            stride: Box::new([]),
         }
     }
 
@@ -34,8 +33,8 @@ impl<T> Tensor<T> {
         Self {
             data: None,
             dtype,
-            shape: RefCell::new(shape.into_boxed_slice()),
-            stride: RefCell::new(stride.into_boxed_slice()),
+            shape: shape.into_boxed_slice(),
+            stride: stride.into_boxed_slice(),
         }
     }
 
@@ -59,12 +58,12 @@ impl<T> Tensor<T> {
         self.data.take()
     }
 
-    pub fn shape(&self) -> Ref<'_, [usize]> {
-        Ref::map(self.shape.borrow(), |borrow| borrow.as_ref())
+    pub fn shape(&self) -> &[usize] {
+        self.shape.as_ref()
     }
 
-    pub fn stride(&self) -> Ref<'_, [usize]> {
-        Ref::map(self.stride.borrow(), |borrow| borrow.as_ref())
+    pub fn stride(&self) -> &[usize] {
+        self.stride.as_ref()
     }
 
     pub fn dtype(&self) -> &DataType {
@@ -76,28 +75,27 @@ impl<T> Tensor<T> {
     }
 
     pub fn _reshape(&mut self, shape: Box<[usize]>) {
-        *self.shape.borrow_mut() = shape;
+        self.shape = shape;
 
-        let dims = self.shape.borrow().as_ref().len();
+        let dims = self.shape.as_ref().len();
         let mut stride = vec![0usize; dims];
-        utils::calculate_stride(self.shape.borrow().as_ref(), &mut stride.as_mut_slice());
+        utils::calculate_stride(self.shape.as_ref(), &mut stride.as_mut_slice());
 
-        *self.stride.borrow_mut() = stride.into_boxed_slice();
+        self.stride = stride.into_boxed_slice();
     }
 
-    pub fn reshape(&self, src: &[usize]) -> Result<()> {
-        let mut shape = self.shape.borrow_mut();
-        if src.len() != shape.len() {
+    pub fn reshape(&mut self, src: &[usize]) -> Result<()> {
+        if src.len() != self.shape.len() {
             //  Todo: Remove this once we pre-allocate these buffers.
-            *shape = vec![0; src.len()].into_boxed_slice();
-            *self.stride.borrow_mut() = vec![0; src.len()].into_boxed_slice();
+            self.shape = vec![0; src.len()].into_boxed_slice();
+            self.stride = vec![0; src.len()].into_boxed_slice();
             // return Err(InternalError::BufferSizeMismatch {
             //     expected: src.len(),
             //     actual: shape.len(),
             // });
         }
-        shape.as_mut().copy_from_slice(src);
-        utils::calculate_stride(src, self.stride.borrow_mut().as_mut());
+        self.shape.as_mut().copy_from_slice(src);
+        utils::calculate_stride(src, self.stride.as_mut());
 
         Ok(())
     }
