@@ -1,5 +1,6 @@
 use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
+use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::backend::add;
 use crate::providers::cuda::conv::ConvolutionBackend;
@@ -8,7 +9,6 @@ use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::CudaKernel;
-use crate::templates::flatten::FlattenTemplate;
 use cudarc::driver::{CudaDevice, CudaFunction, DriverError};
 use rmlk_schema::{DataType, Op};
 use std::sync::Arc;

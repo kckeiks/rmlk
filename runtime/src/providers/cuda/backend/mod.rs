@@ -8,6 +8,7 @@ pub mod max_pool;
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
 use crate::core::Context;
+use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
@@ -15,7 +16,6 @@ use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::Cuda;
-use crate::templates::flatten::FlattenTemplate;
 
 pub enum CudaKernel {
     Add(AdditionBackend<add::ActiveKernel>),
