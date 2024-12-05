@@ -1,7 +1,7 @@
 mod attributes;
 mod core;
-mod ops;
 mod providers;
+mod templates;
 #[cfg(test)]
 mod test_utils;
 mod utils;

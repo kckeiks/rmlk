@@ -1,21 +1,22 @@
-use crate::core::device_service::DeviceService;
+use crate::attributes::pooling::MaxPoolAttributes;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::max_pool::MaxPoolBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use log::trace;
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct MaxPoolBackend<T> {
     device: Arc<CudaDevice>,
     _marker: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> MaxPoolBackend<T>
 where
     T: MaxPoolKernel,
 {
@@ -27,26 +28,55 @@ where
     }
 }
 
-impl<T> MaxPoolBackend for BackendHandler<T>
+impl<T> MaxPoolBackend<T>
 where
     T: MaxPoolKernel,
 {
-    type Service = Cuda;
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
 
-    fn compute(
-        self,
-        x: &Tensor<<Self::Service as DeviceService>::Data>,
-        kernel_shape: &[i32],
-        pads: &[i32],
-        strides: &[i32],
-        y_shape: &[i32],
-        y_stride: &[i32],
-        scratch_alloc: &ScratchAllocator,
-    ) -> Result<<Self::Service as DeviceService>::Data> {
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+
+        let attrs = MaxPoolAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+        )?;
+
+        let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+
+        // Todo: Move this to utils.
+        // Todo: if attributes were usize, we wouldn't need to do this allocation here.
+        rmlk_cuda::kernels::max_pool::compute_output_shape(
+            &x_shape,
+            attrs.kernel_shape(),
+            attrs.pads(),
+            attrs.strides(),
+            &mut y_shape,
+            false,
+        )?;
+
+        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+        utils::calculate_stride(&y_shape, &mut y_stride);
+
+        trace!(
+            "x_shape={x_shape:?},\
+            x_stride={:?},\
+            kernel_shape={:?},\
+            pads={:?},\
+            strides={:?}\
+            y_shape={y_shape:?}\
+            y_stride={y_stride:?}",
+            x.stride(),
+            attrs.kernel_shape(),
+            attrs.pads(),
+            attrs.strides()
+        );
+
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        if matches!(x.dtype(), DataType::Float) {
+        let dev_data = if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
@@ -66,21 +96,32 @@ where
                 &x_data,
                 &x_shape,
                 &x_stride,
-                kernel_shape,
-                pads,
-                strides,
+                attrs.kernel_shape(),
+                attrs.pads(),
+                attrs.strides(),
                 &mut y_data,
                 &y_shape,
                 &y_stride,
             )?;
 
-            Ok(CudaData::F32(y_data))
+            CudaData::F32(y_data)
         } else {
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::GlobalAveragePool,
                 dtype: *x.dtype(),
-            })
-        }
+            });
+        };
+
+        let y = ctx.get_output(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        y.reshape(shape)?;
+
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
+
+        Ok(())
     }
 }
 

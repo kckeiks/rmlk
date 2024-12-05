@@ -12,7 +12,6 @@ pub mod backend;
 pub mod device_service;
 pub mod error;
 
-pub use allocator::ScratchAllocator;
 pub use context::Context;
 #[cfg(test)]
 pub use execution_state::ExecutionState;

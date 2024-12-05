@@ -1,7 +1,5 @@
-use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::add::AdditionBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
@@ -10,13 +8,13 @@ use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct AdditionBackend<T> {
     device: Arc<CudaDevice>,
     f: CudaFunction,
     _marker: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> AdditionBackend<T>
 where
     T: AdditionKernel,
 {
@@ -29,29 +27,26 @@ where
     }
 }
 
-impl<T> AdditionBackend for BackendHandler<T>
+impl<T> AdditionBackend<T>
 where
     T: AdditionKernel,
 {
-    type Service = Cuda;
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
 
-    fn compute(
-        self,
-        lhs: &Tensor<<Self::Service as DeviceService>::Data>,
-        rhs: &Tensor<<Self::Service as DeviceService>::Data>,
-        scratch_alloc: &ScratchAllocator,
-    ) -> Result<CudaData> {
-        let elem_count: usize = lhs.shape().iter().product();
+        let elem_count: usize = a.shape().iter().product();
 
-        let info_buffer = scratch_alloc.allocate(3 * lhs.shape().len())?;
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
 
-        if matches!(lhs.dtype(), DataType::Float) {
-            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+        let dev_data = if matches!(a.dtype(), DataType::Float) {
+            let a_dev_data = a.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
                 }
             })?;
-            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
+            let b_dev_data = b.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
                 }
@@ -66,23 +61,33 @@ where
             T::execute::<f32>(
                 self.device,
                 self.f,
-                lhs_data,
-                &lhs.shape(),
-                &lhs.stride(),
-                rhs_data,
-                &rhs.shape(),
-                &rhs.stride(),
+                a_dev_data,
+                &a.shape(),
+                &a.stride(),
+                b_dev_data,
+                &b.shape(),
+                &b.stride(),
                 &mut out_slice,
                 info_buffer,
             )?;
 
-            Ok(CudaData::F32(out_slice))
+            CudaData::F32(out_slice)
         } else {
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Add,
-                dtype: *lhs.dtype(),
-            })
-        }
+                dtype: *a.dtype(),
+            });
+        };
+
+        let c = ctx.get_output(0)?;
+        c.reshape(&a.shape())?;
+
+        let dtype = *a.dtype();
+        let c = ctx.get_output_mut(0)?;
+        c.init(dev_data);
+        c.set_dtype(dtype);
+
+        Ok(())
     }
 }
 

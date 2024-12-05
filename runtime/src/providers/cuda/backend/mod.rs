@@ -8,25 +8,23 @@ pub mod max_pool;
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
 use crate::core::Context;
-use crate::ops::activation::ActivationOp;
-use crate::ops::add::AdditionOp;
-use crate::ops::conv::ConvolutionOp;
-use crate::ops::flatten::FlattenOp;
-use crate::ops::gemm::GemmOp;
-use crate::ops::global_average::GlobalAverageOp;
-use crate::ops::max_pool::MaxPoolOp;
+use crate::providers::cuda::activation::ActivationBackend;
+use crate::providers::cuda::add::AdditionBackend;
+use crate::providers::cuda::conv::ConvolutionBackend;
+use crate::providers::cuda::gemm::GemmBackend;
+use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
+use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::Cuda;
+use crate::templates::flatten::FlattenTemplate;
 
 pub enum CudaKernel {
-    Add(AdditionOp<add::BackendHandler<add::ActiveKernel>>),
-    Relu(ActivationOp<activation::BackendHandler<activation::ActiveKernel>>),
-    Conv(ConvolutionOp<conv::BackendHandler<conv::ActiveKernel>>),
-    Gemm(GemmOp<gemm::BackendHandler<gemm::ActiveKernel>>),
-    GlobalAveragePool(
-        GlobalAverageOp<global_average_pool::BackendHandler<global_average_pool::ActiveKernel>>,
-    ),
-    MaxPool(MaxPoolOp<max_pool::BackendHandler<max_pool::ActiveKernel>>),
-    Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?
+    Add(AdditionBackend<add::ActiveKernel>),
+    Relu(ActivationBackend<activation::ActiveKernel>),
+    Conv(ConvolutionBackend<conv::ActiveKernel>),
+    Gemm(GemmBackend<gemm::ActiveKernel>),
+    GlobalAveragePool(GlobalAverageBackend<global_average_pool::ActiveKernel>),
+    MaxPool(MaxPoolBackend<max_pool::ActiveKernel>),
+    Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
 }
 
 impl OperationBackend<Cuda> for CudaKernel {
@@ -45,15 +43,13 @@ impl OperationBackend<Cuda> for CudaKernel {
 
 #[allow(dead_code)]
 pub enum NoOpCudaKernel {
-    Add(AdditionOp<add::BackendHandler<add::NoOpKernel>>),
-    Relu(ActivationOp<activation::BackendHandler<activation::NoOpKernel>>),
-    Conv(ConvolutionOp<conv::BackendHandler<conv::NoOpKernel>>),
-    Gemm(GemmOp<gemm::BackendHandler<gemm::NoOpKernel>>),
-    GlobalAveragePool(
-        GlobalAverageOp<global_average_pool::BackendHandler<global_average_pool::NoOpKernel>>,
-    ),
-    MaxPool(MaxPoolOp<max_pool::BackendHandler<max_pool::NoOpKernel>>),
-    Flatten(FlattenOp), // Todo: How will we handle Flatten, for example?
+    Add(AdditionBackend<add::NoOpKernel>),
+    Relu(ActivationBackend<activation::NoOpKernel>),
+    Conv(ConvolutionBackend<conv::NoOpKernel>),
+    Gemm(GemmBackend<gemm::NoOpKernel>),
+    GlobalAveragePool(GlobalAverageBackend<global_average_pool::NoOpKernel>),
+    MaxPool(MaxPoolBackend<max_pool::NoOpKernel>),
+    Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
 }
 
 impl OperationBackend<Cuda> for NoOpCudaKernel {

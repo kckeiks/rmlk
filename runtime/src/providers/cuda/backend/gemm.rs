@@ -1,7 +1,6 @@
-use crate::core::device_service::DeviceService;
+use crate::attributes::gemm::GemmAttributes;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::gemm::GemmBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
@@ -11,12 +10,12 @@ use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct GemmBackend<T> {
     device: Arc<CudaDevice>,
     _marker: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> GemmBackend<T>
 where
     T: GemmKernel,
 {
@@ -28,39 +27,38 @@ where
     }
 }
 
-impl<T> GemmBackend for BackendHandler<T>
+impl<T> GemmBackend<T>
 where
     T: GemmKernel,
 {
-    type Service = Cuda;
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let lhs = ctx.get_input(0)?;
+        let rhs = ctx.get_input(1)?;
 
-    fn compute(
-        self,
-        lhs: &Tensor<<Self::Service as DeviceService>::Data>,
-        rhs: &Tensor<<Self::Service as DeviceService>::Data>,
-        trans_a: bool,
-        trans_b: bool,
-        alpha: f32,
-        beta: f32,
-        _scratch_alloc: &ScratchAllocator,
-    ) -> Result<(<Self::Service as DeviceService>::Data, [usize; 3])> {
+        let attrs = GemmAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+        )?;
+
         let op = GemmOp::new(
             &lhs.shape(),
             &lhs.stride(),
             &rhs.shape(),
             &rhs.stride(),
-            trans_a,
-            trans_b,
+            attrs.trans_a(),
+            attrs.trans_b(),
         );
-        let output_size = op.calculate_output_shape().iter().product();
 
-        if matches!(lhs.dtype(), DataType::Float) {
+        let output_shape = op.calculate_output_shape();
+        let output_size = output_shape.iter().product();
+
+        let dev_data = if matches!(lhs.dtype(), DataType::Float) {
             let mut out_slice = self
                 .device
                 .alloc_zeros(output_size)
                 .map_err(rmlk_cuda::Error::from)?;
 
-            let config = op.strided_batch_config((alpha, beta))?;
+            let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
 
             let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
@@ -82,13 +80,23 @@ where
                 config,
             )?;
 
-            Ok((CudaData::F32(out_slice), op.calculate_output_shape()))
+            CudaData::F32(out_slice)
         } else {
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Gemm,
                 dtype: *lhs.dtype(),
-            })
-        }
+            });
+        };
+
+        let y = ctx.get_output(0)?;
+        y.reshape(output_shape.as_slice())?;
+
+        let y_dtype = *lhs.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(y_dtype);
+
+        Ok(())
     }
 }
 

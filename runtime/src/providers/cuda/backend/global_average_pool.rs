@@ -1,21 +1,20 @@
-use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::global_average::GlobalAverageBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct GlobalAverageBackend<T> {
     device: Arc<CudaDevice>,
     _marker: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> GlobalAverageBackend<T>
 where
     T: GlobalAveragePoolKernel,
 {
@@ -27,30 +26,34 @@ where
     }
 }
 
-impl<T> GlobalAverageBackend for BackendHandler<T>
+impl<T> GlobalAverageBackend<T>
 where
     T: GlobalAveragePoolKernel,
 {
-    type Service = Cuda;
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
 
-    fn compute(
-        self,
-        x: &Tensor<<Self::Service as DeviceService>::Data>,
-        y_shape: &[usize],
-        y_stride: &[usize],
-        scratch_alloc: &ScratchAllocator,
-    ) -> Result<<Self::Service as DeviceService>::Data> {
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+
+        let y_shape_original = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
+        // Todo: move this to utils.
+        rmlk_cuda::kernels::global_average_pool::compute_output_shape(
+            &x.shape(),
+            y_shape_original,
+        )?;
+
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y_stride)?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y_shape_original)?;
+        let y_stride = scratch_alloc.allocate_fill(y_shape.len(), 0)?;
+        utils::calculate_stride(&y_shape, y_stride);
 
         let pads = scratch_alloc.allocate_fill(x_shape[2..].len(), 0)?;
         let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
         let kernel_shape = &x_shape[2..];
 
-        if matches!(x.dtype(), DataType::Float) {
+        let dev_data = if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
@@ -77,13 +80,23 @@ where
                 &y_stride,
             )?;
 
-            Ok(CudaData::F32(y_data))
+            CudaData::F32(y_data)
         } else {
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::GlobalAveragePool,
                 dtype: *x.dtype(),
-            })
-        }
+            });
+        };
+
+        let y = ctx.get_output(0)?;
+        y.reshape(y_shape_original)?;
+
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
+
+        Ok(())
     }
 }
 

@@ -1,9 +1,9 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::{device_service::DeviceService, Context};
 
-pub struct FlattenOp(());
+pub struct FlattenTemplate(());
 
-impl FlattenOp {
+impl FlattenTemplate {
     pub fn new() -> Self {
         Self(())
     }

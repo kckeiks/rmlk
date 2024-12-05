@@ -1,9 +1,9 @@
-use crate::core::device_service::DeviceService;
+use crate::attributes::conv::ConvAttributes;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::conv::ConvolutionBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use rmlk_cuda::kernels::conv::BiasInput;
@@ -11,12 +11,12 @@ use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct ConvolutionBackend<T> {
     device: Arc<CudaDevice>,
     kernel: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> ConvolutionBackend<T>
 where
     T: ConvolutionKernel,
 {
@@ -28,30 +28,79 @@ where
     }
 }
 
-impl<T> ConvolutionBackend for BackendHandler<T>
+impl<T> ConvolutionBackend<T>
 where
     T: ConvolutionKernel,
 {
-    type Service = Cuda;
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
 
-    fn compute(
-        self,
-        x: &Tensor<<Self::Service as DeviceService>::Data>,
-        w: &Tensor<<Self::Service as DeviceService>::Data>,
-        pads: &[i32],
-        strides: &[i32],
-        dilations: &[i32],
-        group: i32,
-        bias: Option<crate::ops::conv::BiasInput<<Self::Service as DeviceService>::Data>>,
-        y_shape: &[i32],
-        y_stride: &[i32],
-        scratch_alloc: &ScratchAllocator,
-    ) -> Result<<Self::Service as DeviceService>::Data> {
+        let filter_dims = match x.shape().len() {
+            4 => 2,
+            5 => 3,
+            _ => {
+                unreachable!("we already checked the dimensions of x for the supported dimensions")
+            }
+        };
+
+        let attrs = ConvAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+            filter_dims,
+        )?;
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+        let mut y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
+
+        let w = ctx.get_input(1)?;
+        let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
+
+        rmlk_cuda::kernels::conv::calculate_output_shape(
+            &x_shape,
+            &w_shape,
+            attrs.pads(),
+            attrs.strides(),
+            attrs.dilations(),
+            &mut y_shape,
+        )?;
+
+        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+        utils::calculate_stride(&y_shape, &mut y_stride);
+
+        let bias = ctx.get_input(2).ok();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
 
-        if matches!(x.dtype(), DataType::Float) {
+        // Extract and prepare bias argument.
+        // At this point, we still don't know the data type of bias.
+        let bias = match bias {
+            Some(bias_tensor) => {
+                let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
+                // Todo: Urgent. We need to make this generic.
+                bias_shape[1] = bias_tensor.shape()[0] as i32;
+
+                let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+                utils::calculate_stride(&bias_shape, bias_stride);
+
+                let device_data =
+                    bias_tensor
+                        .data()
+                        .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                            expected: DataType::Float,
+                        })?;
+
+                Some(BiasArg {
+                    data: device_data,
+                    shape: bias_shape,
+                    stride: bias_stride,
+                })
+            }
+            None => None,
+        };
+
+        let dev_data = if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
@@ -68,21 +117,22 @@ where
                 .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
                 .map_err(rmlk_cuda::Error::from)?;
 
-            let bias = match bias {
-                None => None,
-                Some(b) => {
+            // Since we know the data type, we extract it.
+            let float_bias = match bias {
+                Some(bias) => {
                     let data =
-                        b.data
+                        bias.data
                             .f32()
                             .ok_or_else(|| InternalError::UnexpectedTensorDataType {
                                 expected: DataType::Float,
                             })?;
                     Some(BiasInput {
                         data,
-                        shape: b.shape,
-                        stride: b.stride,
+                        shape: bias.shape,
+                        stride: bias.stride,
                     })
                 }
+                None => None,
             };
 
             T::execute::<f32>(
@@ -94,24 +144,42 @@ where
                 &x_stride,
                 &w_data,
                 &w_shape,
-                pads,
-                strides,
-                dilations,
-                group,
-                bias,
+                attrs.pads(),
+                attrs.strides(),
+                attrs.dilations(),
+                attrs.group(),
+                float_bias,
                 &mut y_data,
                 &y_shape,
                 &y_stride,
             )?;
 
-            Ok(CudaData::F32(y_data))
+            CudaData::F32(y_data)
         } else {
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Conv,
                 dtype: *x.dtype(),
-            })
-        }
+            });
+        };
+
+        // Todo: Remove this once we handle mutable-shared references to tensors.
+        let y = ctx.get_output(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        y.reshape(shape)?;
+
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
+
+        Ok(())
     }
+}
+
+struct BiasArg<'a, T> {
+    data: T,
+    shape: &'a [i32],
+    stride: &'a [i32],
 }
 
 pub trait ConvolutionKernel {

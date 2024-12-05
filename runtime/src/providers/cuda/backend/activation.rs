@@ -1,7 +1,5 @@
-use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
-use crate::core::{ScratchAllocator, Tensor};
-use crate::ops::activation::ActivationBackend;
+use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
@@ -10,12 +8,12 @@ use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct BackendHandler<T> {
+pub struct ActivationBackend<T> {
     device: Arc<CudaDevice>,
     _marker: PhantomData<T>,
 }
 
-impl<T> BackendHandler<T>
+impl<T> ActivationBackend<T>
 where
     T: ActivationKernel,
 {
@@ -27,20 +25,18 @@ where
     }
 }
 
-impl<T> ActivationBackend for BackendHandler<T>
+impl<T> ActivationBackend<T>
 where
     T: ActivationKernel,
 {
-    type Service = Cuda;
-    fn compute(
-        &self,
-        x: &Tensor<<Self::Service as DeviceService>::Data>,
-        scratch_alloc: &ScratchAllocator,
-    ) -> Result<<Self::Service as DeviceService>::Data> {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        if matches!(x.dtype(), DataType::Float) {
+        let dev_data = if matches!(x.dtype(), DataType::Float) {
             let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
                 InternalError::UnexpectedTensorDataType {
                     expected: DataType::Float,
@@ -62,14 +58,24 @@ where
                 &mut y_data,
             )?;
 
-            Ok(CudaData::F32(y_data))
+            CudaData::F32(y_data)
         } else {
             // Todo: Update op.
-            Err(InternalError::UnsupportedOpForDataType {
+            return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Relu,
                 dtype: *x.dtype(),
-            })
-        }
+            });
+        };
+
+        let y = ctx.get_output(0)?;
+        y.reshape(&x.shape())?;
+
+        let dtype = *x.dtype();
+        let y = ctx.get_output_mut(0)?;
+        y.init(dev_data);
+        y.set_dtype(dtype);
+
+        Ok(())
     }
 }
 
