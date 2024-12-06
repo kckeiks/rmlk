@@ -32,8 +32,8 @@ where
     T: GemmKernel,
 {
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let lhs = ctx.get_input(0)?;
-        let rhs = ctx.get_input(1)?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
 
         let attrs = GemmAttributes::new(
             ctx.get_attributes()
@@ -41,10 +41,10 @@ where
         )?;
 
         let op = GemmOp::new(
-            &lhs.shape(),
-            &lhs.stride(),
-            &rhs.shape(),
-            &rhs.stride(),
+            &a.shape(),
+            &a.stride(),
+            &b.shape(),
+            &b.stride(),
             attrs.trans_a(),
             attrs.trans_b(),
         );
@@ -53,23 +53,23 @@ where
         let output_size = output_shape.iter().product();
 
         let dev_data =
-            if matches!(lhs.dtype(), DataType::Float) {
-                let mut out_slice = self
+            if matches!(a.dtype(), DataType::Float) {
+                let mut y_dev_data = self
                     .device
                     .alloc_zeros(output_size)
                     .map_err(rmlk_cuda::Error::from)?;
 
                 let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
 
-                let lhs_dev_data_ref = lhs.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let lhs_dev_data = lhs_dev_data_ref.f32().ok_or_else(|| {
+                let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let a_dev_data = a_dev_data_ref.f32().ok_or_else(|| {
                     InternalError::UnexpectedTensorDataType {
                         expected: DataType::Float,
                     }
                 })?;
 
-                let rhs_dev_data_ref = rhs.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let rhs_dev_data = rhs_dev_data_ref.f32().ok_or_else(|| {
+                let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let b_dev_data = b_dev_data_ref.f32().ok_or_else(|| {
                     InternalError::UnexpectedTensorDataType {
                         expected: DataType::Float,
                     }
@@ -78,21 +78,21 @@ where
                 T::execute_with_float_tensors(
                     &op,
                     self.device,
-                    lhs_dev_data,
-                    rhs_dev_data,
-                    &mut out_slice,
+                    a_dev_data,
+                    b_dev_data,
+                    &mut y_dev_data,
                     config,
                 )?;
 
-                CudaData::F32(out_slice)
+                CudaData::F32(y_dev_data)
             } else {
                 return Err(InternalError::UnsupportedOpForDataType {
                     op: Op::Gemm,
-                    dtype: *lhs.dtype(),
+                    dtype: *a.dtype(),
                 });
             };
 
-        let y_dtype = *lhs.dtype();
+        let y_dtype = *a.dtype();
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(output_shape.as_slice())?;
         y.set_dev_data(dev_data);
@@ -107,9 +107,9 @@ pub trait GemmKernel {
         // Todo: refactor this API.
         gemm_op: &GemmOp,
         device: Arc<CudaDevice>,
-        lhs_data: &CudaSlice<f32>,
-        rhs_data: &CudaSlice<f32>,
-        out: &mut CudaSlice<f32>,
+        a_dev_data: &CudaSlice<f32>,
+        b_dev_data: &CudaSlice<f32>,
+        y_dev_data: &mut CudaSlice<f32>,
         config: StridedBatchedConfig<f32>,
     ) -> Result<()>;
 }
@@ -120,13 +120,13 @@ impl GemmKernel for ActiveKernel {
     fn execute_with_float_tensors(
         gemm_op: &GemmOp,
         device: Arc<CudaDevice>,
-        lhs_data: &CudaSlice<f32>,
-        rhs_data: &CudaSlice<f32>,
-        out: &mut CudaSlice<f32>,
+        a_dev_data: &CudaSlice<f32>,
+        b_dev_data: &CudaSlice<f32>,
+        y_dev_data: &mut CudaSlice<f32>,
         config: StridedBatchedConfig<f32>,
     ) -> Result<()> {
         gemm_op
-            .compute_f32(device, lhs_data, rhs_data, out, config)
+            .compute_f32(device, a_dev_data, b_dev_data, y_dev_data, config)
             .map_err(Into::into)
     }
 }

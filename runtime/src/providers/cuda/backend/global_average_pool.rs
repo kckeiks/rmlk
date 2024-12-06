@@ -62,7 +62,7 @@ where
                         expected: DataType::Float,
                     })?;
 
-            let mut y_data = self
+            let mut y_dev_data = self
                 .device
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(rmlk_cuda::Error::from)?;
@@ -77,12 +77,12 @@ where
                 &x_shape,
                 &x_stride,
                 kernel_shape,
-                &mut y_data,
+                &mut y_dev_data,
                 &y_shape,
                 &y_stride,
             )?;
 
-            CudaData::F32(y_data)
+            CudaData::F32(y_dev_data)
         } else {
             return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::GlobalAveragePool,

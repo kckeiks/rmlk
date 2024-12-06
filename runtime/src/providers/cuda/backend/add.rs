@@ -97,13 +97,13 @@ pub trait AdditionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        lhs_data: &CudaSlice<T>,
-        lhs_shape: &[usize],
-        lhs_stride: &[usize],
-        rhs_data: &CudaSlice<T>,
-        rhs_shape: &[usize],
-        rhs_stride: &[usize],
-        out_data: &mut CudaSlice<T>,
+        a_dev_data: &CudaSlice<T>,
+        a_shape: &[usize],
+        a_stride: &[usize],
+        b_dev_data: &CudaSlice<T>,
+        b_shape: &[usize],
+        b_stride: &[usize],
+        c_dev_data: &mut CudaSlice<T>,
         info_buffer: &mut [usize],
     ) -> Result<()>
     where
@@ -116,13 +116,13 @@ impl AdditionKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        lhs_data: &CudaSlice<T>,
-        lhs_shape: &[usize],
-        lhs_stride: &[usize],
-        rhs_data: &CudaSlice<T>,
-        rhs_shape: &[usize],
-        rhs_stride: &[usize],
-        out_data: &mut CudaSlice<T>,
+        a_dev_data: &CudaSlice<T>,
+        a_shape: &[usize],
+        a_stride: &[usize],
+        b_dev_data: &CudaSlice<T>,
+        b_shape: &[usize],
+        b_stride: &[usize],
+        y_dev_data: &mut CudaSlice<T>,
         info_buffer: &mut [usize],
     ) -> Result<()>
     where
@@ -131,13 +131,13 @@ impl AdditionKernel for ActiveKernel {
         rmlk_cuda::kernels::add::compute(
             device,
             func,
-            lhs_data,
-            lhs_shape,
-            lhs_stride,
-            rhs_data,
-            rhs_shape,
-            rhs_stride,
-            out_data,
+            a_dev_data,
+            a_shape,
+            a_stride,
+            b_dev_data,
+            b_shape,
+            b_stride,
+            y_dev_data,
             info_buffer,
         )
         .map_err(Into::into)
