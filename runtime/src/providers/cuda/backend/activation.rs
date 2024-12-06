@@ -35,6 +35,7 @@ where
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
+        // Check type of all inputs and outputs here.
         if matches!(x.dtype(), DataType::Float) {
             let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
             let x_dev_data =

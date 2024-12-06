@@ -3,7 +3,9 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{
+    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
+};
 use rmlk_schema::{DataType, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -40,53 +42,80 @@ where
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
 
-        let dev_data =
-            if matches!(a.dtype(), DataType::Float) {
-                let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let a_dev_data = a_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
+        if matches!(a.dtype(), DataType::Float) {
+            let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
+            let a_dev_data =
+                a_dev_data_ref
+                    .f32()
+                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
                         expected: DataType::Float,
-                    }
-                })?;
+                    })?;
 
-                let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let b_dev_data = b_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
+            let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
+            let b_dev_data =
+                b_dev_data_ref
+                    .f32()
+                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
                         expected: DataType::Float,
-                    }
-                })?;
+                    })?;
 
-                let mut c_dev_data = unsafe {
-                    self.device
-                        .alloc::<f32>(elem_count)
-                        .map_err(rmlk_cuda::Error::from)?
+            // Allocate device data for the tensor if we haven't done it yet
+            // or if the existing allocated data has a different size.
+            {
+                let mut c = ctx.get_output_mut(0)?;
+                let c_dev_data_ref = c.dev_data_mut();
+                let need_to_alloc_dev_data = c_dev_data_ref.is_none()
+                    || c_dev_data_ref
+                        .as_ref()
+                        .and_then(|data| data.f32().map(|data| data.len() != elem_count))
+                        .unwrap_or(true);
+
+                // We need to remove this immutable reference so we can mutate `y`.
+                drop(c_dev_data_ref);
+
+                if need_to_alloc_dev_data {
+                    let c_dev_data = self
+                        .device
+                        .alloc_zeros::<f32>(a.shape().iter().copied().product::<usize>())
+                        .map_err(rmlk_cuda::Error::from)?;
+                    c.set_dev_data(CudaData::F32(c_dev_data));
                 };
+            }
 
-                T::execute::<f32>(
-                    self.device,
-                    self.f,
-                    a_dev_data,
-                    &a.shape(),
-                    &a.stride(),
-                    b_dev_data,
-                    &b.shape(),
-                    &b.stride(),
-                    &mut c_dev_data,
-                    info_buffer,
-                )?;
+            // The device data should exist so we will execute the kernel
+            // and update the destination device data with the result.
+            let c = ctx.get_output_mut(0)?;
+            let mut c_dev_data_ref = c.dev_data_mut();
+            let c_dev_data = c_dev_data_ref
+                .as_mut()
+                .expect("we already checked that it initialized")
+                ._f32_mut()
+                .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                    expected: DataType::Float,
+                })?;
 
-                CudaData::F32(c_dev_data)
-            } else {
-                return Err(InternalError::UnsupportedOpForDataType {
-                    op: Op::Add,
-                    dtype: *a.dtype(),
-                });
-            };
+            T::execute::<f32>(
+                self.device,
+                self.f,
+                a_dev_data,
+                &a.shape(),
+                &a.stride(),
+                b_dev_data,
+                &b.shape(),
+                &b.stride(),
+                c_dev_data,
+                info_buffer,
+            )?;
+        } else {
+            return Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Add,
+                dtype: *a.dtype(),
+            });
+        }
 
         let dtype = *a.dtype();
         let mut c = ctx.get_output_mut(0)?;
         c.reshape(&a.shape())?;
-        c.set_dev_data(dev_data);
         c.set_dtype(dtype);
 
         Ok(())
