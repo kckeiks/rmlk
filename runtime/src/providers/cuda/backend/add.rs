@@ -40,49 +40,53 @@ where
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
 
-        let dev_data = if matches!(a.dtype(), DataType::Float) {
-            let a_dev_data = a.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
-            let b_dev_data = b.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+        let dev_data =
+            if matches!(a.dtype(), DataType::Float) {
+                let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let a_dev_data = a_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
-            let mut out_slice = unsafe {
-                self.device
-                    .alloc::<f32>(elem_count)
-                    .map_err(rmlk_cuda::Error::from)?
+                let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let b_dev_data = b_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
+
+                let mut c_dev_data = unsafe {
+                    self.device
+                        .alloc::<f32>(elem_count)
+                        .map_err(rmlk_cuda::Error::from)?
+                };
+
+                T::execute::<f32>(
+                    self.device,
+                    self.f,
+                    a_dev_data,
+                    &a.shape(),
+                    &a.stride(),
+                    b_dev_data,
+                    &b.shape(),
+                    &b.stride(),
+                    &mut c_dev_data,
+                    info_buffer,
+                )?;
+
+                CudaData::F32(c_dev_data)
+            } else {
+                return Err(InternalError::UnsupportedOpForDataType {
+                    op: Op::Add,
+                    dtype: *a.dtype(),
+                });
             };
-
-            T::execute::<f32>(
-                self.device,
-                self.f,
-                a_dev_data,
-                &a.shape(),
-                &a.stride(),
-                b_dev_data,
-                &b.shape(),
-                &b.stride(),
-                &mut out_slice,
-                info_buffer,
-            )?;
-
-            CudaData::F32(out_slice)
-        } else {
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Add,
-                dtype: *a.dtype(),
-            });
-        };
 
         let dtype = *a.dtype();
         let mut c = ctx.get_output_mut(0)?;
         c.reshape(&a.shape())?;
-        c.init(dev_data);
+        c.set_dev_data(dev_data);
         c.set_dtype(dtype);
 
         Ok(())
@@ -207,7 +211,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();

@@ -33,7 +33,7 @@ pub enum InternalError {
     InvalidAttributeDataType { name: String },
     InvalidTensorShape { shape: Vec<usize> },
     InvalidAxis { axis: i32 },
-    MissingData,
+    MissingDeviceData,
     TensorStore(String),
     TensorNotFound { id: usize },
     TensorIndexNotFound { node_id: usize },
@@ -68,8 +68,8 @@ impl Display for InternalError {
             InternalError::UnableToConvertValue => {
                 write!(f, "unable to convert value")
             }
-            InternalError::MissingData => {
-                write!(f, "missing data")
+            InternalError::MissingDeviceData => {
+                write!(f, "missing device data")
             }
             InternalError::MissingAttributes => {
                 write!(f, "missing attributes")

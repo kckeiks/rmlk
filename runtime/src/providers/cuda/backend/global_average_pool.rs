@@ -54,11 +54,13 @@ where
         let kernel_shape = &x_shape[2..];
 
         let dev_data = if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+            let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
+            let x_dev_data =
+                x_dev_data_ref
+                    .f32()
+                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    })?;
 
             let mut y_data = self
                 .device
@@ -71,7 +73,7 @@ where
                 0.0,
                 pads,
                 strides,
-                &x_data,
+                &x_dev_data,
                 &x_shape,
                 &x_stride,
                 kernel_shape,
@@ -91,7 +93,7 @@ where
         let dtype = *x.dtype();
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(y_shape_original)?;
-        y.init(dev_data);
+        y.set_dev_data(dev_data);
         y.set_dtype(dtype);
 
         Ok(())
@@ -217,7 +219,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();

@@ -43,22 +43,17 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         }
     }
 
-    // Remove the previous reference before borrowing again.
-    drop(x);
-
     // Todo: This tensor needs to point to data in input, x.
     // This way we can avoid making a copy of the same data.
-    let mut x = ctx.get_input_mut(0)?;
     let dtype = *x.dtype();
-    let dev_data = x._take_data().ok_or_else(|| InternalError::MissingData)?;
-
+    let dev_data = x.dev_data_view().ok_or(InternalError::MissingDeviceData)?;
     let shape = ctx
         .execution_state()
         .scratch_alloc()
         .allocate_from_slice(y_shape.as_slice())?;
     let mut y = ctx.get_output_mut(0)?;
     y.reshape(shape)?;
-    y.init(dev_data);
+    y.set_dev_data_from_view(dev_data);
     y.set_dtype(dtype);
 
     Ok(())

@@ -48,7 +48,7 @@ impl<T> TensorStore<T> {
             let data = provider.htod_float(data)?;
 
             let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
-            tensor.init(data);
+            tensor.set_dev_data(data);
             tensors[node_id].replace(RefCell::new(tensor));
         }
 

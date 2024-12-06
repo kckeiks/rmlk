@@ -52,46 +52,50 @@ where
         let output_shape = op.calculate_output_shape();
         let output_size = output_shape.iter().product();
 
-        let dev_data = if matches!(lhs.dtype(), DataType::Float) {
-            let mut out_slice = self
-                .device
-                .alloc_zeros(output_size)
-                .map_err(rmlk_cuda::Error::from)?;
+        let dev_data =
+            if matches!(lhs.dtype(), DataType::Float) {
+                let mut out_slice = self
+                    .device
+                    .alloc_zeros(output_size)
+                    .map_err(rmlk_cuda::Error::from)?;
 
-            let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
+                let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
 
-            let lhs_data = lhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
-            let rhs_data = rhs.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+                let lhs_dev_data_ref = lhs.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let lhs_dev_data = lhs_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
-            T::execute_with_float_tensors(
-                &op,
-                self.device,
-                lhs_data,
-                rhs_data,
-                &mut out_slice,
-                config,
-            )?;
+                let rhs_dev_data_ref = rhs.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let rhs_dev_data = rhs_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
-            CudaData::F32(out_slice)
-        } else {
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Gemm,
-                dtype: *lhs.dtype(),
-            });
-        };
+                T::execute_with_float_tensors(
+                    &op,
+                    self.device,
+                    lhs_dev_data,
+                    rhs_dev_data,
+                    &mut out_slice,
+                    config,
+                )?;
+
+                CudaData::F32(out_slice)
+            } else {
+                return Err(InternalError::UnsupportedOpForDataType {
+                    op: Op::Gemm,
+                    dtype: *lhs.dtype(),
+                });
+            };
 
         let y_dtype = *lhs.dtype();
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(output_shape.as_slice())?;
-        y.init(dev_data);
+        y.set_dev_data(dev_data);
         y.set_dtype(y_dtype);
 
         Ok(())
@@ -191,7 +195,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();

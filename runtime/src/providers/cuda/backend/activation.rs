@@ -37,13 +37,15 @@ where
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
         let dev_data = if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+            let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
+            let x_dev_data =
+                x_dev_data_ref
+                    .f32()
+                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    })?;
 
-            let mut y_data = self
+            let mut y_dev_data = self
                 .device
                 .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
                 .map_err(rmlk_cuda::Error::from)?;
@@ -52,13 +54,13 @@ where
                 self.device.clone(),
                 1.0,
                 0.0,
-                x_data,
+                x_dev_data,
                 x_shape,
                 x_stride,
-                &mut y_data,
+                &mut y_dev_data,
             )?;
 
-            CudaData::F32(y_data)
+            CudaData::F32(y_dev_data)
         } else {
             // Todo: Update op.
             return Err(InternalError::UnsupportedOpForDataType {
@@ -70,7 +72,7 @@ where
         let dtype = *x.dtype();
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(&x.shape())?;
-        y.init(dev_data);
+        y.set_dev_data(dev_data);
         y.set_dtype(dtype);
 
         Ok(())
@@ -174,7 +176,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();

@@ -140,7 +140,7 @@ where
                         "failed to load value: missing tensor for node {node_id}"
                     ))
                 })?;
-                tensor.init(data)
+                tensor.set_dev_data(data);
             }
             _ => unimplemented!(),
         }
@@ -160,14 +160,14 @@ where
                 "failed to get value: missing tensor for node {node_id}"
             ))
         })?;
-        let ptr = tensor.data().take().ok_or_else(|| {
+        let ptr = tensor.dev_data().take().ok_or_else(|| {
             InternalError::ExecutionState(format!(
                 "failed to get value: empty tensor for node {node_id}"
             ))
         })?;
 
         match tensor.dtype() {
-            DataType::Float => Ok(provider.dtoh_float(ptr)?.into()),
+            DataType::Float => Ok(provider.dtoh_float(&ptr)?.into()),
             _ => unimplemented!(),
         }
     }

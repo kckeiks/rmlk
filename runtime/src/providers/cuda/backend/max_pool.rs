@@ -77,14 +77,16 @@ where
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
         let dev_data = if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+            let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
+            let x_dev_data =
+                x_dev_data_ref
+                    .f32()
+                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    })?;
 
             // Todo: move this to DeviceService trait.
-            let mut y_data = self
+            let mut y_dev_data = self
                 .device
                 .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
                 .map_err(rmlk_cuda::Error::from)?;
@@ -93,18 +95,18 @@ where
                 self.device,
                 1.0,
                 0.0,
-                &x_data,
+                &x_dev_data,
                 &x_shape,
                 &x_stride,
                 attrs.kernel_shape(),
                 attrs.pads(),
                 attrs.strides(),
-                &mut y_data,
+                &mut y_dev_data,
                 &y_shape,
                 &y_stride,
             )?;
 
-            CudaData::F32(y_data)
+            CudaData::F32(y_dev_data)
         } else {
             return Err(InternalError::UnsupportedOpForDataType {
                 op: Op::GlobalAveragePool,
@@ -116,7 +118,7 @@ where
         let mut y = ctx.get_output_mut(0)?;
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         y.reshape(shape)?;
-        y.init(dev_data);
+        y.set_dev_data(dev_data);
         y.set_dtype(dtype);
 
         Ok(())
@@ -254,7 +256,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();

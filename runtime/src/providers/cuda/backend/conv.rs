@@ -84,12 +84,11 @@ where
                 let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
                 utils::calculate_stride(&bias_shape, bias_stride);
 
-                let device_data =
-                    bias_tensor
-                        .data()
-                        .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                            expected: DataType::Float,
-                        })?;
+                let device_data = bias_tensor.dev_data().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
                 Some(BiasArg {
                     data: device_data,
@@ -100,73 +99,76 @@ where
             None => None,
         };
 
-        let dev_data = if matches!(x.dtype(), DataType::Float) {
-            let x_data = x.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
-            let w_data = w.data().and_then(|data| data.f32()).ok_or_else(|| {
-                InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                }
-            })?;
+        let dev_data =
+            if matches!(x.dtype(), DataType::Float) {
+                let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let x_dev_data = x_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
-            let mut y_data = self
-                .device
-                .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-                .map_err(rmlk_cuda::Error::from)?;
+                let w_dev_data_ref = w.dev_data().ok_or(InternalError::MissingDeviceData)?;
+                let w_dev_data = w_dev_data_ref.f32().ok_or_else(|| {
+                    InternalError::UnexpectedTensorDataType {
+                        expected: DataType::Float,
+                    }
+                })?;
 
-            // Since we know the data type, we extract it.
-            let float_bias = match bias {
-                Some(bias) => {
-                    let data =
-                        bias.data
-                            .f32()
-                            .ok_or_else(|| InternalError::UnexpectedTensorDataType {
+                let mut y_dev_data = self
+                    .device
+                    .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+                    .map_err(rmlk_cuda::Error::from)?;
+
+                // Since we know the data type, we extract it.
+                let float_bias = match bias.as_ref() {
+                    Some(bias) => {
+                        let data = bias.data.f32().ok_or_else(|| {
+                            InternalError::UnexpectedTensorDataType {
                                 expected: DataType::Float,
-                            })?;
-                    Some(BiasInput {
-                        data,
-                        shape: bias.shape,
-                        stride: bias.stride,
-                    })
-                }
-                None => None,
+                            }
+                        })?;
+                        Some(BiasInput {
+                            data,
+                            shape: bias.shape,
+                            stride: bias.stride,
+                        })
+                    }
+                    None => None,
+                };
+
+                T::execute::<f32>(
+                    self.device,
+                    1.0,
+                    0.0,
+                    &x_dev_data,
+                    &x_shape,
+                    &x_stride,
+                    &w_dev_data,
+                    &w_shape,
+                    attrs.pads(),
+                    attrs.strides(),
+                    attrs.dilations(),
+                    attrs.group(),
+                    float_bias,
+                    &mut y_dev_data,
+                    &y_shape,
+                    &y_stride,
+                )?;
+
+                CudaData::F32(y_dev_data)
+            } else {
+                return Err(InternalError::UnsupportedOpForDataType {
+                    op: Op::Conv,
+                    dtype: *x.dtype(),
+                });
             };
-
-            T::execute::<f32>(
-                self.device,
-                1.0,
-                0.0,
-                &x_data,
-                &x_shape,
-                &x_stride,
-                &w_data,
-                &w_shape,
-                attrs.pads(),
-                attrs.strides(),
-                attrs.dilations(),
-                attrs.group(),
-                float_bias,
-                &mut y_data,
-                &y_shape,
-                &y_stride,
-            )?;
-
-            CudaData::F32(y_data)
-        } else {
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Conv,
-                dtype: *x.dtype(),
-            });
-        };
 
         let dtype = *x.dtype();
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(shape)?;
-        y.init(dev_data);
+        y.set_dev_data(dev_data);
         y.set_dtype(dtype);
 
         Ok(())
@@ -337,7 +339,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();
@@ -399,7 +401,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .data()
+            .dev_data()
             .unwrap()
             .f32()
             .unwrap();
