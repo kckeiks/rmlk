@@ -1,7 +1,7 @@
 use crate::core::error::Result;
 use crate::utils;
 use rmlk_schema::DataType;
-use std::cell::{Ref, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
 /// Tensor.
@@ -48,6 +48,10 @@ impl<T> Tensor<T> {
 
     pub fn dev_data(&self) -> Option<Ref<'_, T>> {
         self.data.as_ref().map(|data| data.borrow())
+    }
+
+    pub fn dev_data_mut(&self) -> Option<RefMut<'_, T>> {
+        self.data.as_ref().map(|data| data.borrow_mut())
     }
 
     pub fn dev_data_view(&self) -> Option<DevDataView<T>> {

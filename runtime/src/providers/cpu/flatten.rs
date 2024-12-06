@@ -8,11 +8,11 @@ impl FlattenTemplate {
         Self(())
     }
     pub fn compute<T: DeviceService>(self, ctx: &mut Context<T>) -> Result<()> {
-        _compute(ctx)
+        compute(ctx)
     }
 }
 
-pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
+pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
     if x.shape().len() == 0 {
@@ -43,8 +43,6 @@ pub fn _compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         }
     }
 
-    // Todo: This tensor needs to point to data in input, x.
-    // This way we can avoid making a copy of the same data.
     let dtype = *x.dtype();
     let dev_data = x.dev_data_view().ok_or(InternalError::MissingDeviceData)?;
     let shape = ctx
