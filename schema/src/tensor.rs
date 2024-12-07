@@ -394,6 +394,16 @@ impl From<onnx::tensor_proto::DataType> for DataType {
     }
 }
 
+pub trait DataTypeMap {
+    fn data_type() -> DataType;
+}
+
+impl DataTypeMap for f32 {
+    fn data_type() -> DataType {
+        DataType::Float
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Segment {
     pub begin: Option<i64>,

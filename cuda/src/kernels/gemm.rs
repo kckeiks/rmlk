@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::error::Result;
+use crate::params::CudaParamMap;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
@@ -108,6 +109,29 @@ impl GemmOp {
         )
     }
 
+    pub fn compute<T: CudaParamMap>(
+        &self,
+        device: Arc<CudaDevice>,
+        lhs_data: &CudaSlice<T>,
+        rhs_data: &CudaSlice<T>,
+        out: &mut CudaSlice<T>,
+        config: StridedBatchedConfig<T>,
+    ) -> Result<()> {
+        let cublas = CudaBlas::new(device)?;
+
+        unsafe {
+            gemm_stride_batched::<T>(
+                &cublas,
+                config,
+                &rhs_data.slice(..),
+                &lhs_data.slice(..),
+                out,
+            )?;
+        };
+
+        Ok(())
+    }
+
     pub fn compute_f32(
         &self,
         device: Arc<CudaDevice>,
@@ -193,6 +217,44 @@ pub fn gemm_config<T>(
         stride_b: (k * m) as i64,
         stride_c: (m * n) as i64,
     })
+}
+
+pub unsafe fn gemm_stride_batched<T>(
+    cublas: &CudaBlas,
+    config: StridedBatchedConfig<T>,
+    a: &CudaView<T>,
+    b: &CudaView<T>,
+    c: &mut CudaSlice<T>,
+) -> Result<()> {
+    let alpha = &config.gemm.alpha as *const T as *const _;
+    let beta = &config.gemm.beta as *const T as *const _;
+
+    cudarc::cublas::result::gemm_strided_batched_ex(
+        *cublas.handle(),
+        config.gemm.transa,
+        config.gemm.transb,
+        config.gemm.m,
+        config.gemm.n,
+        config.gemm.k,
+        alpha,
+        *a.device_ptr() as *const _,
+        sys::cudaDataType_t::CUDA_R_32F,
+        config.gemm.lda,
+        config.stride_a,
+        *b.device_ptr() as *const _,
+        sys::cudaDataType_t::CUDA_R_32F,
+        config.gemm.ldb,
+        config.stride_b,
+        beta,
+        *c.device_ptr_mut() as *mut _,
+        sys::cudaDataType_t::CUDA_R_32F,
+        config.gemm.ldc,
+        config.stride_c,
+        config.batch_size,
+        sys::cublasComputeType_t::CUBLAS_COMPUTE_32F,
+        sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+    )
+    .map_err(Into::into)
 }
 
 pub unsafe fn gemm_stride_batched_f32(

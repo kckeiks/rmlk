@@ -28,19 +28,12 @@ impl Cuda {
 
     pub fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
         let ptr = self.device.htod_copy(data)?;
-        Ok(CudaData::F32(ptr))
+        Ok(CudaData::new(ptr))
     }
 
     pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
-        match data {
-            CudaData::F32(ptr) => Ok(self.device.dtoh_sync_copy::<f32, _>(ptr)?),
-            CudaData::F16(_) => Err(InternalError::UnsupportedDataType {
-                dtype: DataType::Float16,
-            }),
-            CudaData::F64(_) => Err(InternalError::UnsupportedDataType {
-                dtype: DataType::Double,
-            }),
-        }
+        let ptr = data.data::<f32>();
+        Ok(self.device.dtoh_sync_copy::<f32, _>(ptr.as_ref())?)
     }
 }
 
@@ -81,9 +74,9 @@ impl DeviceService for Cuda {
 
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
         self.device
-            .alloc_zeros(len)
+            .alloc_zeros::<f32>(len)
             .map_err(Into::into)
-            .map(CudaData::F32)
+            .map(CudaData::new)
     }
 }
 

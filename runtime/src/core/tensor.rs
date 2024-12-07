@@ -1,4 +1,4 @@
-use crate::core::error::Result;
+use crate::core::error::{InternalError, Result};
 use crate::utils;
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
@@ -40,26 +40,40 @@ impl<T> Tensor<T> {
         }
     }
 
-    pub fn set_dev_data(&mut self, data: T) -> Option<DevDataView<T>> {
+    pub fn set_dev_data(&mut self, data: T) -> Option<DevDataPtr<T>> {
         self.data
             .replace(Rc::new(RefCell::new(data)))
-            .map(DevDataView)
+            .map(DevDataPtr)
     }
 
-    pub fn dev_data(&self) -> Option<Ref<'_, T>> {
+    pub fn dev_data_ptr(&self) -> Option<Ref<'_, T>> {
         self.data.as_ref().map(|data| data.borrow())
     }
 
-    pub fn dev_data_mut(&self) -> Option<RefMut<'_, T>> {
+    pub fn try_dev_data_ptr(&self) -> Result<Ref<'_, T>> {
+        self.data
+            .as_ref()
+            .map(|data| data.borrow())
+            .ok_or(InternalError::MissingDeviceData)
+    }
+
+    pub fn dev_data_ptr_mut(&self) -> Option<RefMut<'_, T>> {
         self.data.as_ref().map(|data| data.borrow_mut())
     }
 
-    pub fn dev_data_view(&self) -> Option<DevDataView<T>> {
-        self.data.as_ref().map(Clone::clone).map(DevDataView)
+    pub fn try_dev_data_ptr_mut(&self) -> Result<RefMut<'_, T>> {
+        self.data
+            .as_ref()
+            .map(|data| data.borrow_mut())
+            .ok_or(InternalError::MissingDeviceData)
     }
 
-    pub fn set_dev_data_from_view(&mut self, view: DevDataView<T>) -> Option<DevDataView<T>> {
-        self.data.replace(view.0.clone()).map(DevDataView)
+    pub fn dev_data_ptr_clone(&self) -> Option<DevDataPtr<T>> {
+        self.data.as_ref().map(Clone::clone).map(DevDataPtr)
+    }
+
+    pub fn set_dev_data_ptr(&mut self, view: DevDataPtr<T>) -> Option<DevDataPtr<T>> {
+        self.data.replace(view.0.clone()).map(DevDataPtr)
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -95,4 +109,4 @@ impl<T> Tensor<T> {
     }
 }
 
-pub struct DevDataView<T>(Rc<RefCell<T>>);
+pub struct DevDataPtr<T>(Rc<RefCell<T>>);

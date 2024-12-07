@@ -4,9 +4,12 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
-use cudarc::driver::{CudaDevice, CudaSlice};
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmOp;
-use rmlk_schema::{DataType, Op};
+use rmlk_cuda::params::CudaParamMap;
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -31,7 +34,16 @@ impl<T> GemmBackend<T>
 where
     T: GemmKernel,
 {
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute_gemm<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: CudaParamMap
+            + DataTypeMap
+            + CudnnDataType
+            + ValidAsZeroBits
+            + DeviceRepr
+            + Num
+            + TryFrom<f32>,
+    {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
 
@@ -52,81 +64,106 @@ where
         let output_shape = op.calculate_output_shape();
         let output_size = output_shape.iter().product();
 
-        let dev_data =
-            if matches!(a.dtype(), DataType::Float) {
-                let mut y_dev_data = self
+        let alpha = D::try_from(attrs.alpha()).map_err(|_| InternalError::UnableToConvertValue)?;
+        let beta = D::try_from(attrs.beta()).map_err(|_| InternalError::UnableToConvertValue)?;
+        let config = op.strided_batch_config((alpha, beta))?;
+
+        let a_dev_data_ref = a.try_dev_data_ptr()?;
+        let a_dev_data = a_dev_data_ref.data::<D>();
+
+        let b_dev_data_ref = b.try_dev_data_ptr()?;
+        let b_dev_data = b_dev_data_ref.data::<D>();
+
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let mut c = ctx.get_output_mut(0)?;
+            let c_dev_data_ref = c.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = c_dev_data_ref.is_none()
+                || c_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != output_size)
+                    .unwrap_or(true);
+
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(c_dev_data_ref);
+
+            if need_to_alloc_dev_data {
+                let c_dev_data = self
                     .device
-                    .alloc_zeros(output_size)
+                    .alloc_zeros::<D>(output_size)
                     .map_err(rmlk_cuda::Error::from)?;
-
-                let config = op.strided_batch_config((attrs.alpha(), attrs.beta()))?;
-
-                let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let a_dev_data = a_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    }
-                })?;
-
-                let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let b_dev_data = b_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    }
-                })?;
-
-                T::execute_with_float_tensors(
-                    &op,
-                    self.device,
-                    a_dev_data,
-                    b_dev_data,
-                    &mut y_dev_data,
-                    config,
-                )?;
-
-                CudaData::F32(y_dev_data)
-            } else {
-                return Err(InternalError::UnsupportedOpForDataType {
-                    op: Op::Gemm,
-                    dtype: *a.dtype(),
-                });
+                c.set_dev_data(CudaData::new(c_dev_data));
             };
+        }
 
-        let y_dtype = *a.dtype();
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(output_shape.as_slice())?;
-        y.set_dev_data(dev_data);
-        y.set_dtype(y_dtype);
+        y.set_dtype(*a.dtype());
+
+        let mut y_dev_data_ref = y.dev_data_ptr_mut();
+        let mut y_dev_data = y_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        T::execute::<D>(
+            &op,
+            self.device,
+            &a_dev_data,
+            &b_dev_data,
+            &mut y_dev_data,
+            config,
+        )?;
 
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = *ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_gemm::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Conv,
+                dtype,
+            }),
+        }
     }
 }
 
 pub trait GemmKernel {
-    fn execute_with_float_tensors(
+    fn execute<T>(
         // Todo: refactor this API.
         gemm_op: &GemmOp,
         device: Arc<CudaDevice>,
-        a_dev_data: &CudaSlice<f32>,
-        b_dev_data: &CudaSlice<f32>,
-        y_dev_data: &mut CudaSlice<f32>,
-        config: StridedBatchedConfig<f32>,
-    ) -> Result<()>;
+        a_dev_data: &CudaSlice<T>,
+        b_dev_data: &CudaSlice<T>,
+        y_dev_data: &mut CudaSlice<T>,
+        config: StridedBatchedConfig<T>,
+    ) -> Result<()>
+    where
+        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
 pub struct ActiveKernel(());
 
 impl GemmKernel for ActiveKernel {
-    fn execute_with_float_tensors(
+    fn execute<T>(
         gemm_op: &GemmOp,
         device: Arc<CudaDevice>,
-        a_dev_data: &CudaSlice<f32>,
-        b_dev_data: &CudaSlice<f32>,
-        y_dev_data: &mut CudaSlice<f32>,
-        config: StridedBatchedConfig<f32>,
-    ) -> Result<()> {
+        a_dev_data: &CudaSlice<T>,
+        b_dev_data: &CudaSlice<T>,
+        y_dev_data: &mut CudaSlice<T>,
+        config: StridedBatchedConfig<T>,
+    ) -> Result<()>
+    where
+        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
         gemm_op
-            .compute_f32(device, a_dev_data, b_dev_data, y_dev_data, config)
+            .compute::<T>(device, a_dev_data, b_dev_data, y_dev_data, config)
             .map_err(Into::into)
     }
 }
@@ -134,14 +171,17 @@ impl GemmKernel for ActiveKernel {
 pub struct NoOpKernel(());
 
 impl GemmKernel for NoOpKernel {
-    fn execute_with_float_tensors(
+    fn execute<T>(
         _: &GemmOp,
         _: Arc<CudaDevice>,
-        _: &CudaSlice<f32>,
-        _: &CudaSlice<f32>,
-        _: &mut CudaSlice<f32>,
-        _: StridedBatchedConfig<f32>,
-    ) -> Result<()> {
+        _: &CudaSlice<T>,
+        _: &CudaSlice<T>,
+        _: &mut CudaSlice<T>,
+        _: StridedBatchedConfig<T>,
+    ) -> Result<()>
+    where
+        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
         Ok(())
     }
 }
@@ -195,7 +235,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();

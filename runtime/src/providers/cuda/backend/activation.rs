@@ -4,7 +4,8 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
-use rmlk_schema::{DataType, Op};
+use num_traits::Num;
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -29,81 +30,77 @@ impl<T> ActivationBackend<T>
 where
     T: ActivationKernel,
 {
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_activation<D>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    {
         let x = ctx.get_input(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        // Check type of all inputs and outputs here.
-        if matches!(x.dtype(), DataType::Float) {
-            let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
-            let x_dev_data =
-                x_dev_data_ref
-                    .f32()
-                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    })?;
+        let x_dev_data_ref = x.try_dev_data_ptr()?;
+        let x_dev_data = x_dev_data_ref.data::<D>();
 
-            // Allocate device data for the tensor if we haven't done it yet
-            // or if the existing allocated data has a different size.
-            {
-                let expected_len = x.shape().iter().product();
-                let mut y = ctx.get_output_mut(0)?;
-                let y_dev_data_ref = y.dev_data_mut();
-                let need_to_alloc_dev_data = y_dev_data_ref.is_none()
-                    || y_dev_data_ref
-                        .as_ref()
-                        .and_then(|data| data.f32().map(|data| data.len() != expected_len))
-                        .unwrap_or(true);
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let expected_len = x.shape().iter().product();
+            let mut y = ctx.get_output_mut(0)?;
+            let y_dev_data_ref = y.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = y_dev_data_ref.is_none()
+                || y_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != expected_len)
+                    .unwrap_or(true);
 
-                // We need to remove this immutable reference so we can mutate `y`.
-                drop(y_dev_data_ref);
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(y_dev_data_ref);
 
-                if need_to_alloc_dev_data {
-                    let y_dev_data = self
-                        .device
-                        .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
-                        .map_err(rmlk_cuda::Error::from)?;
-                    y.set_dev_data(CudaData::F32(y_dev_data));
-                };
-            }
+            if need_to_alloc_dev_data {
+                let y_dev_data = self
+                    .device
+                    .alloc_zeros::<D>(x.shape().iter().copied().product::<usize>())
+                    .map_err(rmlk_cuda::Error::from)?;
+                y.set_dev_data(CudaData::new(y_dev_data));
+            };
+        }
 
-            // The device data should exist so we will execute the kernel
-            // and update the destination device data with the result.
-            let y = ctx.get_output_mut(0)?;
-            let mut y_dev_data_ref = y.dev_data_mut();
-            let y_dev_data = y_dev_data_ref
-                .as_mut()
-                .expect("we already checked that it initialized")
-                ._f32_mut()
-                .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                })?;
-
-            T::execute::<f32>(
-                self.device.clone(),
-                1.0,
-                0.0,
-                x_dev_data,
-                x_shape,
-                x_stride,
-                y_dev_data,
-            )?;
-        } else {
-            // Todo: Update op.
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Relu,
-                dtype: *x.dtype(),
-            });
-        };
-
-        let dtype = *x.dtype();
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(&x.shape())?;
-        y.set_dtype(dtype);
+        y.set_dtype(*x.dtype());
+
+        let mut y_dev_data_ref = y.dev_data_ptr_mut();
+        let mut y_dev_data = y_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        T::execute::<D>(
+            self.device.clone(),
+            D::one(),
+            D::zero(),
+            &x_dev_data,
+            x_shape,
+            x_stride,
+            &mut y_dev_data,
+        )?;
 
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = *ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_activation::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Relu,
+                dtype,
+            }),
+        }
     }
 }
 
@@ -204,7 +201,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();

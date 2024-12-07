@@ -4,8 +4,9 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
-use rmlk_schema::{DataType, Op};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use num_traits::Num;
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -30,7 +31,10 @@ impl<T> GlobalAverageBackend<T>
 where
     T: GlobalAveragePoolKernel,
 {
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_global_average_pool<D>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    {
         let x = ctx.get_input(0)?;
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
@@ -53,50 +57,73 @@ where
         let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
         let kernel_shape = &x_shape[2..];
 
-        let dev_data = if matches!(x.dtype(), DataType::Float) {
-            let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
-            let x_dev_data =
-                x_dev_data_ref
-                    .f32()
-                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    })?;
+        let x_dev_data_ref = x.try_dev_data_ptr()?;
+        let x_dev_data = x_dev_data_ref.data();
+        let elem_count = y_shape.iter().map(|n| *n as usize).product();
 
-            let mut y_dev_data = self
-                .device
-                .alloc_zeros(y_shape.iter().map(|n| *n as usize).product())
-                .map_err(rmlk_cuda::Error::from)?;
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let mut y = ctx.get_output_mut(0)?;
+            let y_dev_data_ref = y.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = y_dev_data_ref.is_none()
+                || y_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != elem_count)
+                    .unwrap_or(true);
 
-            T::execute::<f32>(
-                self.device,
-                1.0,
-                0.0,
-                pads,
-                strides,
-                &x_dev_data,
-                &x_shape,
-                &x_stride,
-                kernel_shape,
-                &mut y_dev_data,
-                &y_shape,
-                &y_stride,
-            )?;
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(y_dev_data_ref);
 
-            CudaData::F32(y_dev_data)
-        } else {
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::GlobalAveragePool,
-                dtype: *x.dtype(),
-            });
-        };
+            if need_to_alloc_dev_data {
+                let y_dev_data = self
+                    .device
+                    .alloc_zeros::<D>(elem_count)
+                    .map_err(rmlk_cuda::Error::from)?;
+                y.set_dev_data(CudaData::new(y_dev_data));
+            };
+        }
 
-        let dtype = *x.dtype();
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
         let mut y = ctx.get_output_mut(0)?;
         y.reshape(y_shape_original)?;
-        y.set_dev_data(dev_data);
-        y.set_dtype(dtype);
+        y.set_dtype(*x.dtype());
+
+        let mut y_dev_data_ref = y.dev_data_ptr_mut();
+        let mut y_dev_data = y_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        T::execute::<D>(
+            self.device.clone(),
+            D::one(),
+            D::zero(),
+            pads,
+            strides,
+            &x_dev_data,
+            &x_shape,
+            &x_stride,
+            kernel_shape,
+            &mut y_dev_data,
+            &y_shape,
+            &y_stride,
+        )?;
 
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = *ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_global_average_pool::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::GlobalAveragePool,
+                dtype,
+            }),
+        }
     }
 }
 
@@ -219,7 +246,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();

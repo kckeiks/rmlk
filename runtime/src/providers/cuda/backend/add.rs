@@ -6,7 +6,8 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
 };
-use rmlk_schema::{DataType, Op};
+use num_traits::Num;
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -33,92 +34,82 @@ impl<T> AdditionBackend<T>
 where
     T: AdditionKernel,
 {
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_addition<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
-
-        let elem_count: usize = a.shape().iter().product();
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
 
-        if matches!(a.dtype(), DataType::Float) {
-            let a_dev_data_ref = a.dev_data().ok_or(InternalError::MissingDeviceData)?;
-            let a_dev_data =
-                a_dev_data_ref
-                    .f32()
-                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    })?;
+        let a_dev_data_ref = a.try_dev_data_ptr()?;
+        let a_dev_data = a_dev_data_ref.data::<D>();
 
-            let b_dev_data_ref = b.dev_data().ok_or(InternalError::MissingDeviceData)?;
-            let b_dev_data =
-                b_dev_data_ref
-                    .f32()
-                    .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    })?;
+        let b_dev_data_ref = b.try_dev_data_ptr()?;
+        let b_dev_data = b_dev_data_ref.data::<D>();
 
-            // Allocate device data for the tensor if we haven't done it yet
-            // or if the existing allocated data has a different size.
-            {
-                let mut c = ctx.get_output_mut(0)?;
-                let c_dev_data_ref = c.dev_data_mut();
-                let need_to_alloc_dev_data = c_dev_data_ref.is_none()
-                    || c_dev_data_ref
-                        .as_ref()
-                        .and_then(|data| data.f32().map(|data| data.len() != elem_count))
-                        .unwrap_or(true);
+        let elem_count: usize = a.shape().iter().product();
 
-                // We need to remove this immutable reference so we can mutate `y`.
-                drop(c_dev_data_ref);
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let mut c = ctx.get_output_mut(0)?;
+            let c_dev_data_ref = c.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = c_dev_data_ref.is_none()
+                || c_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != elem_count)
+                    .unwrap_or(true);
 
-                if need_to_alloc_dev_data {
-                    let c_dev_data = self
-                        .device
-                        .alloc_zeros::<f32>(a.shape().iter().copied().product::<usize>())
-                        .map_err(rmlk_cuda::Error::from)?;
-                    c.set_dev_data(CudaData::F32(c_dev_data));
-                };
-            }
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(c_dev_data_ref);
 
-            // The device data should exist so we will execute the kernel
-            // and update the destination device data with the result.
-            let c = ctx.get_output_mut(0)?;
-            let mut c_dev_data_ref = c.dev_data_mut();
-            let c_dev_data = c_dev_data_ref
-                .as_mut()
-                .expect("we already checked that it initialized")
-                ._f32_mut()
-                .ok_or_else(|| InternalError::UnexpectedTensorDataType {
-                    expected: DataType::Float,
-                })?;
-
-            T::execute::<f32>(
-                self.device,
-                self.f,
-                a_dev_data,
-                &a.shape(),
-                &a.stride(),
-                b_dev_data,
-                &b.shape(),
-                &b.stride(),
-                c_dev_data,
-                info_buffer,
-            )?;
-        } else {
-            return Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Add,
-                dtype: *a.dtype(),
-            });
+            if need_to_alloc_dev_data {
+                let c_dev_data = self
+                    .device
+                    .alloc_zeros::<f32>(a.shape().iter().copied().product::<usize>())
+                    .map_err(rmlk_cuda::Error::from)?;
+                c.set_dev_data(CudaData::new(c_dev_data));
+            };
         }
 
-        let dtype = *a.dtype();
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
         let mut c = ctx.get_output_mut(0)?;
         c.reshape(&a.shape())?;
-        c.set_dtype(dtype);
+        c.set_dtype(*a.dtype());
+
+        let mut c_dev_data_ref = c.dev_data_ptr_mut();
+        let mut c_dev_data = c_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        T::execute::<D>(
+            self.device,
+            self.f,
+            &a_dev_data,
+            &a.shape(),
+            &a.stride(),
+            &b_dev_data,
+            &b.shape(),
+            &b.stride(),
+            &mut c_dev_data,
+            info_buffer,
+        )?;
 
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = *ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_addition::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
+        }
     }
 }
 
@@ -240,7 +231,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();

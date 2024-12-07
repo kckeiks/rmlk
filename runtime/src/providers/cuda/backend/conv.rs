@@ -5,9 +5,10 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use num_traits::Num;
 use rmlk_cuda::kernels::conv::BiasInput;
-use rmlk_schema::{DataType, Op};
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -32,7 +33,10 @@ impl<T> ConvolutionBackend<T>
 where
     T: ConvolutionKernel,
 {
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_convolution<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    {
         let x = ctx.get_input(0)?;
 
         let filter_dims = match x.shape().len() {
@@ -73,6 +77,7 @@ where
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
 
+        // Todo: refactor this.
         // Extract and prepare bias argument.
         // At this point, we still don't know the data type of bias.
         let bias = match bias.as_ref() {
@@ -84,11 +89,7 @@ where
                 let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
                 utils::calculate_stride(&bias_shape, bias_stride);
 
-                let device_data = bias_tensor.dev_data().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    }
-                })?;
+                let device_data = bias_tensor.try_dev_data_ptr()?;
 
                 Some(BiasArg {
                     data: device_data,
@@ -99,48 +100,58 @@ where
             None => None,
         };
 
-        let dev_data =
-            if matches!(x.dtype(), DataType::Float) {
-                let x_dev_data_ref = x.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let x_dev_data = x_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    }
-                })?;
+        let x_dev_data_ref = x.try_dev_data_ptr()?;
+        let x_dev_data = x_dev_data_ref.data();
 
-                let w_dev_data_ref = w.dev_data().ok_or(InternalError::MissingDeviceData)?;
-                let w_dev_data = w_dev_data_ref.f32().ok_or_else(|| {
-                    InternalError::UnexpectedTensorDataType {
-                        expected: DataType::Float,
-                    }
-                })?;
+        let w_dev_data_ref = w.try_dev_data_ptr()?;
+        let w_dev_data = w_dev_data_ref.data();
 
-                let mut y_dev_data = self
+        let elem_count = y_shape.iter().map(|d| *d as usize).product();
+
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let mut y = ctx.get_output_mut(0)?;
+            let y_dev_data_ref = y.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = y_dev_data_ref.is_none()
+                || y_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != elem_count)
+                    .unwrap_or(true);
+
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(y_dev_data_ref);
+
+            if need_to_alloc_dev_data {
+                let y_dev_data = self
                     .device
-                    .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
+                    .alloc_zeros::<f32>(elem_count)
                     .map_err(rmlk_cuda::Error::from)?;
+                y.set_dev_data(CudaData::new(y_dev_data));
+            };
+        }
 
-                // Since we know the data type, we extract it.
-                let float_bias = match bias.as_ref() {
-                    Some(bias) => {
-                        let data = bias.data.f32().ok_or_else(|| {
-                            InternalError::UnexpectedTensorDataType {
-                                expected: DataType::Float,
-                            }
-                        })?;
-                        Some(BiasInput {
-                            data,
-                            shape: bias.shape,
-                            stride: bias.stride,
-                        })
-                    }
-                    None => None,
-                };
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
+        let mut y = ctx.get_output_mut(0)?;
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        y.reshape(shape)?;
+        y.set_dtype(*x.dtype());
 
-                T::execute::<f32>(
+        let mut y_dev_data_ref = y.dev_data_ptr_mut();
+        let mut y_dev_data = y_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        // Since we know the data type, we extract it.
+        match bias.as_ref() {
+            Some(bias) => {
+                let data = bias.data.data();
+                T::execute::<D>(
                     self.device,
-                    1.0,
-                    0.0,
+                    D::one(),
+                    D::zero(),
                     &x_dev_data,
                     &x_shape,
                     &x_stride,
@@ -150,28 +161,51 @@ where
                     attrs.strides(),
                     attrs.dilations(),
                     attrs.group(),
-                    float_bias,
+                    Some(BiasInput {
+                        data: &data,
+                        shape: bias.shape,
+                        stride: bias.stride,
+                    }),
                     &mut y_dev_data,
                     &y_shape,
                     &y_stride,
                 )?;
-
-                CudaData::F32(y_dev_data)
-            } else {
-                return Err(InternalError::UnsupportedOpForDataType {
-                    op: Op::Conv,
-                    dtype: *x.dtype(),
-                });
-            };
-
-        let dtype = *x.dtype();
-        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        let mut y = ctx.get_output_mut(0)?;
-        y.reshape(shape)?;
-        y.set_dev_data(dev_data);
-        y.set_dtype(dtype);
+            }
+            None => {
+                T::execute::<D>(
+                    self.device,
+                    D::one(),
+                    D::zero(),
+                    &x_dev_data,
+                    &x_shape,
+                    &x_stride,
+                    &w_dev_data,
+                    &w_shape,
+                    attrs.pads(),
+                    attrs.strides(),
+                    attrs.dilations(),
+                    attrs.group(),
+                    None,
+                    &mut y_dev_data,
+                    &y_shape,
+                    &y_stride,
+                )?;
+            }
+        };
 
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = *ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_convolution::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Conv,
+                dtype,
+            }),
+        }
     }
 }
 
@@ -339,7 +373,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();
@@ -401,7 +435,7 @@ mod test {
         let out_data = context
             .get_output(0)
             .unwrap()
-            .dev_data()
+            .dev_data_ptr()
             .unwrap()
             .f32()
             .unwrap();

@@ -160,7 +160,7 @@ where
                 "failed to get value: missing tensor for node {node_id}"
             ))
         })?;
-        let ptr = tensor.dev_data().take().ok_or_else(|| {
+        let ptr = tensor.dev_data_ptr().take().ok_or_else(|| {
             InternalError::ExecutionState(format!(
                 "failed to get value: empty tensor for node {node_id}"
             ))
