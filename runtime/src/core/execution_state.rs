@@ -181,6 +181,11 @@ where
         &self.scratch_alloc
     }
 
+    /// Get a mutable reference to the scratch allocator.
+    pub fn scratch_alloc_mut(&mut self) -> &mut ScratchAllocator {
+        &mut self.scratch_alloc
+    }
+
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Ref<'_, Tensor<T::Data>>> {
         self.tensor_store.get(node_id)

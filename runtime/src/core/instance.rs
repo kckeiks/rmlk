@@ -182,6 +182,8 @@ where
                 .compute(&mut ctx)?;
         }
 
+        self.execution_state.scratch_alloc_mut().reset();
+
         self.get_outputs()
     }
 }
