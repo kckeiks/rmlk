@@ -2,7 +2,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::{InternalError, Result};
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
-use crate::providers::cuda::backend::add;
+use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::gemm::GemmBackend;
@@ -46,7 +46,7 @@ impl DeviceService for Cuda {
             Op::Add => {
                 // Todo: At what point should we load the kernel on device?
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Add(add::AdditionBackend::new(self.device.clone(), f))
+                CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
             }
             Op::Gemm => CudaKernel::Gemm(GemmBackend::new(self.device.clone())),
             Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.device.clone())),

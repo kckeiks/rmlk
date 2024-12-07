@@ -7,33 +7,23 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct GlobalAverageBackend<T> {
+pub struct GlobalAverageBackend {
     device: Arc<CudaDevice>,
-    _marker: PhantomData<T>,
 }
 
-impl<T> GlobalAverageBackend<T>
-where
-    T: GlobalAveragePoolKernel,
-{
+impl GlobalAverageBackend {
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self {
-            device,
-            _marker: PhantomData,
-        }
+        Self { device }
     }
 }
 
-impl<T> GlobalAverageBackend<T>
-where
-    T: GlobalAveragePoolKernel,
-{
-    fn compute_global_average_pool<D>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+impl GlobalAverageBackend {
+    fn compute_global_average_pool<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: GlobalAveragePoolKernel,
     {
         let x = ctx.get_input(0)?;
 
@@ -114,11 +104,14 @@ where
         Ok(())
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: GlobalAveragePoolKernel,
+    {
         let dtype = *ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_global_average_pool::<f32>(ctx),
+            DataType::Float => self.compute_global_average_pool::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::GlobalAveragePool,
                 dtype,

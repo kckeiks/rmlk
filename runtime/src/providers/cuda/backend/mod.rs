@@ -18,50 +18,43 @@ use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::Cuda;
 
 pub enum CudaKernel {
-    Add(AdditionBackend<add::ActiveKernel>),
-    Relu(ActivationBackend<activation::ActiveKernel>),
-    Conv(ConvolutionBackend<conv::ActiveKernel>),
-    Gemm(GemmBackend<gemm::ActiveKernel>),
-    GlobalAveragePool(GlobalAverageBackend<global_average_pool::ActiveKernel>),
-    MaxPool(MaxPoolBackend<max_pool::ActiveKernel>),
+    Add(AdditionBackend),
+    Relu(ActivationBackend),
+    Conv(ConvolutionBackend),
+    Gemm(GemmBackend),
+    GlobalAveragePool(GlobalAverageBackend),
+    MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
 }
 
 impl OperationBackend<Cuda> for CudaKernel {
     fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
-            CudaKernel::Add(kernel) => kernel.compute(ctx),
-            CudaKernel::Relu(kernel) => kernel.compute(ctx),
-            CudaKernel::Conv(kernel) => kernel.compute(ctx),
-            CudaKernel::Gemm(kernel) => kernel.compute(ctx),
-            CudaKernel::GlobalAveragePool(kernel) => kernel.compute(ctx),
-            CudaKernel::MaxPool(kernel) => kernel.compute(ctx),
+            CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
+            CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
+            CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
+            CudaKernel::Gemm(kernel) => kernel.compute::<gemm::ActiveKernel>(ctx),
+            CudaKernel::GlobalAveragePool(kernel) => {
+                kernel.compute::<global_average_pool::ActiveKernel>(ctx)
+            }
+            CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
         }
     }
 }
 
-#[allow(dead_code)]
-pub enum NoOpCudaKernel {
-    Add(AdditionBackend<add::NoOpKernel>),
-    Relu(ActivationBackend<activation::NoOpKernel>),
-    Conv(ConvolutionBackend<conv::NoOpKernel>),
-    Gemm(GemmBackend<gemm::NoOpKernel>),
-    GlobalAveragePool(GlobalAverageBackend<global_average_pool::NoOpKernel>),
-    MaxPool(MaxPoolBackend<max_pool::NoOpKernel>),
-    Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
-}
-
-impl OperationBackend<Cuda> for NoOpCudaKernel {
-    fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+impl CudaKernel {
+    pub fn noop_compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
-            NoOpCudaKernel::Add(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::Relu(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::Conv(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::Gemm(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::GlobalAveragePool(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::MaxPool(kernel) => kernel.compute(ctx),
-            NoOpCudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Add(kernel) => kernel.compute::<add::NoOpKernel>(ctx),
+            CudaKernel::Relu(kernel) => kernel.compute::<activation::NoOpKernel>(ctx),
+            CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
+            CudaKernel::Gemm(kernel) => kernel.compute::<gemm::NoOpKernel>(ctx),
+            CudaKernel::GlobalAveragePool(kernel) => {
+                kernel.compute::<global_average_pool::NoOpKernel>(ctx)
+            }
+            CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::NoOpKernel>(ctx),
+            CudaKernel::Flatten(kernel) => kernel.compute(ctx),
         }
     }
 }

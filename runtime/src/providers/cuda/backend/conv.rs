@@ -9,33 +9,23 @@ use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZero
 use num_traits::Num;
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct ConvolutionBackend<T> {
+pub struct ConvolutionBackend {
     device: Arc<CudaDevice>,
-    kernel: PhantomData<T>,
 }
 
-impl<T> ConvolutionBackend<T>
-where
-    T: ConvolutionKernel,
-{
+impl ConvolutionBackend {
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self {
-            device,
-            kernel: PhantomData,
-        }
+        Self { device }
     }
 }
 
-impl<T> ConvolutionBackend<T>
-where
-    T: ConvolutionKernel,
-{
-    fn compute_convolution<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+impl ConvolutionBackend {
+    fn compute_convolution<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: ConvolutionKernel,
     {
         let x = ctx.get_input(0)?;
 
@@ -196,11 +186,14 @@ where
         Ok(())
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: ConvolutionKernel,
+    {
         let dtype = *ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_convolution::<f32>(ctx),
+            DataType::Float => self.compute_convolution::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Conv,
                 dtype,

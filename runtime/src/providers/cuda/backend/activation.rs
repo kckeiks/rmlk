@@ -6,33 +6,23 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct ActivationBackend<T> {
+pub struct ActivationBackend {
     device: Arc<CudaDevice>,
-    _marker: PhantomData<T>,
 }
 
-impl<T> ActivationBackend<T>
-where
-    T: ActivationKernel,
-{
+impl ActivationBackend {
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self {
-            device,
-            _marker: PhantomData,
-        }
+        Self { device }
     }
 }
 
-impl<T> ActivationBackend<T>
-where
-    T: ActivationKernel,
-{
-    fn compute_activation<D>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+impl ActivationBackend {
+    fn compute_activation<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: ActivationKernel,
     {
         let x = ctx.get_input(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc();
@@ -91,11 +81,14 @@ where
         Ok(())
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: ActivationKernel,
+    {
         let dtype = *ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_activation::<f32>(ctx),
+            DataType::Float => self.compute_activation::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Relu,
                 dtype,

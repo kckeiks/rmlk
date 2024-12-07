@@ -8,35 +8,24 @@ use cudarc::driver::{
 };
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct AdditionBackend<T> {
+pub struct AdditionBackend {
     device: Arc<CudaDevice>,
     f: CudaFunction,
-    _marker: PhantomData<T>,
 }
 
-impl<T> AdditionBackend<T>
-where
-    T: AdditionKernel,
-{
+impl AdditionBackend {
     pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
-        Self {
-            device,
-            f,
-            _marker: PhantomData,
-        }
+        Self { device, f }
     }
 }
 
-impl<T> AdditionBackend<T>
-where
-    T: AdditionKernel,
-{
-    fn compute_addition<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+impl AdditionBackend {
+    fn compute_addition<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: AdditionKernel,
     {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
@@ -103,11 +92,14 @@ where
         Ok(())
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: AdditionKernel,
+    {
         let dtype = *ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_addition::<f32>(ctx),
+            DataType::Float => self.compute_addition::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
         }
     }

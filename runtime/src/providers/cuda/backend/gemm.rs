@@ -10,31 +10,20 @@ use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmOp;
 use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct GemmBackend<T> {
+pub struct GemmBackend {
     device: Arc<CudaDevice>,
-    _marker: PhantomData<T>,
 }
 
-impl<T> GemmBackend<T>
-where
-    T: GemmKernel,
-{
+impl GemmBackend {
     pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self {
-            device,
-            _marker: PhantomData,
-        }
+        Self { device }
     }
 }
 
-impl<T> GemmBackend<T>
-where
-    T: GemmKernel,
-{
-    pub fn compute_gemm<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+impl GemmBackend {
+    pub fn compute_gemm<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: CudaParamMap
             + DataTypeMap
@@ -43,6 +32,7 @@ where
             + DeviceRepr
             + Num
             + TryFrom<f32>,
+        T: GemmKernel,
     {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
@@ -121,11 +111,14 @@ where
         Ok(())
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: GemmKernel,
+    {
         let dtype = *ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_gemm::<f32>(ctx),
+            DataType::Float => self.compute_gemm::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Conv,
                 dtype,
@@ -136,7 +129,6 @@ where
 
 pub trait GemmKernel {
     fn execute<T>(
-        // Todo: refactor this API.
         gemm_op: &GemmOp,
         device: Arc<CudaDevice>,
         a_dev_data: &CudaSlice<T>,
