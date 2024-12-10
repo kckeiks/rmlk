@@ -3,6 +3,12 @@ resolver = "2"
 members = ["cuda", "graph", "rocky", "runtime", "schema"]
 
 [workspace.dependencies]
+# Memory arenas.
 bumpalo = "3.16"
-criterion = { version = "0.5", default-features = false }
+id-arena = "2.2"
+
+# Useful numerical type extensions.
 num-traits = "0.2"
+
+# Benchmarking.
+criterion = { version = "0.5", default-features = false }
