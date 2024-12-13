@@ -1,5 +1,5 @@
+use crate::core::allocators::{Index, ShapeBufArena};
 use crate::core::error::{InternalError, Result};
-use crate::utils;
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -12,31 +12,30 @@ use std::rc::Rc;
 pub struct Tensor<T> {
     data: Option<Rc<RefCell<T>>>,
     dtype: DataType,
-    shape: Box<[usize]>,
-    stride: Box<[usize]>,
+    shape_buf_index: Option<Index>,
+    shape_buf_arena: Rc<RefCell<ShapeBufArena>>,
 }
 
 impl<T> Tensor<T> {
-    pub fn new(dtype: DataType) -> Self {
+    pub fn new(dtype: DataType, shape_buf_arena: Rc<RefCell<ShapeBufArena>>) -> Self {
         Self {
             data: None,
             dtype,
-            shape: Box::new([]),
-            stride: Box::new([]),
+            shape_buf_index: None,
+            shape_buf_arena,
         }
     }
 
-    // Todo: Update when we have a special allocator for long-lived data.
-    pub fn new_with_shape(dtype: DataType, shape: Vec<usize>) -> Self {
-        let dims = shape.len();
-        let mut stride = vec![0usize; dims];
-        utils::calculate_stride(&shape, &mut stride);
-
+    pub fn new_with_shape(
+        dtype: DataType,
+        shape_buf_index: Index,
+        shape_buf_arena: Rc<RefCell<ShapeBufArena>>,
+    ) -> Self {
         Self {
             data: None,
             dtype,
-            shape: shape.into_boxed_slice(),
-            stride: stride.into_boxed_slice(),
+            shape_buf_index: Some(shape_buf_index),
+            shape_buf_arena,
         }
     }
 
@@ -76,12 +75,60 @@ impl<T> Tensor<T> {
         self.data.replace(view.0.clone()).map(DevDataPtr)
     }
 
-    pub fn shape(&self) -> &[usize] {
-        self.shape.as_ref()
+    pub fn shape(&self) -> Ref<[usize]> {
+        let index = self.shape_buf_index.as_ref().expect("");
+        Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
+            shape_buf.get_shape_buf(index).expect("")
+        })
     }
 
-    pub fn stride(&self) -> &[usize] {
-        self.stride.as_ref()
+    pub fn stride(&self) -> Ref<[usize]> {
+        let index = self.shape_buf_index.as_ref().unwrap();
+        Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
+            shape_buf.get_stride_buf(index).expect("")
+        })
+    }
+
+    pub fn try_shape(&self) -> Result<Ref<[usize]>> {
+        let index = self
+            .shape_buf_index
+            .as_ref()
+            .ok_or(InternalError::MissingDeviceData)?;
+        Ok(Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
+            shape_buf.get_shape_buf(index).expect("")
+        }))
+    }
+
+    pub fn try_stride(&self) -> Result<Ref<[usize]>> {
+        let index = self
+            .shape_buf_index
+            .as_ref()
+            .ok_or(InternalError::MissingDeviceData)?;
+        Ok(Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
+            shape_buf.get_stride_buf(index).expect("")
+        }))
+    }
+
+    fn try_shape_mut(&mut self) -> Result<RefMut<[usize]>> {
+        let index = self
+            .shape_buf_index
+            .as_ref()
+            .ok_or(InternalError::MissingDeviceData)?;
+        Ok(RefMut::map(
+            self.shape_buf_arena.borrow_mut(),
+            |shape_buf| shape_buf.get_shape_buf_mut(index).expect(""),
+        ))
+    }
+
+    fn try_stride_mut(&mut self) -> Result<RefMut<[usize]>> {
+        let index = self
+            .shape_buf_index
+            .as_ref()
+            .ok_or(InternalError::MissingDeviceData)?;
+        Ok(RefMut::map(
+            self.shape_buf_arena.borrow_mut(),
+            |shape_buf| shape_buf.get_stride_buf_mut(index).expect(""),
+        ))
     }
 
     pub fn dtype(&self) -> &DataType {
@@ -92,20 +139,25 @@ impl<T> Tensor<T> {
         self.dtype = dtype;
     }
 
-    pub fn reshape(&mut self, src: &[usize]) -> Result<()> {
-        if src.len() != self.shape.len() {
-            // Todo: Remove this once we pre-allocate these buffers.
-            self.shape = vec![0; src.len()].into_boxed_slice();
-            self.stride = vec![0; src.len()].into_boxed_slice();
-            // return Err(InternalError::BufferSizeMismatch {
-            //     expected: src.len(),
-            //     actual: shape.len(),
-            // });
+    pub fn reshape(&mut self, new_shape: &[usize]) -> Result<()> {
+        let good = {
+            self.try_shape().map(|shape| shape.len() != new_shape.len()).unwrap_or(true)
+        };
+        if good{
+            let mut arena = self.shape_buf_arena.borrow_mut();
+            self.shape_buf_index = Some(arena.alloc_from_shape_slice(new_shape)?);
         }
-        self.shape.as_mut().copy_from_slice(src);
-        utils::calculate_stride(src, self.stride.as_mut());
-
         Ok(())
+    }
+
+    pub fn copy_shape(&mut self, new_shape: Index) -> Result<()> {
+        let mut arena = self.shape_buf_arena.borrow_mut();
+        self.shape_buf_index = Some(arena.alloc_and_copy_from_within(&new_shape)?);
+        Ok(())
+    }
+
+    pub fn try_index(&self) -> Result<Index> {
+        self.shape_buf_index.ok_or(InternalError::MissingDeviceData)
     }
 }
 

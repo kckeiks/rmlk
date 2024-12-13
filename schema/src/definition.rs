@@ -29,8 +29,8 @@ impl Definition {
     }
 
     // Todo: remove clones in this method.
-    pub fn shape(&self) -> Option<Vec<usize>> {
-        self.node.value.as_ref().map(|v| v.dims().clone())
+    pub fn shape(&self) -> Option<&Vec<usize>> {
+        self.node.value.as_ref().map(|v| v.dims())
     }
 
     pub fn dtype(&self) -> Option<DataType> {

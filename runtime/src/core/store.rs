@@ -1,3 +1,4 @@
+use crate::core::allocators::ShapeBufArena;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::{device_service::DeviceService, Tensor};
@@ -5,6 +6,7 @@ use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Tensor store.
 ///
@@ -19,6 +21,7 @@ impl<T> TensorStore<T> {
         graph: &Graph<Definition>,
         initializers: HashMap<usize, rmlk_schema::Tensor>,
     ) -> Result<TensorStore<D::Data>> {
+        let shape_buf_arena = Rc::new(RefCell::new(ShapeBufArena::with_capacity(4096)));
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
@@ -46,8 +49,12 @@ impl<T> TensorStore<T> {
                 }
             };
             let data = provider.htod_float(data)?;
+            let index = shape_buf_arena
+                .borrow_mut()
+                .alloc_from_shape_slice(ir_tensor.dims.as_slice())?;
 
-            let mut tensor = Tensor::new_with_shape(ir_tensor.data_type, ir_tensor.dims.clone());
+            let mut tensor =
+                Tensor::new_with_shape(ir_tensor.data_type, index, shape_buf_arena.clone());
             tensor.set_dev_data(data);
             tensors[node_id].replace(RefCell::new(tensor));
         }
@@ -56,14 +63,16 @@ impl<T> TensorStore<T> {
             match graph.get_node(node_id) {
                 Some(node) => {
                     let def = node.value();
-                    // Todo: Throw an error instead.
-                    let dtype = def.dtype().expect("Input should have a data type defined");
-                    let tensor = if let Some(shape) = def.shape() {
-                        // Todo: Remove clone.
-                        Tensor::new_with_shape(dtype, shape.clone())
-                    } else {
-                        Tensor::new(dtype)
-                    };
+                    let dtype = def
+                        .dtype()
+                        .ok_or(InternalError::ExpectedDataTypeInDef { node_id })?;
+                    let shape = def
+                        .shape()
+                        .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
+                    let index = shape_buf_arena
+                        .borrow_mut()
+                        .alloc_from_shape_slice(shape.as_slice())?;
+                    let tensor = Tensor::new_with_shape(dtype, index, shape_buf_arena.clone());
                     tensors[node_id].replace(RefCell::new(tensor));
                 }
                 None => {
@@ -78,14 +87,16 @@ impl<T> TensorStore<T> {
             match graph.get_node(node_id) {
                 Some(node) => {
                     let def = node.value();
-                    // Todo: Throw an error instead.
-                    let dtype = def.dtype().expect("Input should have a data type defined");
-                    let tensor = if let Some(shape) = def.shape() {
-                        // Todo: Remove clone.
-                        Tensor::new_with_shape(dtype, shape.clone())
-                    } else {
-                        Tensor::new(dtype)
-                    };
+                    let dtype = def
+                        .dtype()
+                        .ok_or(InternalError::ExpectedDataTypeInDef { node_id })?;
+                    let shape = def
+                        .shape()
+                        .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
+                    let index = shape_buf_arena
+                        .borrow_mut()
+                        .alloc_from_shape_slice(shape.as_slice())?;
+                    let tensor = Tensor::new_with_shape(dtype, index, shape_buf_arena.clone());
                     tensors[node_id].replace(RefCell::new(tensor));
                 }
                 None => {
@@ -113,7 +124,7 @@ impl<T> TensorStore<T> {
                             })?
                             .is_none()
                         {
-                            tensors[*output].replace(RefCell::new(Tensor::new(DataType::Undefined)));
+                            tensors[*output].replace(RefCell::new(Tensor::new(DataType::Undefined, shape_buf_arena.clone())));
                         }
                     }
                     None => {

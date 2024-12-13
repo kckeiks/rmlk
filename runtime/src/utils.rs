@@ -2,12 +2,12 @@ use num_traits::Num;
 use std::ops::AddAssign;
 
 pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
-    let dims = shape.len();
+    let ndims = shape.len();
 
-    debug_assert_eq!(dims, stride.len());
+    debug_assert_eq!(ndims, stride.len());
 
-    stride[dims - 1] = T::one();
-    for i in (0..dims - 1).rev() {
+    stride[ndims - 1] = T::one();
+    for i in (0..ndims - 1).rev() {
         stride[i] += stride[i + 1] * shape[i + 1];
     }
 }

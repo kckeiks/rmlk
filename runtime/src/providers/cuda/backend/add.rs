@@ -67,7 +67,7 @@ impl AdditionBackend {
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
         let mut c = ctx.get_output_mut(0)?;
-        c.reshape(&a.shape())?;
+        c.copy_shape(a.try_index()?)?;
         c.set_dtype(*a.dtype());
 
         let mut c_dev_data_ref = c.dev_data_ptr_mut();

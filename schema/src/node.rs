@@ -16,7 +16,6 @@ pub struct Node {
     // Additional named attributes.
     pub attribute: Option<Vec<Attribute>>,
     pub value: Option<TypeValue>,
-    #[cfg(debug_assertions)]
     // Optional name of node.
     pub name: Option<String>,
 }
@@ -30,7 +29,6 @@ impl Node {
             op_type: Op::NoOp,
             attribute: None,
             value: None,
-            #[cfg(debug_assertions)]
             name: None,
         }
     }

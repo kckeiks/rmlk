@@ -59,7 +59,7 @@ impl ActivationBackend {
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
         let mut y = ctx.get_output_mut(0)?;
-        y.reshape(&x.shape())?;
+        y.copy_shape(x.try_index()?)?;
         y.set_dtype(*x.dtype());
 
         let mut y_dev_data_ref = y.dev_data_ptr_mut();

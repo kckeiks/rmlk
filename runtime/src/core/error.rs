@@ -27,13 +27,15 @@ pub enum InternalError {
     Device { error: rmlk_cuda::Error },
     ExecutionState(String),
     InvalidTensorIndex { index: usize },
-    MissingAttributes,
-    MissingAttribute { name: String },
     InvalidAttribute { name: String },
     InvalidAttributeDataType { name: String },
     InvalidTensorShape { shape: Vec<usize> },
     InvalidAxis { axis: i32 },
     MissingDeviceData,
+    MissingAttributes,
+    MissingAttribute { name: String },
+    ExpectedShapeInDef { node_id: usize },
+    ExpectedDataTypeInDef { node_id: usize },
     TensorStore(String),
     TensorNotFound { id: usize },
     TensorIndexNotFound { node_id: usize },
@@ -52,6 +54,12 @@ impl Display for InternalError {
             }
             InternalError::ExecutionState(msg) => {
                 write!(f, "execution state error `{msg}`")
+            }
+            InternalError::ExpectedDataTypeInDef { node_id } => {
+                write!(f, "expected data type in node `{node_id}`")
+            }
+            InternalError::ExpectedShapeInDef { node_id } => {
+                write!(f, "expected shape in node `{node_id}`")
             }
             InternalError::Device { error: msg } => {
                 write!(f, "device error `{msg:?}`")

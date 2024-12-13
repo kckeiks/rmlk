@@ -5,7 +5,6 @@ members = ["cuda", "graph", "rocky", "runtime", "schema"]
 [workspace.dependencies]
 # Memory arenas.
 bumpalo = "3.16"
-id-arena = "2.2"
 
 # Useful numerical type extensions.
 num-traits = "0.2"

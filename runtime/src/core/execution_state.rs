@@ -1,4 +1,4 @@
-use crate::core::allocator::ScratchAllocator;
+use crate::core::allocators::ScratchAllocator;
 use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::error::Result;

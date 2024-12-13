@@ -7,7 +7,6 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 [dependencies]
 # Memory arenas.
 bumpalo.workspace = true
-id-arena.workspace = true
 
 bincode = "1.3.3"
 cudarc = {  git = "https://github.com/kckeiks/cudarc.git", branch = "add-actv-and-bias-conv-forward", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16"]}
