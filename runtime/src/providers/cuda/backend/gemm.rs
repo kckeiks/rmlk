@@ -37,9 +37,9 @@ impl GemmBackend {
             }
         };
 
-        let y_index = y.index();
+        let y_index = y.dst_id();
         ctx.execution_state_mut()
-            .copy_from_slice(y_shape, y_index)?;
+            .copy_shape_from_slice(y_shape, y_index)?;
 
         Ok(())
     }

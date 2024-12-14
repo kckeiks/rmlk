@@ -19,20 +19,21 @@ impl ActivationBackend {
 }
 
 impl ActivationBackend {
+    fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_output(0)?;
+        let x_index = x.src_id();
+        let y_index = y.dst_id();
+        ctx.execution_state_mut()
+            .copy_shape_from_within(x_index, y_index)
+    }
+
     fn compute_activation<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         T: ActivationKernel,
     {
-        // The output should have the same dimensions.
-        // We do it now to avoid lifetime errors.
-        {
-            let x = ctx.get_input(0)?;
-            let y = ctx.get_output(0)?;
-            let x_index = x.index();
-            let y_index = y.index();
-            ctx.execution_state_mut().copy_within(x_index, y_index)?;
-        }
+        self.compute_output_shape(ctx)?;
 
         let x = ctx.get_input(0)?;
 
@@ -43,6 +44,7 @@ impl ActivationBackend {
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data::<D>();
 
+        // Todo: would it help readability to put this in a func?
         // Allocate device data for the tensor if we haven't done it yet
         // or if the existing allocated data has a different size.
         {
@@ -91,6 +93,8 @@ impl ActivationBackend {
     where
         T: ActivationKernel,
     {
+        // Todo: we need to add validation to make sure the tensor types meets
+        // the expected data type.
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {

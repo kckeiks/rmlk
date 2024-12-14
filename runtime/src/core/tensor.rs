@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceData;
 use crate::core::error::{InternalError, Result};
-use crate::core::store::StoreId;
+use crate::core::store::{DstStoreId, SrcStoreId, StoreId};
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -112,8 +112,12 @@ where
         self.stride.ok_or(InternalError::MissingDeviceData)
     }
 
-    pub fn index(&self) -> StoreId {
-        self.arena_index
+    pub fn src_id(&self) -> SrcStoreId {
+        self.arena_index.into()
+    }
+
+    pub fn dst_id(self) -> DstStoreId {
+        self.arena_index.into()
     }
 }
 

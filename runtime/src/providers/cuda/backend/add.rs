@@ -32,9 +32,10 @@ impl AdditionBackend {
         {
             let a = ctx.get_input(0)?;
             let c = ctx.get_output(0)?;
-            let a_index = a.index();
-            let c_index = c.index();
-            ctx.execution_state_mut().copy_within(a_index, c_index)?;
+            let a_index = a.src_id();
+            let c_index = c.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_within(a_index, c_index)?;
         }
 
         let a = ctx.get_input(0)?;

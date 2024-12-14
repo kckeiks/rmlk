@@ -3,7 +3,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::store::{StoreId, TensorStore};
+use crate::core::store::{DstStoreId, SrcStoreId, TensorStore};
 use crate::core::tensor::Tensor;
 use crate::core::value::{InnerValue, Value};
 use log::trace;
@@ -116,7 +116,11 @@ where
         self.node_to_tensor_index_map.get(node_id).copied()
     }
 
+    /// Load the value for the given node into the device.
+    /// Returns an error if the node does not have a corresponding value,
+    /// like for instance, a node that corresponds to an operation.
     pub fn load_value(&mut self, node_id: usize, value: Value) -> Result<()> {
+        // Todo: should we also return an error when a user tries to update a constant?
         match value.inner {
             InnerValue::Float32(data) => {
                 let data = self
@@ -138,6 +142,9 @@ where
         Ok(())
     }
 
+    /// Gets a copy of the value from the device for the given node.
+    /// Returns an error if the node does not have a corresponding value,
+    /// like for instance, a node that corresponds to an operation.
     pub fn get_value(&self, node_id: usize) -> Result<Value> {
         let provider = self
             .instance_state
@@ -150,6 +157,7 @@ where
                 "failed to get value: missing tensor for node {node_id}"
             ))
         })?;
+
         let ptr = tensor.dev_data_ptr().take().ok_or_else(|| {
             InternalError::ExecutionState(format!(
                 "failed to get value: empty tensor for node {node_id}"
@@ -162,6 +170,7 @@ where
         }
     }
 
+    /// Get a shared reference to the computational graph of the model.
     pub fn graph(&self) -> &Arc<Graph<Definition>> {
         self.instance_state.graph()
     }
@@ -181,6 +190,16 @@ where
         self.scratch_alloc.clone()
     }
 
+    /// Copies the shape data from the source's shape buffer.
+    pub fn copy_shape_from_within(&mut self, src: SrcStoreId, dst: DstStoreId) -> Result<()> {
+        self.tensor_store.copy_within(src, dst)
+    }
+
+    /// Copies the shape data from the src slice.
+    pub fn copy_shape_from_slice(&mut self, src: &[usize], dst: DstStoreId) -> Result<()> {
+        self.tensor_store.copy_from_slice(src, dst)
+    }
+
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Tensor<T::Data>> {
         self.tensor_store.get(node_id)
@@ -189,14 +208,5 @@ where
     /// Get the index of the actual value.
     fn get_inner_index(&self, value_index: usize) -> Option<usize> {
         self.op_tensors.get(value_index).copied()
-    }
-
-    /// Copies
-    pub fn copy_within(&mut self, src: StoreId, dst: StoreId) -> Result<()> {
-        self.tensor_store.copy_within(src, dst)
-    }
-
-    pub fn copy_from_slice(&mut self, src: &[usize], dst: StoreId) -> Result<()> {
-        self.tensor_store.copy_from_slice(src, dst)
     }
 }

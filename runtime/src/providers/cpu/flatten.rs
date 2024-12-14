@@ -48,8 +48,9 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let mut y = ctx.get_output(0)?;
     y.set_dev_data_ptr(dev_data);
 
-    let index = y.index();
-    ctx.execution_state_mut().copy_from_slice(&y_shape, index)?;
+    let index = y.dst_id();
+    ctx.execution_state_mut()
+        .copy_shape_from_slice(&y_shape, index)?;
 
     Ok(())
 }

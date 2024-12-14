@@ -47,9 +47,10 @@ impl MaxPoolBackend {
         )?;
 
         let y = ctx.get_output(0)?;
-        let y_index = y.index();
+        let y_index = y.dst_id();
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        ctx.execution_state_mut().copy_from_slice(shape, y_index)?;
+        ctx.execution_state_mut()
+            .copy_shape_from_slice(shape, y_index)?;
 
         Ok(())
     }
