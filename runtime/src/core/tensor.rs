@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceData;
 use crate::core::error::{InternalError, Result};
-use crate::core::store::StoreIndex;
+use crate::core::store::StoreId;
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -14,7 +14,7 @@ pub struct Tensor<'a, T> {
     data: Rc<RefCell<Option<T>>>,
     shape: Option<&'a [usize]>,
     stride: Option<&'a [usize]>,
-    arena_index: StoreIndex,
+    arena_index: StoreId,
 }
 
 impl<'a, T> Tensor<'a, T>
@@ -22,7 +22,7 @@ where
     T: DeviceData,
 {
     pub fn new(
-        arena_index: StoreIndex,
+        arena_index: StoreId,
         shape: Option<&'a [usize]>,
         stride: Option<&'a [usize]>,
         data: Rc<RefCell<Option<T>>>,
@@ -112,7 +112,7 @@ where
         self.stride.ok_or(InternalError::MissingDeviceData)
     }
 
-    pub fn index(&self) -> StoreIndex {
+    pub fn index(&self) -> StoreId {
         self.arena_index
     }
 }

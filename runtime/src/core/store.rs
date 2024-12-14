@@ -1,4 +1,4 @@
-use crate::core::allocators::{Index, ShapeBufArena};
+use crate::core::allocators::{SbaId, ShapeBufArena};
 use crate::core::device_service::DeviceData;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
@@ -54,14 +54,13 @@ where
                 }
             };
             let data = provider.htod_float(data)?;
-            let index = StoreIndex::with_arena_index(
+            let index = StoreId::with_arena_index(
                 node_id,
                 shape_buf_arena.alloc_from_shape_slice(ir_tensor.dims.as_slice())?,
             );
 
             let tensor = TensorBacking::new(
                 ir_tensor.data_type,
-                node_id,
                 index,
                 Rc::new(RefCell::new(Some(data))),
             );
@@ -78,12 +77,11 @@ where
                     let shape = def
                         .shape()
                         .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
-                    let index = StoreIndex::with_arena_index(
+                    let index = StoreId::with_arena_index(
                         node_id,
                         shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?,
                     );
-                    let tensor =
-                        TensorBacking::new(dtype, node_id, index, Rc::new(RefCell::new(None)));
+                    let tensor = TensorBacking::new(dtype, index, Rc::new(RefCell::new(None)));
                     tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -104,12 +102,11 @@ where
                     let shape = def
                         .shape()
                         .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
-                    let index = StoreIndex::with_arena_index(
+                    let index = StoreId::with_arena_index(
                         node_id,
                         shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?,
                     );
-                    let tensor =
-                        TensorBacking::new(dtype, node_id, index, Rc::new(RefCell::new(None)));
+                    let tensor = TensorBacking::new(dtype, index, Rc::new(RefCell::new(None)));
                     tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -137,7 +134,7 @@ where
                             })?
                             .is_none()
                         {
-                            tensors[*output].replace(TensorBacking::new(DataType::Undefined, *output, StoreIndex::new(*output), Rc::new(RefCell::new(None))));
+                            tensors[*output].replace(TensorBacking::new(DataType::Undefined, StoreId::new(*output), Rc::new(RefCell::new(None))));
                         }
                     }
                     None => {
@@ -159,7 +156,7 @@ where
 
     pub fn get(&self, id: usize) -> Option<Tensor<T>> {
         let backing = self.tensors.get(id)?.as_ref()?;
-        let (shape, stride) = match backing.shape_buf_index.arena_index.as_ref() {
+        let (shape, stride) = match backing.shape_buf_index.arena_id.as_ref() {
             None => (None, None),
             Some(index) => {
                 let shape = self.shape_buf_arena.get_shape_buf(&index);
@@ -175,60 +172,102 @@ where
         ))
     }
 
-    pub fn copy_within(&mut self, src: StoreIndex, dst: StoreIndex) -> Result<Tensor<T>> {
-        let src = src
-            .arena_index
+    // Todo: Change dst arg type to a type that needs to consume Tensor that creates it.
+    pub fn copy_within(&mut self, src_id: StoreId, dst_id: StoreId) -> Result<()> {
+        let src = src_id
+            .arena_id
             .as_ref()
-            .ok_or(InternalError::MissingDeviceData)?;
+            .ok_or(InternalError::TensorNotFound {
+                node_id: dst_id.node_id,
+            })?;
+
+        let dst = self.try_get_backing(dst_id.node_id)?;
+        let dst_arena_id = dst.shape_buf_index.arena_id.as_ref().copied();
+        if dst_arena_id
+            .map(|id| id.len() == src.len())
+            .unwrap_or(false)
         {
-            let dst = self
-                .tensors
-                .get(dst.node_id)
-                .ok_or(InternalError::MissingDeviceData)?
-                .as_ref()
-                .ok_or(InternalError::MissingDeviceData)?;
-            match dst.shape_buf_index.arena_index.as_ref() {
-                None => {
-                    let index = self.shape_buf_arena.alloc_and_copy_from_within(src)?;
-                    let dst = self
-                        .tensors
-                        .get_mut(dst.node_id)
-                        .ok_or(InternalError::MissingDeviceData)?
-                        .as_mut()
-                        .ok_or(InternalError::MissingDeviceData)?;
-                    dst.shape_buf_index.arena_index = Some(index);
-                }
-                Some(index) => {
-                    self.shape_buf_arena.copy_from_within(src, index)?;
-                }
-            }
+            self.shape_buf_arena
+                .copy_shape_from_within(src, &dst_arena_id.unwrap());
+        } else {
+            let new_arena_id = self.shape_buf_arena.alloc_and_copy_shape_from_within(src)?;
+            let dst = self.try_get_backing_mut(dst_id.node_id)?;
+            dst.shape_buf_index.arena_id = Some(new_arena_id);
         }
 
-        Ok(self.get(dst.node_id).unwrap())
+        Ok(())
     }
 
-    pub fn copy_from_slice(&mut self, src: &[usize], dst: StoreIndex) -> Result<Tensor<T>> {
+    // Todo: Change dst arg type to a type that needs to consume Tensor that creates it.
+    pub fn copy_from_slice(&mut self, src: &[usize], dst_id: StoreId) -> Result<()> {
+        let dst = self.try_get_backing(dst_id.node_id)?;
+        let dst_arena_id = dst.shape_buf_index.arena_id.as_ref().copied();
+        if dst_arena_id
+            .map(|id| id.shape_len() == src.len())
+            .unwrap_or(false)
         {
-            let dst = self
-                .tensors
-                .get_mut(dst.node_id)
-                .ok_or(InternalError::MissingDeviceData)?
-                .as_mut()
-                .ok_or(InternalError::MissingDeviceData)?;
-            match dst.shape_buf_index.arena_index.as_ref().copied() {
-                None => {
-                    // We need to allocate first.
-                    let index = self.shape_buf_arena.alloc_from_shape_slice(src)?;
-                    dst.shape_buf_index.arena_index = Some(index);
-                }
-                Some(index) => {
-                    self.shape_buf_arena
-                        .try_copy_shape_from_slice(src, &index)?;
-                }
-            }
+            self.shape_buf_arena
+                .try_copy_shape_from_slice(src, &dst_arena_id.unwrap())?;
+        } else {
+            let new_arena_id = self.shape_buf_arena.alloc_from_shape_slice(src)?;
+            let dst = self.try_get_backing_mut(dst_id.node_id)?;
+            dst.shape_buf_index.arena_id = Some(new_arena_id);
         }
 
-        Ok(self.get(dst.node_id).unwrap())
+        Ok(())
+    }
+
+    fn try_get_backing(&self, id: usize) -> Result<&TensorBacking<T>> {
+        self.tensors
+            .get(id)
+            .and_then(|backing| backing.as_ref())
+            .ok_or(InternalError::TensorNotFound { node_id: id })
+    }
+
+    fn try_get_backing_mut(&mut self, id: usize) -> Result<&mut TensorBacking<T>> {
+        self.tensors
+            .get_mut(id)
+            .and_then(|backing| backing.as_mut())
+            .ok_or(InternalError::TensorNotFound { node_id: id })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct StoreId {
+    node_id: usize,
+    arena_id: Option<SbaId>,
+}
+
+impl StoreId {
+    pub fn new(node_id: usize) -> Self {
+        Self::inner_new(node_id, None)
+    }
+
+    pub fn with_arena_index(node_id: usize, arena_index: SbaId) -> Self {
+        Self::inner_new(node_id, Some(arena_index))
+    }
+
+    fn inner_new(node_id: usize, arena_index: Option<SbaId>) -> Self {
+        Self {
+            node_id,
+            arena_id: arena_index,
+        }
+    }
+}
+
+pub struct TensorBacking<T> {
+    _dtype: DataType,
+    data: Rc<RefCell<Option<T>>>,
+    shape_buf_index: StoreId,
+}
+
+impl<T> TensorBacking<T> {
+    pub fn new(dtype: DataType, shape_buf_index: StoreId, data: Rc<RefCell<Option<T>>>) -> Self {
+        Self {
+            _dtype: dtype,
+            data,
+            shape_buf_index,
+        }
     }
 }
 
@@ -237,50 +276,4 @@ fn to_float_vec(data: &[u8]) -> Vec<f32> {
     data.chunks_exact(4)
         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
         .collect()
-}
-
-#[derive(Clone, Copy)]
-pub struct StoreIndex {
-    node_id: usize,
-    arena_index: Option<Index>,
-}
-
-impl StoreIndex {
-    pub fn new(node_id: usize) -> Self {
-        Self::inner_new(node_id, None)
-    }
-
-    pub fn with_arena_index(node_id: usize, arena_index: Index) -> Self {
-        Self::inner_new(node_id, Some(arena_index))
-    }
-
-    fn inner_new(node_id: usize, arena_index: Option<Index>) -> Self {
-        Self {
-            node_id,
-            arena_index,
-        }
-    }
-}
-
-pub struct TensorBacking<T> {
-    _dtype: DataType,
-    node_id: usize,
-    data: Rc<RefCell<Option<T>>>,
-    shape_buf_index: StoreIndex,
-}
-
-impl<T> TensorBacking<T> {
-    pub fn new(
-        dtype: DataType,
-        node_id: usize,
-        shape_buf_index: StoreIndex,
-        data: Rc<RefCell<Option<T>>>,
-    ) -> Self {
-        Self {
-            _dtype: dtype,
-            node_id,
-            data,
-            shape_buf_index,
-        }
-    }
 }

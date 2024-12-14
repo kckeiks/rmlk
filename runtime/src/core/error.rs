@@ -1,3 +1,4 @@
+use crate::core::allocators::SbaId;
 use crate::Value;
 use rmlk_schema::{DataType, Op};
 use std::collections::HashMap;
@@ -37,10 +38,12 @@ pub enum InternalError {
     ExpectedShapeInDef { node_id: usize },
     ExpectedDataTypeInDef { node_id: usize },
     TensorStore(String),
-    TensorNotFound { id: usize },
+    TensorNotFound { node_id: usize },
+    TensorNotFoundFromIndex { id: usize },
     TensorIndexNotFound { node_id: usize },
     UnableToConvertValue,
     UnexpectedTensorDataType { expected: DataType },
+    UnknownShapeBuffer { index: SbaId },
     UnsupportedDataType { dtype: DataType },
     UnsupportedOp { op: Op },
     UnsupportedOpForDataType { op: Op, dtype: DataType },
@@ -64,8 +67,11 @@ impl Display for InternalError {
             InternalError::Device { error: msg } => {
                 write!(f, "device error `{msg:?}`")
             }
-            InternalError::TensorNotFound { id } => {
-                write!(f, "failed to find tensor: {id:?}")
+            InternalError::TensorNotFound { node_id } => {
+                write!(f, "failed to find tensor: {node_id:?}")
+            }
+            InternalError::TensorNotFoundFromIndex { id } => {
+                write!(f, "failed to find tensor from index: {id:?}")
             }
             InternalError::TensorIndexNotFound { node_id } => {
                 write!(f, "failed to find tensor index: {node_id:?}")
@@ -117,6 +123,9 @@ impl Display for InternalError {
                     f,
                     "expected buffer of size `{expected}` instead of `{actual}`"
                 )
+            }
+            InternalError::UnknownShapeBuffer { index } => {
+                write!(f, "unknown buffer given index `{:?}`", index)
             }
         }
     }

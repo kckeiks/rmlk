@@ -3,7 +3,7 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::store::{StoreIndex, TensorStore};
+use crate::core::store::{StoreId, TensorStore};
 use crate::core::tensor::Tensor;
 use crate::core::value::{InnerValue, Value};
 use log::trace;
@@ -191,11 +191,12 @@ where
         self.op_tensors.get(value_index).copied()
     }
 
-    pub fn copy_within(&mut self, src: StoreIndex, dst: StoreIndex) -> Result<Tensor<T::Data>> {
+    /// Copies
+    pub fn copy_within(&mut self, src: StoreId, dst: StoreId) -> Result<()> {
         self.tensor_store.copy_within(src, dst)
     }
 
-    pub fn copy_from_slice(&mut self, src: &[usize], dst: StoreIndex) -> Result<Tensor<T::Data>> {
+    pub fn copy_from_slice(&mut self, src: &[usize], dst: StoreId) -> Result<()> {
         self.tensor_store.copy_from_slice(src, dst)
     }
 }

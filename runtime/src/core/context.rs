@@ -69,7 +69,7 @@ where
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
+            .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
     }
 
     pub fn get_output(&self, index: usize) -> Result<Tensor<D::Data>> {
@@ -80,7 +80,7 @@ where
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
+            .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
     }
 
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
