@@ -25,7 +25,7 @@ impl GemmBackend {
 impl GemmBackend {
     fn compute_output_shape(&self, op: &GemmOp, ctx: &mut Context<Cuda>) -> Result<()> {
         let output_shape = op.calculate_output_shape();
-        let y = ctx.get_output_mut(0)?;
+        let y = ctx.get_output(0)?;
         let y_shape = match y.try_shape() {
             Ok(shape) if shape.len() == 2 => &output_shape[1..],
             Ok(shape) if shape.len() == 3 => &output_shape,
@@ -97,7 +97,7 @@ impl GemmBackend {
         // Allocate device data for the tensor if we haven't done it yet
         // or if the existing allocated data has a different size.
         {
-            let mut c = ctx.get_output_mut(0)?;
+            let mut c = ctx.get_output(0)?;
             let c_dev_data_ref = c.dev_data_ptr_mut();
             let need_to_alloc_dev_data = c_dev_data_ref.is_none()
                 || c_dev_data_ref

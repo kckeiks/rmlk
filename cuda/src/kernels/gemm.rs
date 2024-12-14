@@ -4,6 +4,7 @@ use crate::params::CudaParamMap;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
+use log::trace;
 use std::sync::Arc;
 
 pub struct GemmOp {
@@ -69,7 +70,7 @@ impl GemmOp {
             ),
         };
 
-        println!(
+        trace!(
             "lhs_shape={lhs_shape:?},\
              lhs_stride={lhs_stride:?},\
              rhs_shape={rhs_shape:?},\

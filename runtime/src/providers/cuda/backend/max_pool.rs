@@ -46,7 +46,7 @@ impl MaxPoolBackend {
             false,
         )?;
 
-        let y = ctx.get_output_mut(0)?;
+        let y = ctx.get_output(0)?;
         let y_index = y.index();
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         ctx.execution_state_mut().copy_from_slice(shape, y_index)?;
@@ -101,7 +101,7 @@ impl MaxPoolBackend {
         // Allocate device data for the tensor if we haven't done it yet
         // or if the existing allocated data has a different size.
         {
-            let mut y = ctx.get_output_mut(0)?;
+            let mut y = ctx.get_output(0)?;
             let y_dev_data_ref = y.dev_data_ptr_mut();
             let need_to_alloc_dev_data = y_dev_data_ref.is_none()
                 || y_dev_data_ref
@@ -123,7 +123,7 @@ impl MaxPoolBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let y = ctx.get_output_mut(0)?;
+        let y = ctx.get_output(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()

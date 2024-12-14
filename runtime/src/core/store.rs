@@ -175,42 +175,6 @@ where
         ))
     }
 
-    pub fn get_mut(&self, id: usize) -> Option<Tensor<T>> {
-        let backing = self.tensors.get(id)?.as_ref()?;
-        let (shape, stride) = match backing.shape_buf_index.arena_index.as_ref() {
-            None => (None, None),
-            Some(index) => {
-                let shape = self.shape_buf_arena.get_shape_buf(&index);
-                let stride = self.shape_buf_arena.get_stride_buf(&index);
-                (shape, stride)
-            }
-        };
-        Some(Tensor::new(
-            backing.shape_buf_index,
-            shape,
-            stride,
-            backing.data.clone(),
-        ))
-    }
-
-    pub fn get_inner_mut(&mut self, id: usize) -> Option<Tensor<T>> {
-        let backing = self.tensors.get_mut(id)?.as_mut()?;
-        let (shape, stride) = match backing.shape_buf_index.arena_index.as_ref() {
-            None => (None, None),
-            Some(index) => {
-                let shape = self.shape_buf_arena.get_shape_buf(&index);
-                let stride = self.shape_buf_arena.get_stride_buf(&index);
-                (shape, stride)
-            }
-        };
-        Some(Tensor::new(
-            backing.shape_buf_index,
-            shape,
-            stride,
-            backing.data.clone(),
-        ))
-    }
-
     pub fn copy_within(&mut self, src: StoreIndex, dst: StoreIndex) -> Result<Tensor<T>> {
         let src = src
             .arena_index

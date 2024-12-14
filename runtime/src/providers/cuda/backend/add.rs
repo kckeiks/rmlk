@@ -54,7 +54,7 @@ impl AdditionBackend {
         // Allocate device data for the tensor if we haven't done it yet
         // or if the existing allocated data has a different size.
         {
-            let mut c = ctx.get_output_mut(0)?;
+            let mut c = ctx.get_output(0)?;
             let c_dev_data_ref = c.dev_data_ptr_mut();
             let need_to_alloc_dev_data = c_dev_data_ref.is_none()
                 || c_dev_data_ref

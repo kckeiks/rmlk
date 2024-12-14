@@ -72,17 +72,6 @@ where
             .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
     }
 
-    pub fn get_input_mut(&self, index: usize) -> Result<Tensor<D::Data>> {
-        let node_index = self.input_start_index + index;
-        if self.output_start_index <= node_index {
-            return Err(InternalError::InvalidTensorIndex { index: node_index });
-        }
-
-        self.execution_state
-            .get_tensor_mut(node_index)
-            .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
-    }
-
     pub fn get_output(&self, index: usize) -> Result<Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
@@ -91,17 +80,6 @@ where
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
-    }
-
-    pub fn get_output_mut(&self, index: usize) -> Result<Tensor<D::Data>> {
-        let node_index = self.output_start_index + index;
-        if self.input_start_index + self.max_values < node_index {
-            return Err(InternalError::InvalidTensorIndex { index: node_index });
-        }
-
-        self.execution_state
-            .get_tensor_mut(node_index)
             .ok_or_else(|| InternalError::TensorNotFound { id: node_index })
     }
 

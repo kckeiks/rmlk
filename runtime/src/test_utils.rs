@@ -112,7 +112,7 @@ pub fn build_graph_and_state<T, P: DeviceService<Data = T>>(
 
     let mut values = TensorStore::new(&provider, &graph).unwrap();
     for (node_id, data) in inputs {
-        let tensor = values.get_mut(node_id).unwrap();
+        let tensor = values.get(node_id).unwrap();
         tensor.set_dev_data(data);
     }
 

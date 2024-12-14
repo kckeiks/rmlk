@@ -102,22 +102,13 @@ where
         self.instance_state.graph().get_node(node_id)
     }
 
-    /// Get a shared tensor value.
+    /// Get a tensor value.
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
     pub fn get_tensor(&self, value_index: usize) -> Option<Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get(index)
-    }
-
-    /// Get a mutable tensor value.
-    ///
-    /// The value index for a given computation can be
-    /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor_mut(&self, value_index: usize) -> Option<Tensor<T::Data>> {
-        let index = self.get_inner_index(value_index)?;
-        self.tensor_store.get_mut(index)
     }
 
     /// Get the starting index for the values of a node.
@@ -134,7 +125,7 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_float(data)?;
-                let mut tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
+                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
                     InternalError::ExecutionState(format!(
                         "failed to load value: missing tensor for node {node_id}"
                     ))
@@ -193,11 +184,6 @@ where
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Tensor<T::Data>> {
         self.tensor_store.get(node_id)
-    }
-
-    /// Get the tensor value given a node ID.
-    fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<Tensor<T::Data>> {
-        self.tensor_store.get_inner_mut(node_id)
     }
 
     /// Get the index of the actual value.
