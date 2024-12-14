@@ -24,7 +24,18 @@ impl ActivationBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         T: ActivationKernel,
     {
+        // The output should have the same dimensions.
+        // We do it now to avoid lifetime errors.
+        {
+            let x = ctx.get_input(0)?;
+            let y = ctx.get_output(0)?;
+            let x_index = x.index();
+            let y_index = y.index();
+            ctx.execution_state_mut().copy_within(x_index, y_index)?;
+        }
+
         let x = ctx.get_input(0)?;
+
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
@@ -56,12 +67,7 @@ impl ActivationBackend {
             };
         }
 
-        // The device data should exist so we will execute the kernel
-        // and update the destination device data with the result.
-        let mut y = ctx.get_output_mut(0)?;
-        y.copy_shape(x.try_index()?)?;
-        y.set_dtype(*x.dtype());
-
+        let y = ctx.get_output(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()
@@ -85,7 +91,7 @@ impl ActivationBackend {
     where
         T: ActivationKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_activation::<f32, T>(ctx),

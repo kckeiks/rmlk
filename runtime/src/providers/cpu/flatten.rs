@@ -14,7 +14,6 @@ impl FlattenTemplate {
 
 pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
-
     if x.shape().len() == 0 {
         return Err(InternalError::InvalidTensorShape {
             shape: x.shape().to_vec(),
@@ -43,18 +42,14 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         }
     }
 
-    let dtype = *x.dtype();
     let dev_data = x
         .dev_data_ptr_clone()
         .ok_or(InternalError::MissingDeviceData)?;
-    let shape = ctx
-        .execution_state()
-        .scratch_alloc()
-        .allocate_from_slice(y_shape.as_slice())?;
     let mut y = ctx.get_output_mut(0)?;
-    y.reshape(shape)?;
     y.set_dev_data_ptr(dev_data);
-    y.set_dtype(dtype);
+
+    let index = y.index();
+    ctx.execution_state_mut().copy_from_slice(&y_shape, index)?;
 
     Ok(())
 }

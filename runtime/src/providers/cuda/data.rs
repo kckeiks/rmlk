@@ -1,3 +1,4 @@
+use crate::core::device_service::DeviceData;
 use cudarc::driver::sys::CUdeviceptr;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceSlice};
 use rmlk_schema::{DataType, DataTypeMap};
@@ -153,5 +154,11 @@ impl<'a, T> Drop for DataViewMut<'a, T> {
             .take()
             .expect("CudaSlice is null only after being dropped")
             .leak();
+    }
+}
+
+impl DeviceData for CudaData {
+    fn dtype(&self) -> DataType {
+        self.dtype
     }
 }

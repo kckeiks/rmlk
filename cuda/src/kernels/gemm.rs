@@ -4,7 +4,6 @@ use crate::params::CudaParamMap;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 use half::f16;
-use log::trace;
 use std::sync::Arc;
 
 pub struct GemmOp {
@@ -42,8 +41,8 @@ impl GemmOp {
         };
 
         let n = match trans_b {
-            true => rhs_shape[rhs_shape.len() - 1],
-            false => rhs_shape[rhs_shape.len() - 2],
+            false => rhs_shape[rhs_shape.len() - 1],
+            true => rhs_shape[rhs_shape.len() - 2],
         };
 
         let lhs_dims = lhs_shape.len();
@@ -70,7 +69,7 @@ impl GemmOp {
             ),
         };
 
-        trace!(
+        println!(
             "lhs_shape={lhs_shape:?},\
              lhs_stride={lhs_stride:?},\
              rhs_shape={rhs_shape:?},\

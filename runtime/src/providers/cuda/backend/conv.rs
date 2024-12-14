@@ -22,11 +22,7 @@ impl ConvolutionBackend {
 }
 
 impl ConvolutionBackend {
-    fn compute_convolution<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: ConvolutionKernel,
-    {
+    fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
         let filter_dims = match x.shape().len() {
@@ -43,13 +39,15 @@ impl ConvolutionBackend {
             filter_dims,
         )?;
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let mut y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
 
         let w = ctx.get_input(1)?;
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
 
+        // Todo: update this function so we dont have to do all this work with
+        // allocating scratch buffers.
         rmlk_cuda::kernels::conv::calculate_output_shape(
             &x_shape,
             &w_shape,
@@ -59,13 +57,49 @@ impl ConvolutionBackend {
             &mut y_shape,
         )?;
 
-        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
-        utils::calculate_stride(&y_shape, &mut y_stride);
+        let y = ctx.get_output_mut(0)?;
+        let y_index = y.index();
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        ctx.execution_state_mut().copy_from_slice(shape, y_index)?;
 
+        Ok(())
+    }
+
+    fn compute_convolution<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: ConvolutionKernel,
+    {
+        // We compute the output shape first.
+        // This is cheap because we're using scratch buffers.
+        self.compute_output_shape(ctx)?;
+
+        let x = ctx.get_input(0)?;
+
+        let filter_dims = match x.shape().len() {
+            4 => 2,
+            5 => 3,
+            _ => {
+                unreachable!("we already checked the dimensions of x for the supported dimensions")
+            }
+        };
+
+        let attrs = ConvAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+            filter_dims,
+        )?;
+
+        let w = ctx.get_input(1)?;
         let bias = ctx.get_input(2).ok();
+        let y = ctx.get_output(0)?;
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
         // Todo: refactor this.
         // Extract and prepare bias argument.
@@ -123,11 +157,7 @@ impl ConvolutionBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let mut y = ctx.get_output_mut(0)?;
-        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        y.reshape(shape)?;
-        y.set_dtype(*x.dtype());
-
+        let y = ctx.get_output(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()
@@ -190,7 +220,7 @@ impl ConvolutionBackend {
     where
         T: ConvolutionKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_convolution::<f32, T>(ctx),

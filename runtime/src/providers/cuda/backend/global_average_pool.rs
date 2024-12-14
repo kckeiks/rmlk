@@ -2,7 +2,6 @@ use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use num_traits::Num;
@@ -20,14 +19,10 @@ impl GlobalAverageBackend {
 }
 
 impl GlobalAverageBackend {
-    fn compute_global_average_pool<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: GlobalAveragePoolKernel,
-    {
+    fn comput_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
         let y_shape_original = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
         // Todo: move this to utils.
@@ -36,12 +31,31 @@ impl GlobalAverageBackend {
             y_shape_original,
         )?;
 
+        let y = ctx.get_output_mut(0)?;
+        let y_index = y.index();
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape_original)?;
+        ctx.execution_state_mut().copy_from_slice(shape, y_index)?;
+
+        Ok(())
+    }
+
+    fn compute_global_average_pool<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: GlobalAveragePoolKernel,
+    {
+        self.comput_output_shape(ctx)?;
+
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_output(0)?;
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y_shape_original)?;
-        let y_stride = scratch_alloc.allocate_fill(y_shape.len(), 0)?;
-        utils::calculate_stride(&y_shape, y_stride);
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
         let pads = scratch_alloc.allocate_fill(x_shape[2..].len(), 0)?;
         let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
@@ -76,10 +90,7 @@ impl GlobalAverageBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let mut y = ctx.get_output_mut(0)?;
-        y.reshape(y_shape_original)?;
-        y.set_dtype(*x.dtype());
-
+        let y = ctx.get_output(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()
@@ -108,7 +119,7 @@ impl GlobalAverageBackend {
     where
         T: GlobalAveragePoolKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_global_average_pool::<f32, T>(ctx),

@@ -1,5 +1,6 @@
-use crate::core::allocators::{Index, ShapeBufArena};
+use crate::core::device_service::DeviceData;
 use crate::core::error::{InternalError, Result};
+use crate::core::store::StoreIndex;
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -9,156 +10,111 @@ use std::rc::Rc;
 /// This is simply a wrapper that holds a pointer to memory
 /// on a device and other information about the tensor like shape,
 /// datatype and stride.
-pub struct Tensor<T> {
-    data: Option<Rc<RefCell<T>>>,
-    dtype: DataType,
-    shape_buf_index: Option<Index>,
-    shape_buf_arena: Rc<RefCell<ShapeBufArena>>,
+pub struct Tensor<'a, T> {
+    data: Rc<RefCell<Option<T>>>,
+    shape: Option<&'a [usize]>,
+    stride: Option<&'a [usize]>,
+    arena_index: StoreIndex,
 }
 
-impl<T> Tensor<T> {
-    pub fn new(dtype: DataType, shape_buf_arena: Rc<RefCell<ShapeBufArena>>) -> Self {
-        Self {
-            data: None,
-            dtype,
-            shape_buf_index: None,
-            shape_buf_arena,
-        }
-    }
-
-    pub fn new_with_shape(
-        dtype: DataType,
-        shape_buf_index: Index,
-        shape_buf_arena: Rc<RefCell<ShapeBufArena>>,
+impl<'a, T> Tensor<'a, T>
+where
+    T: DeviceData,
+{
+    pub fn new(
+        arena_index: StoreIndex,
+        shape: Option<&'a [usize]>,
+        stride: Option<&'a [usize]>,
+        data: Rc<RefCell<Option<T>>>,
     ) -> Self {
         Self {
-            data: None,
-            dtype,
-            shape_buf_index: Some(shape_buf_index),
-            shape_buf_arena,
+            data,
+            arena_index,
+            shape,
+            stride,
         }
     }
 
-    pub fn set_dev_data(&mut self, data: T) -> Option<DevDataPtr<T>> {
-        self.data
-            .replace(Rc::new(RefCell::new(data)))
-            .map(DevDataPtr)
+    pub fn set_dev_data(&mut self, data: T) {
+        self.data.borrow_mut().replace(data);
     }
 
     pub fn dev_data_ptr(&self) -> Option<Ref<'_, T>> {
-        self.data.as_ref().map(|data| data.borrow())
+        Some(Ref::map(self.data.as_ref().borrow(), |data| {
+            data.as_ref().unwrap()
+        }))
     }
 
     pub fn try_dev_data_ptr(&self) -> Result<Ref<'_, T>> {
-        self.data
-            .as_ref()
-            .map(|data| data.borrow())
-            .ok_or(InternalError::MissingDeviceData)
+        {
+            if self.data.as_ref().borrow().as_ref().is_none() {
+                return Err(InternalError::MissingDeviceData);
+            }
+        }
+
+        Ok(self.dev_data_ptr().expect(""))
     }
 
     pub fn dev_data_ptr_mut(&self) -> Option<RefMut<'_, T>> {
-        self.data.as_ref().map(|data| data.borrow_mut())
+        if self.data.as_ref().borrow().as_ref().is_none() {
+            return None;
+        }
+
+        Some(RefMut::map(self.data.as_ref().borrow_mut(), |data| {
+            data.as_mut().unwrap()
+        }))
     }
 
     pub fn try_dev_data_ptr_mut(&self) -> Result<RefMut<'_, T>> {
-        self.data
-            .as_ref()
-            .map(|data| data.borrow_mut())
-            .ok_or(InternalError::MissingDeviceData)
+        {
+            if self.data.as_ref().borrow().as_ref().is_none() {
+                return Err(InternalError::MissingDeviceData);
+            }
+        }
+
+        Ok(self.dev_data_ptr_mut().expect(""))
     }
 
     pub fn dev_data_ptr_clone(&self) -> Option<DevDataPtr<T>> {
-        self.data.as_ref().map(Clone::clone).map(DevDataPtr)
+        Some(DevDataPtr(self.data.clone()))
     }
 
-    pub fn set_dev_data_ptr(&mut self, view: DevDataPtr<T>) -> Option<DevDataPtr<T>> {
-        self.data.replace(view.0.clone()).map(DevDataPtr)
+    pub fn set_dev_data_ptr(&mut self, view: DevDataPtr<T>) {
+        let taken = view
+            .0
+            .borrow_mut()
+            .take()
+            .expect("Empty DevDataPtr is never created");
+        self.data.borrow_mut().replace(taken);
     }
 
-    pub fn shape(&self) -> Ref<[usize]> {
-        let index = self.shape_buf_index.as_ref().expect("");
-        Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
-            shape_buf.get_shape_buf(index).expect("")
-        })
-    }
-
-    pub fn stride(&self) -> Ref<[usize]> {
-        let index = self.shape_buf_index.as_ref().unwrap();
-        Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
-            shape_buf.get_stride_buf(index).expect("")
-        })
-    }
-
-    pub fn try_shape(&self) -> Result<Ref<[usize]>> {
-        let index = self
-            .shape_buf_index
+    pub fn dtype(&self) -> DataType {
+        self.data
+            .borrow()
             .as_ref()
-            .ok_or(InternalError::MissingDeviceData)?;
-        Ok(Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
-            shape_buf.get_shape_buf(index).expect("")
-        }))
+            .map(|data| data.dtype())
+            .unwrap_or(DataType::Undefined)
     }
 
-    pub fn try_stride(&self) -> Result<Ref<[usize]>> {
-        let index = self
-            .shape_buf_index
-            .as_ref()
-            .ok_or(InternalError::MissingDeviceData)?;
-        Ok(Ref::map(self.shape_buf_arena.borrow(), |shape_buf| {
-            shape_buf.get_stride_buf(index).expect("")
-        }))
+    pub fn shape(&self) -> &[usize] {
+        self.shape.as_ref().unwrap()
     }
 
-    fn try_shape_mut(&mut self) -> Result<RefMut<[usize]>> {
-        let index = self
-            .shape_buf_index
-            .as_ref()
-            .ok_or(InternalError::MissingDeviceData)?;
-        Ok(RefMut::map(
-            self.shape_buf_arena.borrow_mut(),
-            |shape_buf| shape_buf.get_shape_buf_mut(index).expect(""),
-        ))
+    pub fn stride(&self) -> &[usize] {
+        self.stride.as_ref().unwrap()
     }
 
-    fn try_stride_mut(&mut self) -> Result<RefMut<[usize]>> {
-        let index = self
-            .shape_buf_index
-            .as_ref()
-            .ok_or(InternalError::MissingDeviceData)?;
-        Ok(RefMut::map(
-            self.shape_buf_arena.borrow_mut(),
-            |shape_buf| shape_buf.get_stride_buf_mut(index).expect(""),
-        ))
+    pub fn try_shape(&self) -> Result<&[usize]> {
+        self.shape.ok_or(InternalError::MissingDeviceData)
     }
 
-    pub fn dtype(&self) -> &DataType {
-        &self.dtype
+    pub fn try_stride(&self) -> Result<&[usize]> {
+        self.stride.ok_or(InternalError::MissingDeviceData)
     }
 
-    pub fn set_dtype(&mut self, dtype: DataType) {
-        self.dtype = dtype;
-    }
-
-    pub fn reshape(&mut self, new_shape: &[usize]) -> Result<()> {
-        let good = {
-            self.try_shape().map(|shape| shape.len() != new_shape.len()).unwrap_or(true)
-        };
-        if good{
-            let mut arena = self.shape_buf_arena.borrow_mut();
-            self.shape_buf_index = Some(arena.alloc_from_shape_slice(new_shape)?);
-        }
-        Ok(())
-    }
-
-    pub fn copy_shape(&mut self, new_shape: Index) -> Result<()> {
-        let mut arena = self.shape_buf_arena.borrow_mut();
-        self.shape_buf_index = Some(arena.alloc_and_copy_from_within(&new_shape)?);
-        Ok(())
-    }
-
-    pub fn try_index(&self) -> Result<Index> {
-        self.shape_buf_index.ok_or(InternalError::MissingDeviceData)
+    pub fn index(&self) -> StoreIndex {
+        self.arena_index
     }
 }
 
-pub struct DevDataPtr<T>(Rc<RefCell<T>>);
+pub struct DevDataPtr<T>(Rc<RefCell<Option<T>>>);

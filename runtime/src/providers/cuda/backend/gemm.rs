@@ -23,6 +23,41 @@ impl GemmBackend {
 }
 
 impl GemmBackend {
+    fn compute_output_shape(&self, op: &GemmOp, ctx: &mut Context<Cuda>) -> Result<()> {
+        let output_shape = op.calculate_output_shape();
+        let y = ctx.get_output_mut(0)?;
+        let y_shape = match y.try_shape() {
+            Ok(shape) if shape.len() == 2 => &output_shape[1..],
+            Ok(shape) if shape.len() == 3 => &output_shape,
+            _ => {
+                return Err(InternalError::InvalidTensorShape {
+                    // The allocation is ok here because we're throwing an error.
+                    shape: y.shape().to_vec(),
+                });
+            }
+        };
+
+        let y_index = y.index();
+        ctx.execution_state_mut()
+            .copy_from_slice(y_shape, y_index)?;
+
+        Ok(())
+    }
+
+    fn create_gemm_op(&self, attrs: &GemmAttributes, ctx: &Context<Cuda>) -> Result<GemmOp> {
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+
+        Ok(GemmOp::new(
+            &a.shape(),
+            &a.stride(),
+            &b.shape(),
+            &b.stride(),
+            attrs.trans_a(),
+            attrs.trans_b(),
+        ))
+    }
+
     pub fn compute_gemm<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: CudaParamMap
@@ -34,29 +69,24 @@ impl GemmBackend {
             + TryFrom<f32>,
         T: GemmKernel,
     {
-        let a = ctx.get_input(0)?;
-        let b = ctx.get_input(1)?;
-
         let attrs = GemmAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
         )?;
 
-        let op = GemmOp::new(
-            &a.shape(),
-            &a.stride(),
-            &b.shape(),
-            &b.stride(),
-            attrs.trans_a(),
-            attrs.trans_b(),
-        );
+        let op = self.create_gemm_op(&attrs, ctx)?;
 
-        let output_shape = op.calculate_output_shape();
-        let output_size = output_shape.iter().product();
+        self.compute_output_shape(&op, ctx)?;
 
         let alpha = D::try_from(attrs.alpha()).map_err(|_| InternalError::UnableToConvertValue)?;
         let beta = D::try_from(attrs.beta()).map_err(|_| InternalError::UnableToConvertValue)?;
         let config = op.strided_batch_config((alpha, beta))?;
+
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+        let c = ctx.get_output(0)?;
+
+        let output_size = c.shape().iter().product();
 
         let a_dev_data_ref = a.try_dev_data_ptr()?;
         let a_dev_data = a_dev_data_ref.data::<D>();
@@ -89,10 +119,7 @@ impl GemmBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let mut y = ctx.get_output_mut(0)?;
-        y.reshape(output_shape.as_slice())?;
-        y.set_dtype(*a.dtype());
-
+        let y = ctx.get_output(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()
@@ -115,7 +142,7 @@ impl GemmBackend {
     where
         T: GemmKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_gemm::<f32, T>(ctx),

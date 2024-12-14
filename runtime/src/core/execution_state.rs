@@ -3,14 +3,13 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::store::TensorStore;
+use crate::core::store::{StoreIndex, TensorStore};
 use crate::core::tensor::Tensor;
 use crate::core::value::{InnerValue, Value};
 use log::trace;
 use rmlk_graph::{Graph, Node};
 use rmlk_schema::Op;
 use rmlk_schema::{DataType, Definition};
-use std::cell::{Ref, RefMut};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -107,7 +106,7 @@ where
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor(&self, value_index: usize) -> Option<Ref<'_, Tensor<T::Data>>> {
+    pub fn get_tensor(&self, value_index: usize) -> Option<Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get(index)
     }
@@ -116,7 +115,7 @@ where
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor_mut(&self, value_index: usize) -> Option<RefMut<'_, Tensor<T::Data>>> {
+    pub fn get_tensor_mut(&self, value_index: usize) -> Option<Tensor<T::Data>> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get_mut(index)
     }
@@ -135,7 +134,7 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_float(data)?;
-                let tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
+                let mut tensor = self.get_tensor_from_node_id_mut(node_id).ok_or_else(|| {
                     InternalError::ExecutionState(format!(
                         "failed to load value: missing tensor for node {node_id}"
                     ))
@@ -186,18 +185,31 @@ where
         &mut self.scratch_alloc
     }
 
+    /// Get a read-only reference to the scratch allocator.
+    pub fn scratch_alloc_clone(&self) -> ScratchAllocator {
+        self.scratch_alloc.clone()
+    }
+
     /// Get the tensor value given a node ID.
-    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Ref<'_, Tensor<T::Data>>> {
+    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Tensor<T::Data>> {
         self.tensor_store.get(node_id)
     }
 
     /// Get the tensor value given a node ID.
-    fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<&mut Tensor<T::Data>> {
+    fn get_tensor_from_node_id_mut(&mut self, node_id: usize) -> Option<Tensor<T::Data>> {
         self.tensor_store.get_inner_mut(node_id)
     }
 
     /// Get the index of the actual value.
     fn get_inner_index(&self, value_index: usize) -> Option<usize> {
         self.op_tensors.get(value_index).copied()
+    }
+
+    pub fn copy_within(&mut self, src: StoreIndex, dst: StoreIndex) -> Result<Tensor<T::Data>> {
+        self.tensor_store.copy_within(src, dst)
+    }
+
+    pub fn copy_from_slice(&mut self, src: &[usize], dst: StoreIndex) -> Result<Tensor<T::Data>> {
+        self.tensor_store.copy_from_slice(src, dst)
     }
 }

@@ -2,9 +2,11 @@ use crate::core::error::{InternalError, Result};
 use crate::utils;
 use bumpalo::Bump;
 use log::warn;
+use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct ScratchAllocator {
-    inner: Bump,
+    inner: Rc<Bump>,
 }
 
 impl ScratchAllocator {
@@ -14,7 +16,7 @@ impl ScratchAllocator {
 
     pub fn with_capacity(size: usize) -> Self {
         Self {
-            inner: Bump::with_capacity(size),
+            inner: Rc::new(Bump::with_capacity(size)),
         }
     }
 
@@ -48,7 +50,7 @@ impl ScratchAllocator {
     }
 
     pub fn reset(&mut self) {
-        self.inner.reset()
+        Rc::get_mut(&mut self.inner).unwrap().reset()
     }
 }
 
@@ -102,6 +104,17 @@ impl ShapeBufArena {
             mid: old_current + size,
             end: old_current + size + size,
         })
+    }
+
+    pub fn try_copy_shape_from_slice(&mut self, src: &[usize], dst: &Index) -> Result<()> {
+        self.get_shape_buf_mut(dst)
+            .ok_or(InternalError::MissingDeviceData)?
+            .copy_from_slice(src);
+        let stride = self
+            .get_stride_buf_mut(dst)
+            .ok_or(InternalError::MissingDeviceData)?;
+        utils::calculate_stride(src, stride);
+        Ok(())
     }
 
     pub fn copy_from_within(&mut self, src: &Index, dst: &Index) -> Result<()> {

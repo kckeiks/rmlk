@@ -3,7 +3,6 @@ use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
-use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use log::trace;
@@ -22,14 +21,10 @@ impl MaxPoolBackend {
 }
 
 impl MaxPoolBackend {
-    fn compute_max_pool<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: MaxPoolKernel,
-    {
+    fn comput_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
 
         let attrs = MaxPoolAttributes::new(
@@ -39,6 +34,7 @@ impl MaxPoolBackend {
 
         let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
 
+        // Todo: Refactor function so we dont have to allocate a scratch buffer.
         // Todo: Move this to utils.
         // Todo: if attributes were usize, we wouldn't need to do this allocation here.
         rmlk_cuda::kernels::max_pool::compute_output_shape(
@@ -50,25 +46,52 @@ impl MaxPoolBackend {
             false,
         )?;
 
-        let mut y_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
-        utils::calculate_stride(&y_shape, &mut y_stride);
+        let y = ctx.get_output_mut(0)?;
+        let y_index = y.index();
+        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+        ctx.execution_state_mut().copy_from_slice(shape, y_index)?;
+
+        Ok(())
+    }
+
+    fn compute_max_pool<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: MaxPoolKernel,
+    {
+        self.comput_output_shape(ctx)?;
+
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_output(0)?;
+
+        let attrs = MaxPoolAttributes::new(
+            ctx.get_attributes()
+                .ok_or(InternalError::MissingAttributes)?,
+        )?;
 
         trace!(
-            "x_shape={x_shape:?},\
+            "x_shape={:?},\
             x_stride={:?},\
             kernel_shape={:?},\
             pads={:?},\
             strides={:?}\
-            y_shape={y_shape:?}\
-            y_stride={y_stride:?}",
+            y_shape={:?}\
+            y_stride={:?}",
+            x.shape(),
             x.stride(),
             attrs.kernel_shape(),
             attrs.pads(),
-            attrs.strides()
+            attrs.strides(),
+            y.shape(),
+            y.stride(),
         );
 
-        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
-        let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
+        let scratch_alloc = ctx.execution_state().scratch_alloc();
+
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(x.shape())?;
+        let x_stride = scratch_alloc.allocate_and_convert_from_slice(x.stride())?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data();
@@ -100,11 +123,7 @@ impl MaxPoolBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let mut y = ctx.get_output_mut(0)?;
-        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        y.reshape(shape)?;
-        y.set_dtype(*x.dtype());
-
+        let y = ctx.get_output_mut(0)?;
         let mut y_dev_data_ref = y.dev_data_ptr_mut();
         let mut y_dev_data = y_dev_data_ref
             .as_mut()
@@ -133,7 +152,7 @@ impl MaxPoolBackend {
     where
         T: MaxPoolKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_max_pool::<f32, T>(ctx),

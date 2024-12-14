@@ -27,6 +27,16 @@ impl AdditionBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         T: AdditionKernel,
     {
+        // The output should have the same dimensions.
+        // We do it now to avoid lifetime errors.
+        {
+            let a = ctx.get_input(0)?;
+            let c = ctx.get_output(0)?;
+            let a_index = a.index();
+            let c_index = c.index();
+            ctx.execution_state_mut().copy_within(a_index, c_index)?;
+        }
+
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
 
@@ -66,10 +76,7 @@ impl AdditionBackend {
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
-        let mut c = ctx.get_output_mut(0)?;
-        c.copy_shape(a.try_index()?)?;
-        c.set_dtype(*a.dtype());
-
+        let c = ctx.get_output(0)?;
         let mut c_dev_data_ref = c.dev_data_ptr_mut();
         let mut c_dev_data = c_dev_data_ref
             .as_mut()
@@ -96,7 +103,7 @@ impl AdditionBackend {
     where
         T: AdditionKernel,
     {
-        let dtype = *ctx.get_input(0)?.dtype();
+        let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
             DataType::Float => self.compute_addition::<f32, T>(ctx),

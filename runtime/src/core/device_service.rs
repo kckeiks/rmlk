@@ -5,7 +5,7 @@ use rmlk_schema::{DataType, Op};
 /// Services for using an accelerator device's resources.
 pub trait DeviceService: Sized {
     /// Data on device.
-    type Data;
+    type Data: DeviceData;
     /// Backends that executes kernels on device.
     type Backend: OperationBackend<Self>;
 
@@ -19,4 +19,8 @@ pub trait DeviceService: Sized {
     fn dtoh_float(&self, data: &Self::Data) -> Result<Vec<f32>>;
 
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data>;
+}
+
+pub trait DeviceData {
+    fn dtype(&self) -> DataType;
 }
