@@ -7,7 +7,7 @@ mod store;
 mod tensor;
 mod value;
 
-mod allocators;
+pub mod allocators;
 pub mod backend;
 pub mod device_service;
 pub mod error;

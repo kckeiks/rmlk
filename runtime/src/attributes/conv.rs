@@ -1,34 +1,40 @@
+use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
-pub struct ConvAttributes {
-    dilations: Box<[i32]>,
-    group: i32,
-    _kernel_shape: Option<Box<[i32]>>,
-    pads: Box<[i32]>,
-    strides: Box<[i32]>,
+pub struct ConvAttributes<'a> {
     kernel_dims: usize,
+    group: i32,
+    dilations: &'a [i32],
+    pads: &'a [i32],
+    strides: &'a [i32],
+    _kernel_shape: Option<&'a [i32]>,
 }
 
-impl ConvAttributes {
-    pub fn new(attrs: &HashMap<Box<str>, Attribute>, kernel_dims: usize) -> Result<Self> {
+impl<'a> ConvAttributes<'a> {
+    // Todo: we use a scratch buffer to allocate some default slices
+    // but instead we should allocate these buffers during deserialization of the model.
+    pub fn new(
+        attrs: &'a HashMap<Box<str>, Attribute>,
+        scratch_alloc: &'a ScratchAllocator,
+        kernel_dims: usize,
+    ) -> Result<Self> {
         // Todo: We can probably do better than this
-        let mut dilations = None;
+        let pads;
+        let strides;
+        let dilations;
         let mut group = None;
         let mut kernel_shape = None;
-        let mut pads = None;
-        let mut strides = None;
 
         if let Some(attr) = attrs.get("dilations") {
-            dilations = Some(
-                attr.ints()
-                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                        name: "dilations".to_string(),
-                    })?
-                    .to_vec()
-                    .into_boxed_slice(),
-            );
+            dilations = attr
+                .ints()
+                .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                    name: "dilations".to_string(),
+                })?;
+        } else {
+            dilations = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
 
         if let Some(attr) = attrs.get("group") {
@@ -41,44 +47,41 @@ impl ConvAttributes {
         }
 
         if let Some(attr) = attrs.get("kernel_shape") {
-            kernel_shape = Some(
-                attr.ints()
-                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                        name: "kernel_shape".to_string(),
-                    })?
-                    .to_vec()
-                    .into_boxed_slice(),
-            );
+            kernel_shape =
+                Some(
+                    attr.ints()
+                        .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                            name: "kernel_shape".to_string(),
+                        })?,
+                );
         }
 
         if let Some(attr) = attrs.get("pads") {
-            pads = Some(
-                attr.ints()
-                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                        name: "pads".to_string(),
-                    })?
-                    .to_vec()
-                    .into_boxed_slice(),
-            );
+            pads = attr
+                .ints()
+                .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                    name: "pads".to_string(),
+                })?;
+        } else {
+            pads = scratch_alloc.allocate_fill(kernel_dims, 0)?;
         }
 
         if let Some(attr) = attrs.get("strides") {
-            strides = Some(
-                attr.ints()
-                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                        name: "strides".to_string(),
-                    })?
-                    .to_vec()
-                    .into_boxed_slice(),
-            );
+            strides = attr
+                .ints()
+                .ok_or_else(|| InternalError::InvalidAttributeDataType {
+                    name: "strides".to_string(),
+                })?;
+        } else {
+            strides = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
 
         Ok(Self {
-            dilations: dilations.unwrap_or_else(|| vec![1; kernel_dims].into_boxed_slice()),
+            dilations,
             group: group.unwrap_or(1),
             _kernel_shape: kernel_shape,
-            pads: pads.unwrap_or_else(|| vec![0; kernel_dims].into_boxed_slice()),
-            strides: strides.unwrap_or_else(|| vec![1; kernel_dims].into_boxed_slice()),
+            pads,
+            strides,
             kernel_dims,
         })
     }
@@ -89,18 +92,18 @@ impl ConvAttributes {
     }
 
     pub fn dilations(&self) -> &[i32] {
-        self.dilations.as_ref()
+        self.dilations
     }
 
     pub fn strides(&self) -> &[i32] {
-        self.strides.as_ref()
+        self.strides
     }
 
     pub fn group(&self) -> i32 {
         self.group
     }
 
-    pub fn _kernel_shape(&self) -> Option<&Box<[i32]>> {
-        self._kernel_shape.as_ref()
+    pub fn _kernel_shape(&self) -> Option<&[i32]> {
+        self._kernel_shape
     }
 }

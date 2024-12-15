@@ -36,6 +36,7 @@ impl ConvolutionBackend {
         let attrs = ConvAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
+            ctx.execution_state().scratch_alloc(),
             filter_dims,
         )?;
 
@@ -88,6 +89,7 @@ impl ConvolutionBackend {
         let attrs = ConvAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
+            ctx.execution_state().scratch_alloc(),
             filter_dims,
         )?;
 
