@@ -42,10 +42,7 @@ impl AdditionBackend {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
 
-        #[cfg(debug_assertions)]
         {
-            let a = ctx.get_input(0)?;
-            let b = ctx.get_input(1)?;
             let c = ctx.get_output(0)?;
             debug!("[a][add][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
             debug!("[b][add][shape={:?}][stride=[{:?}]", b.shape(), b.stride());

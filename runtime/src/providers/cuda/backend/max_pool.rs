@@ -72,25 +72,22 @@ impl MaxPoolBackend {
             ctx.execution_state().scratch_alloc(),
         )?;
 
-        #[cfg(debug_assertions)]
-        {
-            debug!(
-                "[x][max_pool][shape={:?}][stride=[{:?}]",
-                x.shape(),
-                x.stride()
-            );
-            debug!(
-                "[y][max_pool][shape={:?}][stride=[{:?}]",
-                y.shape(),
-                y.stride()
-            );
-            debug!(
-                "[max_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
-                attrs.pads(),
-                attrs.strides(),
-                attrs.kernel_shape()
-            );
-        }
+        debug!(
+            "[x][max_pool][shape={:?}][stride=[{:?}]",
+            x.shape(),
+            x.stride()
+        );
+        debug!(
+            "[y][max_pool][shape={:?}][stride=[{:?}]",
+            y.shape(),
+            y.stride()
+        );
+        debug!(
+            "[max_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
+            attrs.pads(),
+            attrs.strides(),
+            attrs.kernel_shape()
+        );
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
 

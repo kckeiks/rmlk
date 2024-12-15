@@ -105,12 +105,9 @@ impl ConvolutionBackend {
         let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
         let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
-        #[cfg(debug_assertions)]
-        {
-            debug!("[x][conv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-            debug!("[w][conv][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
-            debug!("[y][conv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
-        }
+        debug!("[x][conv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+        debug!("[w][conv][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
+        debug!("[y][conv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
         // Todo: refactor this.
         // Extract and prepare bias argument.

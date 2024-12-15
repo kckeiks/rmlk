@@ -1,6 +1,5 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::{device_service::DeviceService, Context};
-use log::debug;
 
 pub struct FlattenTemplate(());
 
@@ -55,6 +54,8 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
 
     #[cfg(debug_assertions)]
     {
+        use log::debug;
+
         let x = ctx.get_input(0)?;
         let y = ctx.get_output(0)?;
         debug!(

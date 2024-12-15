@@ -87,12 +87,9 @@ impl GemmBackend {
         let b = ctx.get_input(1)?;
         let c = ctx.get_output(0)?;
 
-        #[cfg(debug_assertions)]
-        {
-            debug!("[a][gemm][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-            debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-            debug!("[c][gemm][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
-        }
+        debug!("[a][gemm][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+        debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+        debug!("[c][gemm][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
 
         let output_size = c.shape().iter().product();
 

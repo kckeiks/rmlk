@@ -41,26 +41,24 @@ fn main() {
 
     println!("Done building the compute graph in the runtime");
 
-    for _ in 0..4 {
-        // Run inference.
-        let input: HashMap<String, Value> = [(
-            "input".to_string(),
-            input.clone().into_raw_vec().try_into().unwrap(),
-        )]
-        .into();
-        let mut output = model_instance.run(input).unwrap();
-        let data: Vec<f32> = output.remove("output").unwrap().try_into().unwrap();
-        let mut output = data.into_iter().enumerate().collect::<Vec<_>>();
-        output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());
+    // Run inference.
+    let input: HashMap<String, Value> = [(
+        "input".to_string(),
+        input.clone().into_raw_vec().try_into().unwrap(),
+    )]
+    .into();
+    let mut output = model_instance.run(input).unwrap();
+    let data: Vec<f32> = output.remove("output").unwrap().try_into().unwrap();
+    let mut output = data.into_iter().enumerate().collect::<Vec<_>>();
+    output.sort_by(|(_, v1), (_, v2)| v2.partial_cmp(v1).unwrap());
 
-        // Take the first 3 best guesses.
-        let output = output
-            .into_iter()
-            .take(3)
-            .map(|(i, v)| (v, CLASSES[i]))
-            .collect::<Vec<_>>();
-        println!("{:?}", output);
-    }
+    // Take the first 3 best guesses.
+    let output = output
+        .into_iter()
+        .take(3)
+        .map(|(i, v)| (v, CLASSES[i]))
+        .collect::<Vec<_>>();
+    println!("{:?}", output);
 }
 
 pub const CLASSES: [&str; 1000] = [

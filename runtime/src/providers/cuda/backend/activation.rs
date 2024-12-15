@@ -42,9 +42,7 @@ impl ActivationBackend {
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
 
-        #[cfg(debug_assertions)]
         {
-            let x = ctx.get_input(0)?;
             let y = ctx.get_output(0)?;
             debug!("[x][actv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
             debug!("[y][actv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());

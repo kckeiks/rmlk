@@ -63,23 +63,20 @@ impl GlobalAverageBackend {
         let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
         let kernel_shape = &x_shape[2..];
 
-        #[cfg(debug_assertions)]
-        {
-            debug!(
-                "[x][global_avg_pool][shape={:?}][stride=[{:?}]",
-                x.shape(),
-                x.stride()
-            );
-            debug!(
-                "[y][global_avg_pool][shape={:?}][stride=[{:?}]",
-                y.shape(),
-                y.stride()
-            );
-            debug!(
-                "[global_avg_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
-                pads, strides, kernel_shape
-            );
-        }
+        debug!(
+            "[x][global_avg_pool][shape={:?}][stride=[{:?}]",
+            x.shape(),
+            x.stride()
+        );
+        debug!(
+            "[y][global_avg_pool][shape={:?}][stride=[{:?}]",
+            y.shape(),
+            y.stride()
+        );
+        debug!(
+            "[global_avg_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
+            pads, strides, kernel_shape
+        );
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data();
