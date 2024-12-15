@@ -30,6 +30,7 @@ impl MaxPoolBackend {
         let attrs = MaxPoolAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
+            ctx.execution_state().scratch_alloc(),
         )?;
 
         let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
@@ -68,6 +69,7 @@ impl MaxPoolBackend {
         let attrs = MaxPoolAttributes::new(
             ctx.get_attributes()
                 .ok_or(InternalError::MissingAttributes)?,
+            ctx.execution_state().scratch_alloc(),
         )?;
 
         trace!(
