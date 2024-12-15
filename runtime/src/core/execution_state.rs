@@ -197,11 +197,6 @@ where
             .copy_shape_from_within(src.into(), dst.into())
     }
 
-    /// Remove the tensor's on-device data.
-    pub fn remove_tensor_dev_data(&mut self, id: usize) -> Result<()> {
-        self.tensor_store.remove_tensor_dev_data(id)
-    }
-
     /// Copies the shape data from the src slice.
     pub fn copy_shape_from_slice(&mut self, src: &[usize], dst: DstTensorId) -> Result<()> {
         self.tensor_store.copy_shape_from_slice(src, dst.into())

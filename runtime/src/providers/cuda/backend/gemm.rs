@@ -59,7 +59,7 @@ impl GemmBackend {
         ))
     }
 
-    pub fn compute_gemm<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    pub fn compute_gemm<D, T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: CudaParamMap
             + DataTypeMap
@@ -106,12 +106,16 @@ impl GemmBackend {
         // or if the existing allocated data has a different size.
         {
             let mut c = ctx.get_output(0)?;
-            let c_dev_data_ref = c.dev_data_ptr_mut();
+            let mut c_dev_data_ref = c.dev_data_ptr_mut();
             let need_to_alloc_dev_data = c_dev_data_ref.is_none()
                 || c_dev_data_ref
                     .as_ref()
                     .map(|data| data.data::<D>().len() != output_size)
                     .unwrap_or(true);
+
+            if !need_to_alloc_dev_data {
+                c_dev_data_ref.as_mut().expect("").zero::<D>()?
+            }
 
             // We need to remove this immutable reference so we can mutate `y`.
             drop(c_dev_data_ref);
@@ -136,7 +140,7 @@ impl GemmBackend {
 
         T::execute::<D>(
             &op,
-            self.device,
+            self.device.clone(),
             &a_dev_data,
             &b_dev_data,
             &mut y_dev_data,

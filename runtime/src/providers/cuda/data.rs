@@ -1,6 +1,7 @@
 use crate::core::device_service::DeviceData;
+use crate::core::error::{InternalError, Result};
 use cudarc::driver::sys::CUdeviceptr;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceSlice};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -61,6 +62,16 @@ impl CudaData {
     #[inline]
     pub fn is_dtype(&self, other: DataType) -> bool {
         self.dtype == other
+    }
+
+    pub fn zero<T>(&mut self) -> Result<()>
+    where
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
+    {
+        let dev = self.device.clone();
+        dev.memset_zeros(self.data_mut::<T>().as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
+        Ok(())
     }
 }
 

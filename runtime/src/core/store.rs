@@ -205,13 +205,6 @@ where
         Ok(())
     }
 
-    pub fn remove_tensor_dev_data(&mut self, id: usize) -> Result<()> {
-        let handle = self.try_get_tensor_mut(id)?;
-        // We simply drop the data.
-        handle.take_data();
-        Ok(())
-    }
-
     fn try_get_tensor(&self, id: usize) -> Result<&TensorHandle<T>> {
         self.tensors
             .get(id)

@@ -153,25 +153,8 @@ where
         Ok(result)
     }
 
-    fn clean_outputs(&mut self) -> Result<()> {
-        for output in self.instance_state.graph().outputs() {
-            match self.instance_state.graph().get_node(output) {
-                None => {
-                    return Err(Error::NodeNotFound { id: output });
-                }
-                Some(_) => {
-                    self.execution_state.remove_tensor_dev_data(output)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn clean_up(&mut self) -> Result<()> {
+    fn clean_up(&mut self) {
         self.execution_state.scratch_alloc_mut().reset();
-        self.clean_outputs()?;
-        Ok(())
     }
 
     pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
@@ -208,7 +191,7 @@ where
 
         let output = self.get_outputs()?;
 
-        self.clean_up()?;
+        self.clean_up();
 
         Ok(output)
     }
