@@ -6,6 +6,7 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
 };
+use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
@@ -40,6 +41,16 @@ impl AdditionBackend {
 
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
+
+        #[cfg(debug_assertions)]
+        {
+            let a = ctx.get_input(0)?;
+            let b = ctx.get_input(1)?;
+            let c = ctx.get_output(0)?;
+            debug!("[a][add][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+            debug!("[b][add][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+            debug!("[c][add][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
+        }
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;

@@ -6,6 +6,7 @@ use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmOp;
 use rmlk_cuda::params::CudaParamMap;
@@ -85,6 +86,13 @@ impl GemmBackend {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
         let c = ctx.get_output(0)?;
+
+        #[cfg(debug_assertions)]
+        {
+            debug!("[a][gemm][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+            debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+            debug!("[c][gemm][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
+        }
 
         let output_size = c.shape().iter().product();
 

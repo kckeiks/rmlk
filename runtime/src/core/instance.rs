@@ -17,9 +17,11 @@ use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, Error>;
 
-/// Model instance builder.
+/// Builds an instance of a model for inference.
 pub struct Builder {
+    /// Input/output names to node ID map.
     map_io_name_to_id: HashMap<String, usize>,
+    /// In
     initializers: HashMap<usize, Tensor>,
     graph: Graph<Definition>,
 }
@@ -151,6 +153,27 @@ where
         Ok(result)
     }
 
+    fn clean_outputs(&mut self) -> Result<()> {
+        for output in self.instance_state.graph().outputs() {
+            match self.instance_state.graph().get_node(output) {
+                None => {
+                    return Err(Error::NodeNotFound { id: output });
+                }
+                Some(_) => {
+                    self.execution_state.remove_tensor_dev_data(output)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn clean_up(&mut self) -> Result<()> {
+        self.execution_state.scratch_alloc_mut().reset();
+        self.clean_outputs()?;
+        Ok(())
+    }
+
     pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
         self.load_inputs(input)?;
 
@@ -172,9 +195,10 @@ where
             let mut ctx = Context::new(&mut self.execution_state, id)?;
 
             trace!(
-                "{id} {op:?} {:?} inputs={:?}",
+                "[node={id}][{op:?}][name={:?}][inputs={:?}][outputs={:?}]",
                 node.value().name(),
-                node.inputs()
+                node.inputs(),
+                node.outputs(),
             );
 
             provider
@@ -182,8 +206,10 @@ where
                 .compute(&mut ctx)?;
         }
 
-        self.execution_state.scratch_alloc_mut().reset();
+        let output = self.get_outputs()?;
 
-        self.get_outputs()
+        self.clean_up()?;
+
+        Ok(output)
     }
 }

@@ -4,6 +4,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
@@ -61,6 +62,24 @@ impl GlobalAverageBackend {
         let pads = scratch_alloc.allocate_fill(x_shape[2..].len(), 0)?;
         let strides = scratch_alloc.allocate_fill(x_shape[2..].len(), 1)?;
         let kernel_shape = &x_shape[2..];
+
+        #[cfg(debug_assertions)]
+        {
+            debug!(
+                "[x][global_avg_pool][shape={:?}][stride=[{:?}]",
+                x.shape(),
+                x.stride()
+            );
+            debug!(
+                "[y][global_avg_pool][shape={:?}][stride=[{:?}]",
+                y.shape(),
+                y.stride()
+            );
+            debug!(
+                "[global_avg_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
+                pads, strides, kernel_shape
+            );
+        }
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data();

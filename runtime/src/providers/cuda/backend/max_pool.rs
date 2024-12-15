@@ -5,7 +5,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
-use log::trace;
+use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
@@ -72,22 +72,25 @@ impl MaxPoolBackend {
             ctx.execution_state().scratch_alloc(),
         )?;
 
-        trace!(
-            "x_shape={:?},\
-            x_stride={:?},\
-            kernel_shape={:?},\
-            pads={:?},\
-            strides={:?}\
-            y_shape={:?}\
-            y_stride={:?}",
-            x.shape(),
-            x.stride(),
-            attrs.kernel_shape(),
-            attrs.pads(),
-            attrs.strides(),
-            y.shape(),
-            y.stride(),
-        );
+        #[cfg(debug_assertions)]
+        {
+            debug!(
+                "[x][max_pool][shape={:?}][stride=[{:?}]",
+                x.shape(),
+                x.stride()
+            );
+            debug!(
+                "[y][max_pool][shape={:?}][stride=[{:?}]",
+                y.shape(),
+                y.stride()
+            );
+            debug!(
+                "[max_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
+                attrs.pads(),
+                attrs.strides(),
+                attrs.kernel_shape()
+            );
+        }
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
 

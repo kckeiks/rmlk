@@ -33,6 +33,10 @@ impl<T> TensorHandle<T> {
     pub fn data(&self) -> Rc<RefCell<Option<T>>> {
         self.data.clone()
     }
+
+    pub fn take_data(&self) -> Option<T> {
+        self.data.borrow_mut().take()
+    }
 }
 
 pub struct SrcTensorId(usize);

@@ -1,5 +1,6 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::{device_service::DeviceService, Context};
+use log::debug;
 
 pub struct FlattenTemplate(());
 
@@ -51,6 +52,22 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let index = y.dst_id();
     ctx.execution_state_mut()
         .copy_shape_from_slice(&y_shape, index)?;
+
+    #[cfg(debug_assertions)]
+    {
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_output(0)?;
+        debug!(
+            "[x][flatten][shape={:?}][stride=[stride=[{:?}]",
+            x.shape(),
+            x.stride()
+        );
+        debug!(
+            "[y][flatten][shape={:?}][stride=[stride=[{:?}]",
+            y.shape(),
+            y.stride()
+        );
+    }
 
     Ok(())
 }

@@ -4,6 +4,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
@@ -40,6 +41,14 @@ impl ActivationBackend {
         let scratch_alloc = ctx.execution_state().scratch_alloc();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
+
+        #[cfg(debug_assertions)]
+        {
+            let x = ctx.get_input(0)?;
+            let y = ctx.get_output(0)?;
+            debug!("[x][actv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+            debug!("[y][actv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        }
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data::<D>();

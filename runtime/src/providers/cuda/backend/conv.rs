@@ -6,6 +6,7 @@ use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::{DataType, DataTypeMap, Op};
@@ -103,6 +104,13 @@ impl ConvolutionBackend {
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
         let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
         let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
+
+        #[cfg(debug_assertions)]
+        {
+            debug!("[x][conv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+            debug!("[w][conv][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
+            debug!("[y][conv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        }
 
         // Todo: refactor this.
         // Extract and prepare bias argument.
