@@ -11,6 +11,7 @@ mod allocators;
 pub mod backend;
 pub mod device_service;
 pub mod error;
+mod tensor_handle;
 
 pub use context::Context;
 #[cfg(test)]

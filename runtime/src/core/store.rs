@@ -1,7 +1,8 @@
-use crate::core::allocators::{SbaId, ShapeBufArena};
+use crate::core::allocators::ShapeBufArena;
 use crate::core::device_service::DeviceData;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
+use crate::core::tensor_handle::TensorHandle;
 use crate::core::{device_service::DeviceService, Tensor};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
@@ -13,7 +14,7 @@ use std::rc::Rc;
 ///
 /// This object stores a fixed-size collection of tensors.
 pub struct TensorStore<T> {
-    tensors: Box<[Option<TensorBacking<T>>]>,
+    tensors: Box<[Option<TensorHandle<T>>]>,
     shape_buf_arena: ShapeBufArena,
 }
 
@@ -54,14 +55,11 @@ where
                 }
             };
             let data = provider.htod_float(data)?;
-            let index = StoreId::with_arena_index(
-                node_id,
-                shape_buf_arena.alloc_from_shape_slice(ir_tensor.dims.as_slice())?,
-            );
 
-            let tensor = TensorBacking::new(
+            let arena_id = shape_buf_arena.alloc_from_shape_slice(ir_tensor.dims.as_slice())?;
+            let tensor = TensorHandle::new(
                 ir_tensor.data_type,
-                index,
+                Some(arena_id),
                 Rc::new(RefCell::new(Some(data))),
             );
             tensors[node_id].replace(tensor);
@@ -77,11 +75,9 @@ where
                     let shape = def
                         .shape()
                         .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
-                    let index = StoreId::with_arena_index(
-                        node_id,
-                        shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?,
-                    );
-                    let tensor = TensorBacking::new(dtype, index, Rc::new(RefCell::new(None)));
+                    let arena_id = shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?;
+                    let tensor =
+                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)));
                     tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -102,11 +98,9 @@ where
                     let shape = def
                         .shape()
                         .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
-                    let index = StoreId::with_arena_index(
-                        node_id,
-                        shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?,
-                    );
-                    let tensor = TensorBacking::new(dtype, index, Rc::new(RefCell::new(None)));
+                    let arena_id = shape_buf_arena.alloc_from_shape_slice(shape.as_slice())?;
+                    let tensor =
+                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)));
                     tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -134,7 +128,7 @@ where
                             })?
                             .is_none()
                         {
-                            tensors[*output].replace(TensorBacking::new(DataType::Undefined, StoreId::new(*output), Rc::new(RefCell::new(None))));
+                            tensors[*output].replace(TensorHandle::new(DataType::Undefined, None, Rc::new(RefCell::new(None))));
                         }
                     }
                     None => {
@@ -155,8 +149,8 @@ where
     }
 
     pub fn get(&self, id: usize) -> Option<Tensor<T>> {
-        let backing = self.tensors.get(id)?.as_ref()?;
-        let (shape, stride) = match backing.shape_buf_index.arena_id.as_ref() {
+        let tensor_handle = self.tensors.get(id)?.as_ref()?;
+        let (shape, stride) = match tensor_handle.arena_id().as_ref() {
             None => (None, None),
             Some(index) => {
                 let shape = self.shape_buf_arena.get_shape_buf(&index);
@@ -164,125 +158,65 @@ where
                 (shape, stride)
             }
         };
-        Some(Tensor::new(
-            backing.shape_buf_index,
-            shape,
-            stride,
-            backing.data.clone(),
-        ))
+        Some(Tensor::new(id, shape, stride, tensor_handle.data()))
     }
 
-    pub fn copy_within(&mut self, src_id: SrcStoreId, dst_id: DstStoreId) -> Result<()> {
-        let src = src_id
-            .0
-            .arena_id
-            .as_ref()
-            .ok_or(InternalError::TensorNotFound {
-                node_id: dst_id.0.node_id,
-            })?;
+    pub fn copy_shape_from_within(&mut self, src_id: usize, dst_id: usize) -> Result<()> {
+        let src_arena_id = self
+            .try_get_tensor(src_id)?
+            .arena_id()
+            .copied()
+            .ok_or(InternalError::TensorNotFound { node_id: src_id })?;
+        let dst_arena_id = self.try_get_tensor(dst_id)?.arena_id().copied();
 
-        let dst = self.try_get_backing(dst_id.0.node_id)?;
-        let dst_arena_id = dst.shape_buf_index.arena_id.as_ref().copied();
         if dst_arena_id
-            .map(|id| id.len() == src.len())
+            .map(|id| id.len() == src_arena_id.len())
             .unwrap_or(false)
         {
             self.shape_buf_arena
-                .copy_shape_from_within(src, &dst_arena_id.unwrap());
+                .copy_shape_from_within(&src_arena_id, &dst_arena_id.unwrap());
         } else {
-            let new_arena_id = self.shape_buf_arena.alloc_and_copy_shape_from_within(src)?;
-            let dst = self.try_get_backing_mut(dst_id.0.node_id)?;
-            dst.shape_buf_index.arena_id = Some(new_arena_id);
+            let new_arena_id = self
+                .shape_buf_arena
+                .alloc_and_copy_shape_from_within(&src_arena_id)?;
+            let dst = self.try_get_tensor_mut(dst_id)?;
+            dst.set_arena_id(new_arena_id);
         }
 
         Ok(())
     }
 
-    pub fn copy_from_slice(&mut self, src: &[usize], dst_id: DstStoreId) -> Result<()> {
-        let dst = self.try_get_backing(dst_id.0.node_id)?;
-        let dst_arena_id = dst.shape_buf_index.arena_id.as_ref().copied();
-        if dst_arena_id
-            .map(|id| id.shape_len() == src.len())
+    pub fn copy_shape_from_slice(&mut self, shape: &[usize], node_id: usize) -> Result<()> {
+        let dst = self.try_get_tensor(node_id)?;
+        let arena_id = dst.arena_id().copied();
+
+        if arena_id
+            .map(|id| id.shape_len() == shape.len())
             .unwrap_or(false)
         {
             self.shape_buf_arena
-                .try_copy_shape_from_slice(src, &dst_arena_id.unwrap())?;
+                .try_copy_shape_from_slice(shape, &arena_id.unwrap())?;
         } else {
-            let new_arena_id = self.shape_buf_arena.alloc_from_shape_slice(src)?;
-            let dst = self.try_get_backing_mut(dst_id.0.node_id)?;
-            dst.shape_buf_index.arena_id = Some(new_arena_id);
+            let new_arena_id = self.shape_buf_arena.alloc_from_shape_slice(shape)?;
+            let dst = self.try_get_tensor_mut(node_id)?;
+            dst.set_arena_id(new_arena_id);
         }
 
         Ok(())
     }
 
-    fn try_get_backing(&self, id: usize) -> Result<&TensorBacking<T>> {
+    fn try_get_tensor(&self, id: usize) -> Result<&TensorHandle<T>> {
         self.tensors
             .get(id)
-            .and_then(|backing| backing.as_ref())
+            .and_then(|handle| handle.as_ref())
             .ok_or(InternalError::TensorNotFound { node_id: id })
     }
 
-    fn try_get_backing_mut(&mut self, id: usize) -> Result<&mut TensorBacking<T>> {
+    fn try_get_tensor_mut(&mut self, id: usize) -> Result<&mut TensorHandle<T>> {
         self.tensors
             .get_mut(id)
-            .and_then(|backing| backing.as_mut())
+            .and_then(|handle| handle.as_mut())
             .ok_or(InternalError::TensorNotFound { node_id: id })
-    }
-}
-
-pub struct TensorBacking<T> {
-    _dtype: DataType,
-    data: Rc<RefCell<Option<T>>>,
-    shape_buf_index: StoreId,
-}
-
-impl<T> TensorBacking<T> {
-    pub fn new(dtype: DataType, shape_buf_index: StoreId, data: Rc<RefCell<Option<T>>>) -> Self {
-        Self {
-            _dtype: dtype,
-            data,
-            shape_buf_index,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct StoreId {
-    node_id: usize,
-    arena_id: Option<SbaId>,
-}
-
-impl StoreId {
-    pub fn new(node_id: usize) -> Self {
-        Self::inner_new(node_id, None)
-    }
-
-    pub fn with_arena_index(node_id: usize, arena_index: SbaId) -> Self {
-        Self::inner_new(node_id, Some(arena_index))
-    }
-
-    fn inner_new(node_id: usize, arena_index: Option<SbaId>) -> Self {
-        Self {
-            node_id,
-            arena_id: arena_index,
-        }
-    }
-}
-
-pub struct SrcStoreId(StoreId);
-
-impl From<StoreId> for SrcStoreId {
-    fn from(value: StoreId) -> Self {
-        Self(value)
-    }
-}
-
-pub struct DstStoreId(StoreId);
-
-impl From<StoreId> for DstStoreId {
-    fn from(value: StoreId) -> Self {
-        Self(value)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::core::allocators::SbaId;
+use crate::core::allocators::ArenaId;
 use crate::Value;
 use rmlk_schema::{DataType, Op};
 use std::collections::HashMap;
@@ -43,7 +43,7 @@ pub enum InternalError {
     TensorIndexNotFound { node_id: usize },
     UnableToConvertValue,
     UnexpectedTensorDataType { expected: DataType },
-    UnknownShapeBuffer { index: SbaId },
+    UnknownShapeBuffer { index: ArenaId },
     UnsupportedDataType { dtype: DataType },
     UnsupportedOp { op: Op },
     UnsupportedOpForDataType { op: Op, dtype: DataType },

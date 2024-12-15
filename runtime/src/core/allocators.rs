@@ -72,14 +72,14 @@ impl ShapeBufArena {
 
     /// Allocates new buffers for shape and stride.
     /// Return the ID for the new buffers.
-    pub fn alloc(&mut self, size: usize) -> Result<SbaId> {
+    pub fn alloc(&mut self, size: usize) -> Result<ArenaId> {
         if self.arena.len() < self.current + 2 * size {
             warn!("Shape allocator was too small. Allocating more memory,");
             self.arena.resize(size, 0);
         }
         let old_current = self.current;
         self.current = old_current + size + size;
-        Ok(SbaId {
+        Ok(ArenaId {
             start: old_current,
             mid: old_current + size,
             end: old_current + size + size,
@@ -88,7 +88,7 @@ impl ShapeBufArena {
 
     /// Allocates new buffers and copies argument into the newly created buffers.
     /// Return the ID for the new buffers.
-    pub fn alloc_from_shape_slice(&mut self, shape_src: &[usize]) -> Result<SbaId> {
+    pub fn alloc_from_shape_slice(&mut self, shape_src: &[usize]) -> Result<ArenaId> {
         let size = shape_src.len();
         if self.arena.len() < self.current + 2 * size {
             warn!("Shape allocator was too small. Allocating more memory,");
@@ -104,7 +104,7 @@ impl ShapeBufArena {
         let old_current = self.current;
         self.current = old_current + size + size;
 
-        Ok(SbaId {
+        Ok(ArenaId {
             start: old_current,
             mid: old_current + size,
             end: old_current + size + size,
@@ -113,7 +113,7 @@ impl ShapeBufArena {
 
     /// Allocates new buffers and copies argument into the newly created buffers.
     /// Returns an error if the size of the `src` and `dst` don't match.
-    pub fn try_copy_shape_from_slice(&mut self, src: &[usize], dst: &SbaId) -> Result<()> {
+    pub fn try_copy_shape_from_slice(&mut self, src: &[usize], dst: &ArenaId) -> Result<()> {
         if src.len() != dst.shape_len() {
             return Err(InternalError::BufferSizeMismatch {
                 expected: src.len(),
@@ -134,40 +134,40 @@ impl ShapeBufArena {
     /// Copies `src`'s buffers into `dst`.
     ///
     /// Panics if arguments do not have the same size.
-    pub fn copy_shape_from_within(&mut self, src: &SbaId, dst: &SbaId) {
+    pub fn copy_shape_from_within(&mut self, src: &ArenaId, dst: &ArenaId) {
         self.arena.copy_within(src.start..src.end, dst.start);
     }
 
     /// Allocates new buffers and copies data from buffers within the arena.
     /// Return the ID for the new buffers.
-    pub fn alloc_and_copy_shape_from_within(&mut self, src: &SbaId) -> Result<SbaId> {
+    pub fn alloc_and_copy_shape_from_within(&mut self, src: &ArenaId) -> Result<ArenaId> {
         let index = self.alloc(src.mid - src.start)?;
         self.copy_shape_from_within(src, &index);
         Ok(index)
     }
 
-    pub fn get_shape_buf(&self, index: &SbaId) -> Option<&[usize]> {
+    pub fn get_shape_buf(&self, index: &ArenaId) -> Option<&[usize]> {
         if index.end > self.arena.len() {
             return None;
         }
         Some(&self.arena[index.start..index.mid])
     }
 
-    pub fn get_stride_buf(&self, index: &SbaId) -> Option<&[usize]> {
+    pub fn get_stride_buf(&self, index: &ArenaId) -> Option<&[usize]> {
         if index.end > self.arena.len() {
             return None;
         }
         Some(&self.arena[index.mid..index.end])
     }
 
-    fn get_shape_buf_mut(&mut self, index: &SbaId) -> Option<&mut [usize]> {
+    fn get_shape_buf_mut(&mut self, index: &ArenaId) -> Option<&mut [usize]> {
         if index.end > self.arena.len() {
             return None;
         }
         Some(&mut self.arena[index.start..index.mid])
     }
 
-    fn get_stride_buf_mut(&mut self, index: &SbaId) -> Option<&mut [usize]> {
+    fn get_stride_buf_mut(&mut self, index: &ArenaId) -> Option<&mut [usize]> {
         if index.end > self.arena.len() {
             return None;
         }
@@ -175,15 +175,15 @@ impl ShapeBufArena {
     }
 }
 
-/// Shape buffer arena ID.
+/// Shape-buffer arena ID.
 #[derive(Clone, Copy, Debug)]
-pub struct SbaId {
+pub struct ArenaId {
     start: usize,
     mid: usize,
     end: usize,
 }
 
-impl SbaId {
+impl ArenaId {
     pub fn shape_len(&self) -> usize {
         self.mid - self.start
     }

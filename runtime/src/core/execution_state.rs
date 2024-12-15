@@ -3,8 +3,9 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::store::{DstStoreId, SrcStoreId, TensorStore};
+use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
+use crate::core::tensor_handle::{DstTensorId, SrcTensorId};
 use crate::core::value::{InnerValue, Value};
 use log::trace;
 use rmlk_graph::{Graph, Node};
@@ -191,13 +192,14 @@ where
     }
 
     /// Copies the shape data from the source's shape buffer.
-    pub fn copy_shape_from_within(&mut self, src: SrcStoreId, dst: DstStoreId) -> Result<()> {
-        self.tensor_store.copy_within(src, dst)
+    pub fn copy_shape_from_within(&mut self, src: SrcTensorId, dst: DstTensorId) -> Result<()> {
+        self.tensor_store
+            .copy_shape_from_within(src.into(), dst.into())
     }
 
     /// Copies the shape data from the src slice.
-    pub fn copy_shape_from_slice(&mut self, src: &[usize], dst: DstStoreId) -> Result<()> {
-        self.tensor_store.copy_from_slice(src, dst)
+    pub fn copy_shape_from_slice(&mut self, src: &[usize], dst: DstTensorId) -> Result<()> {
+        self.tensor_store.copy_shape_from_slice(src, dst.into())
     }
 
     /// Get the tensor value given a node ID.
