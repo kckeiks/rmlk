@@ -123,9 +123,11 @@ where
         y: &out_desc,
     };
 
-    forward_f
-        .launch((alpha, beta), x_data, y_data)
-        .map_err(Into::into)
+    unsafe {
+        forward_f
+            .launch((alpha, beta), x_data, y_data)
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]

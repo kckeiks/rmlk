@@ -32,7 +32,9 @@ where
         y: &y_desc,
     };
 
-    op.launch((alpha, beta), x_data, y_data)?;
+    unsafe {
+        op.launch((alpha, beta), x_data, y_data)?;
+    }
 
     Ok(())
 }

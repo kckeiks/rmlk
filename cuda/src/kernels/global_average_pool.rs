@@ -87,7 +87,9 @@ where
         y: &out_desc,
     };
 
-    forward_f.launch((alpha, beta), x_data, y_data)?;
+    unsafe {
+        forward_f.launch((alpha, beta), x_data, y_data)?;
+    }
 
     Ok(())
 }

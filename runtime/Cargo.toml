@@ -9,7 +9,7 @@ authors = ["M. Meier <mi9uel9@gmail.com>"]
 bumpalo.workspace = true
 
 bincode = "1.3.3"
-cudarc = {  git = "https://github.com/kckeiks/cudarc.git", branch = "add-actv-and-bias-conv-forward", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16"]}
+cudarc.workspace = true
 half = "2.4"
 log = "0.4"
 ndarray = "0.15"

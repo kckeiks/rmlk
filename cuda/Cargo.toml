@@ -5,9 +5,8 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
-cudarc = {  git = "https://github.com/kckeiks/cudarc.git", branch = "add-actv-and-bias-conv-forward", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16"]}
+cudarc.workspace = true
 rmlk-schema = { path = "../schema" }
-rmlk-graph = { path = "../graph" }
 half = "2.4"
 log = "0.4.21"
 num-traits.workspace = true
@@ -16,7 +15,7 @@ num-traits.workspace = true
 criterion = { workspace = true }
 
 [build-dependencies]
-bindgen_cuda = "0.1.1"
+bindgen_cuda = "0.1"
 
 [[bench]]
 name = "bench_main"
