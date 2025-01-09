@@ -1,5 +1,6 @@
 mod args;
 mod find;
+mod list_ops;
 mod transform;
 mod traverse;
 
@@ -7,8 +8,10 @@ use anyhow::anyhow;
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_schema::onnx::ModelProto;
+use std::collections::HashSet;
 use std::fs;
 
+use crate::list_ops::ListOps;
 use crate::transform::graph_from_onnx_proto;
 use args::{Args, Command};
 use find::FindNode;
@@ -43,6 +46,22 @@ fn main() -> anyhow::Result<()> {
             let compute_graph = graph_from_onnx_proto(model_proto)?;
             let serialized_model = bincode::serialize(&compute_graph)?;
             fs::write("resnet34.rmlk", serialized_model)?;
+        }
+        Command::ListOps { path } => {
+            let model = fs::read(path)?;
+            let mut reader = BytesReader::from_bytes(&model);
+            let model_proto = ModelProto::from_reader(&mut reader, &model)?;
+            let mut traverser = ListOps {
+                ops: HashSet::new(),
+            };
+            traverse::visit_onnx(
+                model_proto
+                    .graph
+                    .ok_or(anyhow!("the model does not have a graph"))?,
+                &mut traverser,
+            )
+            .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
+            println!("{:?}", traverser.ops);
         }
     }
 
