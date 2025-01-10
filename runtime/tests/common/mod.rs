@@ -1,4 +1,4 @@
-use crate::common::schema::{GraphDef, NodeTypeInfo};
+use crate::common::schema::{GraphDef, NodeTypeInfo, ValueDef};
 use rmlk_graph::{Graph, Node};
 use rmlk_runtime::Builder;
 use rmlk_schema::{DataType, Definition, Op, TypeValue};
@@ -25,12 +25,12 @@ pub fn build(test_def: &str) -> Builder {
                 schema_node.name = Some(name);
                 schema_node.op_type = Op::Add;
             }
-            NodeTypeInfo::Value { name, shape } => {
+            NodeTypeInfo::Value(ValueDef { name, shape, dtype }) => {
                 schema_node.name = Some(name);
                 if let Some(shape) = shape {
                     schema_node.set_type_value(TypeValue::Tensor {
                         dims: shape,
-                        ty: DataType::Float as i32,
+                        ty: dtype.unwrap_or(DataType::Float) as i32,
                     })
                 }
             }
@@ -70,6 +70,7 @@ pub fn build(test_def: &str) -> Builder {
         let input_id = map_io_name_to_id.get(&input).unwrap();
         inputs.push(*input_id);
     }
+
     let mut outputs = Vec::new();
     for output in named_outputs {
         let input_id = map_io_name_to_id.get(&output).unwrap();

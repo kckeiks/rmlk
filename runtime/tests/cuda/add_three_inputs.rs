@@ -2,7 +2,7 @@ use crate::common;
 use rmlk_runtime::Value;
 use std::collections::HashMap;
 
-const TEST_GRAPH_DEFINITION: &str = r#"
+const GRAPH_DEFINITION: &str = r#"
 {
   "nodes": [
     {
@@ -70,7 +70,7 @@ const TEST_GRAPH_DEFINITION: &str = r#"
 
 #[test]
 fn test_add_more_operands() {
-    let mut instance = common::build(TEST_GRAPH_DEFINITION).build().unwrap();
+    let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
     let input: HashMap<String, Value> = [
         (
             "a".to_string(),
