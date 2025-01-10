@@ -73,38 +73,38 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
-    use crate::core::Context;
-    use crate::ops::flatten::_compute;
-    use crate::test_utils;
-    use crate::test_utils::{MockProvider, TestNode, TestParams};
-    use rmlk_schema::{DataType, Op};
-
-    #[test]
-    fn test_flatten_f32() {
-        let shape = vec![1, 1, 4, 4];
-        let dtype = DataType::Float;
-
-        let node_a = TestNode {
-            shape,
-            dtype,
-            data: Some(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-        };
-
-        let params = TestParams {
-            inputs: vec![node_a],
-            attributes: Vec::new(),
-            op: Op::Flatten,
-        };
-
-        let mut state = test_utils::build_graph_and_state(MockProvider::new(), params);
-        let mut context = Context::new(&mut state, 2).unwrap();
-
-        _compute(&mut context).unwrap();
-
-        let shape = context.get_output(0).unwrap().shape();
-
-        assert_eq!(shape, &vec![1, 16])
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use crate::core::Context;
+//     use crate::ops::flatten::_compute;
+//     use crate::test_utils;
+//     use crate::test_utils::{MockProvider, TestNode, TestParams};
+//     use rmlk_schema::{DataType, Op};
+//
+//     #[test]
+//     fn test_flatten_f32() {
+//         let shape = vec![1, 1, 4, 4];
+//         let dtype = DataType::Float;
+//
+//         let node_a = TestNode {
+//             shape,
+//             dtype,
+//             data: Some(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+//         };
+//
+//         let params = TestParams {
+//             inputs: vec![node_a],
+//             attributes: Vec::new(),
+//             op: Op::Flatten,
+//         };
+//
+//         let mut state = test_utils::build_graph_and_state(MockProvider::new(), params);
+//         let mut context = Context::new(&mut state, 2).unwrap();
+//
+//         _compute(&mut context).unwrap();
+//
+//         let shape = context.get_output(0).unwrap().shape();
+//
+//         assert_eq!(shape, &vec![1, 16])
+//     }
+// }

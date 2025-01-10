@@ -74,6 +74,19 @@ impl Builder {
         })
     }
 
+    // Todo: we should put this behind a flag for testing only.
+    pub fn new(
+        map_io_name_to_id: HashMap<String, usize>,
+        initializers: HashMap<usize, Tensor>,
+        graph: Graph<Definition>,
+    ) -> Self {
+        Self {
+            map_io_name_to_id,
+            initializers,
+            graph,
+        }
+    }
+
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let provider = Cuda::new(
             CudaDevice::new(0)

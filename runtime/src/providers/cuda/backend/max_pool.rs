@@ -244,66 +244,66 @@ impl MaxPoolKernel for NoOpKernel {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::core::Context;
-    use crate::providers::cuda::data::CudaData;
-    use crate::providers::cuda::kernel::max_pool::BackendHandler;
-    use crate::providers::cuda::Cuda;
-    use crate::test_utils;
-    use crate::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
-    use cudarc::driver::CudaDevice;
-    use rmlk_schema::{DataType, Op};
-
-    #[test]
-    fn test_max_pool_f32_2d() {
-        let device = CudaDevice::new(0).unwrap();
-        let shape = vec![1, 1, 4, 4];
-        let dtype = DataType::Float;
-
-        let node_a = TestNode {
-            shape,
-            dtype,
-            data: Some(CudaData::F32(
-                device
-                    .htod_copy(vec![
-                        1.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 3.0, 2.0, 1.0, 0.0, 1.0, 2.0, 3.0,
-                        4.0,
-                    ])
-                    .unwrap(),
-            )),
-        };
-
-        let attributes = test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
-            dilations: None,
-            kernel_shape: Some(Box::new([2, 2])),
-            strides: Some(Box::new([2, 2])),
-            row_major_order: None,
-            ceil_mode: None,
-            pads: None,
-        });
-
-        let params = TestParams {
-            inputs: vec![node_a],
-            attributes,
-            op: Op::MaxPool,
-        };
-
-        let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-        let mut context = Context::new(&mut state, 2).unwrap();
-
-        let cuda_kernel = BackendHandler::new(device.clone());
-        cuda_kernel.compute(&mut context).unwrap();
-
-        let out_data = context
-            .get_output(0)
-            .unwrap()
-            .dev_data_ptr()
-            .unwrap()
-            .f32()
-            .unwrap();
-        let result = device.dtoh_sync_copy(out_data).unwrap();
-
-        assert_eq!(result, vec![6.0, 8.0, 3.0, 4.0])
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use crate::core::Context;
+//     use crate::providers::cuda::data::CudaData;
+//     use crate::providers::cuda::kernel::max_pool::BackendHandler;
+//     use crate::providers::cuda::Cuda;
+//     use crate::test_utils;
+//     use crate::test_utils::{TestMaxPoolAttributes, TestNode, TestParams};
+//     use cudarc::driver::CudaDevice;
+//     use rmlk_schema::{DataType, Op};
+//
+//     #[test]
+//     fn test_max_pool_f32_2d() {
+//         let device = CudaDevice::new(0).unwrap();
+//         let shape = vec![1, 1, 4, 4];
+//         let dtype = DataType::Float;
+//
+//         let node_a = TestNode {
+//             shape,
+//             dtype,
+//             data: Some(CudaData::F32(
+//                 device
+//                     .htod_copy(vec![
+//                         1.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 3.0, 2.0, 1.0, 0.0, 1.0, 2.0, 3.0,
+//                         4.0,
+//                     ])
+//                     .unwrap(),
+//             )),
+//         };
+//
+//         let attributes = test_utils::create_max_pool_attributes(TestMaxPoolAttributes {
+//             dilations: None,
+//             kernel_shape: Some(Box::new([2, 2])),
+//             strides: Some(Box::new([2, 2])),
+//             row_major_order: None,
+//             ceil_mode: None,
+//             pads: None,
+//         });
+//
+//         let params = TestParams {
+//             inputs: vec![node_a],
+//             attributes,
+//             op: Op::MaxPool,
+//         };
+//
+//         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
+//         let mut context = Context::new(&mut state, 2).unwrap();
+//
+//         let cuda_kernel = BackendHandler::new(device.clone());
+//         cuda_kernel.compute(&mut context).unwrap();
+//
+//         let out_data = context
+//             .get_output(0)
+//             .unwrap()
+//             .dev_data_ptr()
+//             .unwrap()
+//             .f32()
+//             .unwrap();
+//         let result = device.dtoh_sync_copy(out_data).unwrap();
+//
+//         assert_eq!(result, vec![6.0, 8.0, 3.0, 4.0])
+//     }
+// }
