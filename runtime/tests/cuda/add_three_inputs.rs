@@ -24,6 +24,14 @@ const TEST_GRAPH_DEFINITION: &str = r#"
     {
       "info": {
         "type": "value",
+        "name": "a+b",
+        "dtype": "float",
+        "shape": [2, 2]
+      }
+    },
+    {
+      "info": {
+        "type": "value",
         "name": "c",
         "dtype": "float",
         "shape": [2, 2]
@@ -32,15 +40,7 @@ const TEST_GRAPH_DEFINITION: &str = r#"
     {
       "info": {
         "type": "value",
-        "name": "d",
-        "dtype": "float",
-        "shape": [2, 2]
-      }
-    },
-    {
-      "info": {
-        "type": "value",
-        "name": "e",
+        "name": "(a+b)+c",
         "dtype": "float",
         "shape": [2, 2]
       }
@@ -51,19 +51,19 @@ const TEST_GRAPH_DEFINITION: &str = r#"
         "name": "add"
       },
       "input": ["a", "b"],
-      "output": ["c"]
+      "output": ["a+b"]
     },
     {
       "info": {
         "type": "op",
         "name": "add"
       },
-      "input": ["c", "d"],
-      "output": ["e"]
+      "input": ["a+b", "c"],
+      "output": ["(a+b)+c"]
     }
   ],
-  "inputs": ["a", "b", "d"],
-  "outputs": ["e"],
+  "inputs": ["a", "b", "c"],
+  "outputs": ["(a+b)+c"],
   "tensors": []
 }
 "#;
@@ -81,12 +81,12 @@ fn test_add_more_operands() {
             vec![1.0, 2.0, 3.0, 4.0].try_into().unwrap(),
         ),
         (
-            "d".to_string(),
+            "c".to_string(),
             vec![1.0, 2.0, 3.0, 4.0].try_into().unwrap(),
         ),
     ]
     .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("e").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output.remove("(a+b)+c").unwrap().try_into().unwrap();
     assert_eq!(data, vec![3.0, 6.0, 9.0, 12.0]);
 }

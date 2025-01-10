@@ -24,7 +24,7 @@ const TEST_GRAPH_DEFINITION: &str = r#"
     {
       "info": {
         "type": "value",
-        "name": "c",
+        "name": "a+b",
         "dtype": "float",
         "shape": [2, 2]
       }
@@ -35,11 +35,11 @@ const TEST_GRAPH_DEFINITION: &str = r#"
         "name": "add"
       },
       "input": ["a", "b"],
-      "output": ["c"]
+      "output": ["a+b"]
     }
   ],
   "inputs": ["a", "b"],
-  "outputs": ["c"],
+  "outputs": ["a+b"],
   "tensors": []
 }
 "#;
@@ -59,6 +59,6 @@ fn test_add() {
     ]
     .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("c").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output.remove("a+b").unwrap().try_into().unwrap();
     assert_eq!(data, vec![2.0, 4.0, 6.0, 8.0]);
 }
