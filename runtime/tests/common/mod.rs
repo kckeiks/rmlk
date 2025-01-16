@@ -1,7 +1,7 @@
 use crate::common::schema::{GraphDef, NodeTypeInfo, ValueDef};
 use rmlk_graph::{Graph, Node};
 use rmlk_runtime::Builder;
-use rmlk_schema::{DataType, Definition, Op, TypeValue};
+use rmlk_schema::{DataType, Definition, Op, Tensor, TypeValue};
 use std::collections::HashMap;
 
 mod schema;
@@ -11,7 +11,7 @@ pub fn build(test_def: &str) -> Builder {
         inputs: named_inputs,
         outputs: named_outputs,
         nodes: node_defs,
-        ..
+        tensors,
     } = serde_json::from_str(test_def).unwrap();
 
     let mut map_io_name_to_id = HashMap::new();
@@ -25,8 +25,18 @@ pub fn build(test_def: &str) -> Builder {
                 schema_node.name = Some(name);
                 schema_node.op_type = Op::Add;
             }
-            NodeTypeInfo::Value(ValueDef { name, shape, dtype }) => {
+            NodeTypeInfo::Value(ValueDef {
+                name,
+                shape,
+                dtype,
+                constant,
+            }) => {
                 schema_node.name = Some(name);
+
+                if constant.unwrap_or(false) {
+                    schema_node.op_type = Op::Const;
+                }
+
                 if let Some(shape) = shape {
                     schema_node.set_type_value(TypeValue::Tensor {
                         dims: shape,
@@ -77,7 +87,31 @@ pub fn build(test_def: &str) -> Builder {
         outputs.push(*input_id);
     }
 
+    let mut initializers = HashMap::new();
+    for tensor in tensors {
+        let id = map_io_name_to_id.get(&tensor.name).unwrap();
+        let node_info = nodes.get(*id).unwrap();
+        let node_def = node_info.value();
+
+        let tensor = Tensor {
+            dims: node_def.shape().unwrap().clone(),
+            data_type: node_def.dtype().unwrap(),
+            segment: None,
+            float_data: tensor.content.float(),
+            int32_data: vec![],
+            string_data: vec![],
+            int64_data: vec![],
+            name: None,
+            doc_string: None,
+            raw_data: None,
+            double_data: vec![],
+            uint64_data: vec![],
+        };
+
+        initializers.insert(*id, tensor);
+    }
+
     let graph = Graph::new(inputs, nodes, outputs);
 
-    Builder::new(map_io_name_to_id, HashMap::new(), graph)
+    Builder::new(map_io_name_to_id, initializers, graph)
 }

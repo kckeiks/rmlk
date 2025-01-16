@@ -30,6 +30,7 @@ pub struct ValueDef {
     pub shape: Option<Vec<usize>>,
     #[serde(deserialize_with = "deserialize_lowercase")]
     pub dtype: Option<DataType>,
+    pub constant: Option<bool>,
 }
 
 fn deserialize_lowercase<'de, D>(deserializer: D) -> Result<Option<DataType>, D::Error>
@@ -51,12 +52,22 @@ where
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TensorDef {
     pub name: String,
-    pub shape: Vec<usize>,
-    pub data: Data,
+    pub content: Data,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "dtype")]
+#[serde(tag = "dtype", content = "data")]
+#[serde(rename_all = "lowercase")]
 pub enum Data {
     Float(Vec<f32>),
+    Double(Vec<f64>),
+}
+
+impl Data {
+    pub fn float(self) -> Vec<f32> {
+        let Data::Float(values) = self else {
+            panic!("data was not a float");
+        };
+        values
+    }
 }
