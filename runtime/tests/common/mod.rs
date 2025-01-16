@@ -22,8 +22,8 @@ pub fn build(test_def: &str) -> Builder {
 
         match node.info {
             NodeTypeInfo::Op { name } => {
+                schema_node.op_type = name.parse().unwrap();
                 schema_node.name = Some(name);
-                schema_node.op_type = Op::Add;
             }
             NodeTypeInfo::Value(ValueDef {
                 name,
