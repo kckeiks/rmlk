@@ -24,29 +24,71 @@ impl From<InternalError> for Error {
 
 #[derive(Debug)]
 pub enum InternalError {
-    BufferSizeMismatch { expected: usize, actual: usize },
-    Device { error: rmlk_cuda::Error },
+    BufferSizeMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    Device {
+        error: rmlk_cuda::Error,
+    },
     ExecutionState(String),
-    InvalidTensorIndex { index: usize },
-    InvalidAttribute { name: String },
-    InvalidAttributeDataType { name: String },
-    InvalidTensorShape { shape: Vec<usize> },
-    InvalidAxis { axis: i32 },
+    InvalidTensorIndex {
+        index: usize,
+    },
+    InvalidAttribute {
+        name: String,
+    },
+    InvalidAttributeDataType {
+        name: String,
+    },
+    InvalidTensorShape {
+        shape: Vec<usize>,
+    },
+    IncompatibleTensorShape {
+        shapes: HashMap<usize, Vec<usize>>,
+        op: Op,
+    },
+    InvalidAxis {
+        axis: i32,
+    },
     MissingDeviceData,
     MissingAttributes,
-    MissingAttribute { name: String },
-    ExpectedShapeInDef { node_id: usize },
-    ExpectedDataTypeInDef { node_id: usize },
+    MissingAttribute {
+        name: String,
+    },
+    ExpectedShapeInDef {
+        node_id: usize,
+    },
+    ExpectedDataTypeInDef {
+        node_id: usize,
+    },
     TensorStore(String),
-    TensorNotFound { node_id: usize },
-    TensorNotFoundFromIndex { id: usize },
-    TensorIndexNotFound { node_id: usize },
+    TensorNotFound {
+        node_id: usize,
+    },
+    TensorNotFoundFromIndex {
+        id: usize,
+    },
+    TensorIndexNotFound {
+        node_id: usize,
+    },
     UnableToConvertValue,
-    UnexpectedTensorDataType { expected: DataType },
-    UnknownShapeBuffer { index: ArenaId },
-    UnsupportedDataType { dtype: DataType },
-    UnsupportedOp { op: Op },
-    UnsupportedOpForDataType { op: Op, dtype: DataType },
+    UnexpectedTensorDataType {
+        expected: DataType,
+    },
+    UnknownShapeBuffer {
+        index: ArenaId,
+    },
+    UnsupportedDataType {
+        dtype: DataType,
+    },
+    UnsupportedOp {
+        op: Op,
+    },
+    UnsupportedOpForDataType {
+        op: Op,
+        dtype: DataType,
+    },
 }
 
 impl Display for InternalError {
@@ -75,6 +117,9 @@ impl Display for InternalError {
             }
             InternalError::TensorIndexNotFound { node_id } => {
                 write!(f, "failed to find tensor index: {node_id:?}")
+            }
+            InternalError::IncompatibleTensorShape { shapes, op } => {
+                write!(f, "incompatible shapes `{shapes:?}` for {op:?}")
             }
             InternalError::InvalidTensorIndex { index } => {
                 write!(f, "invalid tensor index: {index:?}")

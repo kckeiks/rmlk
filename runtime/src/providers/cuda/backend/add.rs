@@ -2,6 +2,7 @@ use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
@@ -23,6 +24,47 @@ impl AdditionBackend {
 }
 
 impl AdditionBackend {
+    fn process_shapes(&self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+
+        match a.shape() == b.shape() {
+            true => {
+                let c = ctx.get_output(0)?;
+                let a_index = a.src_id();
+                let c_index = c.dst_id();
+                ctx.execution_state_mut()
+                    .copy_shape_from_within(a_index, c_index)?;
+            }
+            false => {
+                let ndims = a.shape().len();
+                let alloc = ctx.execution_state().scratch_alloc().clone();
+                let c_shape = alloc.allocate_fill(ndims, 0)?;
+
+                if !utils::broadcast(a.shape(), b.shape(), c_shape) {
+                    let a_id = a.src_id();
+                    let b_id = b.src_id();
+                    return Err(InternalError::IncompatibleTensorShape {
+                        shapes: [
+                            (a_id.into(), a.shape().to_vec()),
+                            (b_id.into(), b.shape().to_vec()),
+                        ]
+                        .try_into()
+                        .expect("Small map so should succeed"),
+                        op: Op::Add,
+                    });
+                }
+
+                let c = ctx.get_output(0)?;
+                let c_index = c.dst_id();
+                ctx.execution_state_mut()
+                    .copy_shape_from_slice(c_shape, c_index)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn compute_addition<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
@@ -31,12 +73,7 @@ impl AdditionBackend {
         // The output should have the same dimensions.
         // We do it now to avoid lifetime errors.
         {
-            let a = ctx.get_input(0)?;
-            let c = ctx.get_output(0)?;
-            let a_index = a.src_id();
-            let c_index = c.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_within(a_index, c_index)?;
+            self.process_shapes(ctx)?;
         }
 
         let a = ctx.get_input(0)?;
@@ -190,61 +227,3 @@ impl AdditionKernel for NoOpKernel {
         Ok(())
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::core::Context;
-//     use crate::providers::cuda::data::CudaData;
-//     use crate::providers::cuda::kernel::add::BackendHandler;
-//     use crate::providers::cuda::Cuda;
-//     use crate::test_utils;
-//     use crate::test_utils::{TestNode, TestParams};
-//     use cudarc::driver::CudaDevice;
-//     use rmlk_schema::{DataType, Op};
-//
-//     #[test]
-//     fn test_add_f32() {
-//         let device = CudaDevice::new(0).unwrap();
-//         let shape = vec![4, 1, 1, 1];
-//         let dtype = DataType::Float;
-//
-//         let node_a = TestNode {
-//             shape: shape.clone(),
-//             dtype,
-//             data: Some(CudaData::F32(
-//                 device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-//             )),
-//         };
-//         let node_b = TestNode {
-//             shape: shape.clone(),
-//             dtype,
-//             data: Some(CudaData::F32(
-//                 device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-//             )),
-//         };
-//
-//         let params = TestParams {
-//             inputs: vec![node_a, node_b],
-//             op: Op::Add,
-//             attributes: vec![],
-//         };
-//
-//         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-//         let mut context = Context::new(&mut state, 3).unwrap();
-//
-//         let f = rmlk_cuda::load_kernel(&device, Op::Add, DataType::Float).unwrap();
-//         let cuda_kernel = BackendHandler::new(device.clone(), f);
-//         cuda_kernel.compute(&mut context).unwrap();
-//
-//         let out_data = context
-//             .get_output(0)
-//             .unwrap()
-//             .dev_data_ptr()
-//             .unwrap()
-//             .f32()
-//             .unwrap();
-//         let result = device.dtoh_sync_copy(out_data).unwrap();
-//
-//         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
-//     }
-// }

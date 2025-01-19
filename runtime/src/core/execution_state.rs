@@ -186,11 +186,6 @@ where
         &mut self.scratch_alloc
     }
 
-    /// Get a read-only reference to the scratch allocator.
-    pub fn scratch_alloc_clone(&self) -> ScratchAllocator {
-        self.scratch_alloc.clone()
-    }
-
     /// Copies the shape data from the source's shape buffer.
     pub fn copy_shape_from_within(&mut self, src: SrcTensorId, dst: DstTensorId) -> Result<()> {
         self.tensor_store

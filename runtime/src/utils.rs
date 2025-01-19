@@ -13,7 +13,7 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
     }
 }
 
-pub fn _broadcast<const N: usize>(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
+pub fn broadcast(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
     let ndims = dst.len();
 
     // Ensure neither input shape exceeds the destination dimensions.
