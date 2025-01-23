@@ -13,6 +13,10 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
     }
 }
 
+pub fn broadcast_stride(a: &[usize], b: &[usize], b_stride: &mut [usize]) -> Result<bool, ()> {
+ todo!()
+}
+
 pub fn broadcast(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
     let ndims = dst.len();
 

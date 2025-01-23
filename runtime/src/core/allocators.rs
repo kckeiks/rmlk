@@ -55,34 +55,23 @@ impl ScratchAllocator {
 }
 
 pub struct ShapeBufArena {
-    arena: Vec<usize>,
-    current: usize,
-    _max_size: usize,
+    inner: BufferArena,
 }
 
 impl ShapeBufArena {
     pub fn with_capacity(size: usize) -> Self {
-        let arena = vec![0; size];
         Self {
-            arena,
-            current: 0,
-            _max_size: size,
+            inner: BufferArena::with_capacity(size),
         }
     }
 
     /// Allocates new buffers for shape and stride.
     /// Return the ID for the new buffers.
     pub fn alloc(&mut self, size: usize) -> Result<ArenaId> {
-        if self.arena.len() < self.current + 2 * size {
-            warn!("Shape allocator was too small. Allocating more memory,");
-            self.arena.resize(size, 0);
-        }
-        let old_current = self.current;
-        self.current = old_current + size + size;
+        let key = self.inner.alloc(2 * size)?;
         Ok(ArenaId {
-            start: old_current,
-            mid: old_current + size,
-            end: old_current + size + size,
+            key,
+            size,
         })
     }
 
@@ -90,25 +79,19 @@ impl ShapeBufArena {
     /// Return the ID for the new buffers.
     pub fn alloc_from_shape_slice(&mut self, shape_src: &[usize]) -> Result<ArenaId> {
         let size = shape_src.len();
-        if self.arena.len() < self.current + 2 * size {
-            warn!("Shape allocator was too small. Allocating more memory,");
-            self.arena.resize(size, 0);
-        }
 
-        let shape = &mut self.arena[self.current..self.current + size];
-        shape.copy_from_slice(shape_src);
+        let arena_id = self.alloc(size)?;
 
-        let stride = &mut self.arena[self.current + size..self.current + size + size];
+        let slab = self.inner.get_mut(arena_id.key).expect("We allocated before this call");
+
+        // Copy the shape.
+        slab[..arena_id.size].as_mut().copy_from_slice(shape_src);
+
+        // Compute the stride.
+        let stride =  slab[arena_id.size..].as_mut();
         utils::calculate_stride(shape_src, stride);
 
-        let old_current = self.current;
-        self.current = old_current + size + size;
-
-        Ok(ArenaId {
-            start: old_current,
-            mid: old_current + size,
-            end: old_current + size + size,
-        })
+        Ok(arena_id)
     }
 
     /// Allocates new buffers and copies argument into the newly created buffers.
@@ -135,60 +118,121 @@ impl ShapeBufArena {
     ///
     /// Panics if arguments do not have the same size.
     pub fn copy_shape_from_within(&mut self, src: &ArenaId, dst: &ArenaId) {
-        self.arena.copy_within(src.start..src.end, dst.start);
+        self.inner.copy_within(src.key, dst.key);
     }
 
     /// Allocates new buffers and copies data from buffers within the arena.
     /// Return the ID for the new buffers.
     pub fn alloc_and_copy_shape_from_within(&mut self, src: &ArenaId) -> Result<ArenaId> {
-        let index = self.alloc(src.mid - src.start)?;
+        let index = self.alloc(src.size)?;
         self.copy_shape_from_within(src, &index);
         Ok(index)
     }
 
-    pub fn get_shape_buf(&self, index: &ArenaId) -> Option<&[usize]> {
-        if index.end > self.arena.len() {
-            return None;
-        }
-        Some(&self.arena[index.start..index.mid])
+    pub fn get_shape_buf(&self, id: &ArenaId) -> Option<&[usize]> {
+        let buf = self.inner.get(id.key)?;
+        Some(&buf[..id.size])
     }
 
-    pub fn get_stride_buf(&self, index: &ArenaId) -> Option<&[usize]> {
-        if index.end > self.arena.len() {
-            return None;
-        }
-        Some(&self.arena[index.mid..index.end])
+    pub fn get_stride_buf(&self, id: &ArenaId) -> Option<&[usize]> {
+        let buf = self.inner.get(id.key)?;
+        Some(&buf[id.size..])
     }
 
-    fn get_shape_buf_mut(&mut self, index: &ArenaId) -> Option<&mut [usize]> {
-        if index.end > self.arena.len() {
-            return None;
-        }
-        Some(&mut self.arena[index.start..index.mid])
+    fn get_shape_buf_mut(&mut self, id: &ArenaId) -> Option<&mut [usize]> {
+        let buf = self.inner.get_mut(id.key)?;
+        Some(&mut buf[..id.size])
     }
 
-    fn get_stride_buf_mut(&mut self, index: &ArenaId) -> Option<&mut [usize]> {
-        if index.end > self.arena.len() {
-            return None;
-        }
-        Some(&mut self.arena[index.mid..index.end])
+    fn get_stride_buf_mut(&mut self, id: &ArenaId) -> Option<&mut [usize]> {
+        let buf = self.inner.get_mut(id.key)?;
+        Some(&mut buf[id.size..])
     }
 }
 
 /// Shape-buffer arena ID.
 #[derive(Clone, Copy, Debug)]
 pub struct ArenaId {
-    start: usize,
-    mid: usize,
-    end: usize,
+    key: usize,
+    size: usize,
 }
 
 impl ArenaId {
     pub fn shape_len(&self) -> usize {
-        self.mid - self.start
+        self.size
     }
 
-    pub fn len(&self) -> usize {
-        self.end - self.start
+    pub fn size(&self) -> usize {
+        2 * self.size
+    }
+}
+
+pub struct BufferArena {
+    arena: Vec<usize>,
+    current: usize,
+}
+
+impl BufferArena {
+    const LEN_HEADER_SIZE: usize = 1;
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            arena: vec![0; capacity],
+            current: 0,
+        }
+    }
+
+    pub fn alloc(&mut self, size: usize) -> Result<usize> {
+        if size == 0 {
+            return Err(InternalError::InvalidMemoryAllocation {
+                message: "cannot allocate a buffer of size `0`".to_string(),
+            });
+        }
+
+        let new_len = self.current + size + Self::LEN_HEADER_SIZE;
+
+        if new_len > self.arena.len() {
+            warn!("Buffer arena was too small. Allocating more memory,");
+            // Todo: How much more should we resize?
+            self.arena.resize(new_len, 0);
+        }
+
+        let old_current = self.current;
+        self.current = new_len;
+        self.arena[old_current] = size;
+
+        Ok(old_current)
+    }
+
+    pub fn get(&self, key: usize) -> Option<&[usize]> {
+        let size = self.arena.get(key).copied()?;
+
+        let content_start = key + Self::LEN_HEADER_SIZE;
+
+        assert_eq!(size, self.arena[content_start..content_start + size].len());
+
+        Some(self.arena[content_start..content_start + size].as_ref())
+    }
+
+    pub fn get_mut(&mut self, key: usize) -> Option<&mut [usize]> {
+        let size = self.arena.get(key).copied()?;
+
+        let content_start = key + Self::LEN_HEADER_SIZE;
+
+        assert_eq!(size, self.arena[content_start..content_start + size].len());
+
+        Some(self.arena[content_start..content_start + size].as_mut())
+    }
+
+    pub fn copy_within(&mut self, src: usize, dst: usize) {
+        let src_len = self.arena[src];
+        let dst_len = self.arena[dst];
+
+        assert_eq!(src_len, dst_len);
+
+        let src_content_start = src + Self::LEN_HEADER_SIZE;
+        let dst_content_start = dst + Self::LEN_HEADER_SIZE;
+
+        self.arena.copy_within(src_content_start..src_content_start + src_len, dst_content_start);
     }
 }

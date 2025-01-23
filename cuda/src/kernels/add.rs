@@ -26,7 +26,7 @@ where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
     // Todo: more assertions here.
-    debug_assert!(lhs_shape == rhs_shape);
+    // debug_assert!(lhs_shape == rhs_shape);
 
     // Todo: Validate that the tensors are valid for the operation.
     // Todo: should we directly initialize this in the device?

@@ -170,7 +170,7 @@ where
         let dst_arena_id = self.try_get_tensor(dst_id)?.arena_id().copied();
 
         if dst_arena_id
-            .map(|id| id.len() == src_arena_id.len())
+            .map(|id| id.size() == src_arena_id.size())
             .unwrap_or(false)
         {
             self.shape_buf_arena

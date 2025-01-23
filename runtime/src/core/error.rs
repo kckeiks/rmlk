@@ -44,6 +44,9 @@ pub enum InternalError {
     InvalidTensorShape {
         shape: Vec<usize>,
     },
+    InvalidMemoryAllocation {
+      message: String,
+    },
     IncompatibleTensorShape {
         shapes: HashMap<usize, Vec<usize>>,
         op: Op,
@@ -162,6 +165,9 @@ impl Display for InternalError {
             }
             InternalError::InvalidAxis { axis } => {
                 write!(f, "invalid axis `{axis}`")
+            }
+            InternalError::InvalidMemoryAllocation { message } => {
+                write!(f, "invalid memory allocation `{message}`")
             }
             InternalError::BufferSizeMismatch { expected, actual } => {
                 write!(
