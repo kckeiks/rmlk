@@ -17,7 +17,7 @@ pub fn compute<T>(
     lhs_shape: &[usize],
     lhs_stride: &[usize],
     rhs_data: &CudaSlice<T>,
-    rhs_shape: &[usize],
+    _rhs_shape: &[usize],
     rhs_stride: &[usize],
     out_data: &mut CudaSlice<T>,
     info_buffer: &mut [usize],

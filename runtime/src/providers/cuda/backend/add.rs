@@ -10,6 +10,7 @@ use cudarc::driver::{
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::cmp;
 use std::sync::Arc;
 
 pub struct AdditionBackend {
@@ -86,7 +87,7 @@ impl AdditionBackend {
             debug!("[c][add][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
         }
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
 
         let a_dev_data_ref = a.try_dev_data_ptr()?;
@@ -120,6 +121,14 @@ impl AdditionBackend {
             };
         }
 
+        let stride_buf_len = cmp::max(a.shape().len(), b.shape().len());
+        let strides = scratch_alloc.allocate_fill::<usize>(2 * stride_buf_len, 0)?;
+        utils::compute_broadcast_stride(a.shape(), b.shape(), a.stride(), b.stride(), strides);
+        let (a_stride, b_stride) = strides.split_at(stride_buf_len);
+
+        debug!("[a][add][broadcast][stride={:?}]", a_stride);
+        debug!("[b][add][broadcast][stride={:?}]", b_stride);
+
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
         let c = ctx.get_output(0)?;
@@ -134,10 +143,10 @@ impl AdditionBackend {
             self.f,
             &a_dev_data,
             &a.shape(),
-            &a.stride(),
+            a_stride,
             &b_dev_data,
             &b.shape(),
-            &b.stride(),
+            b_stride,
             &mut c_dev_data,
             info_buffer,
         )?;

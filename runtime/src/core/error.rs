@@ -45,7 +45,7 @@ pub enum InternalError {
         shape: Vec<usize>,
     },
     InvalidMemoryAllocation {
-      message: String,
+        message: String,
     },
     IncompatibleTensorShape {
         shapes: HashMap<usize, Vec<usize>>,

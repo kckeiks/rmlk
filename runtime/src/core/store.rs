@@ -1,4 +1,4 @@
-use crate::core::allocators::ShapeBufArena;
+use crate::core::allocators::{BufferArena, ShapeBufArena, ShapeBufArenaMut};
 use crate::core::device_service::DeviceData;
 use crate::core::error::InternalError;
 use crate::core::error::Result;
@@ -15,7 +15,7 @@ use std::rc::Rc;
 /// This object stores a fixed-size collection of tensors.
 pub struct TensorStore<T> {
     tensors: Box<[Option<TensorHandle<T>>]>,
-    shape_buf_arena: ShapeBufArena,
+    buf_arena: BufferArena,
 }
 
 impl<T> TensorStore<T>
@@ -27,7 +27,8 @@ where
         graph: &Graph<Definition>,
         initializers: HashMap<usize, rmlk_schema::Tensor>,
     ) -> Result<TensorStore<D::Data>> {
-        let mut shape_buf_arena = ShapeBufArena::with_capacity(4096);
+        let mut buf_arena = BufferArena::with_capacity(4096);
+        let mut shape_buf_arena = ShapeBufArenaMut::new(&mut buf_arena);
         // Todo: We might need the max id of the graph instead.
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
@@ -144,17 +145,18 @@ where
 
         Ok(TensorStore {
             tensors: tensors.into_boxed_slice(),
-            shape_buf_arena,
+            buf_arena,
         })
     }
 
-    pub fn get(&self, id: usize) -> Option<Tensor<T>> {
+    pub fn get<'a>(&'a self, id: usize) -> Option<Tensor<'a, T>> {
         let tensor_handle = self.tensors.get(id)?.as_ref()?;
+        let shape_buf_arena = ShapeBufArena::<'a>::new(&self.buf_arena);
         let (shape, stride) = match tensor_handle.arena_id().as_ref() {
             None => (None, None),
             Some(index) => {
-                let shape = self.shape_buf_arena.get_shape_buf(&index);
-                let stride = self.shape_buf_arena.get_stride_buf(&index);
+                let shape = shape_buf_arena.get_shape_buf(&index);
+                let stride = shape_buf_arena.get_stride_buf(&index);
                 (shape, stride)
             }
         };
@@ -169,16 +171,14 @@ where
             .ok_or(InternalError::TensorNotFound { node_id: src_id })?;
         let dst_arena_id = self.try_get_tensor(dst_id)?.arena_id().copied();
 
+        let mut shape_buf_arena = ShapeBufArenaMut::new(&mut self.buf_arena);
         if dst_arena_id
             .map(|id| id.size() == src_arena_id.size())
             .unwrap_or(false)
         {
-            self.shape_buf_arena
-                .copy_shape_from_within(&src_arena_id, &dst_arena_id.unwrap());
+            shape_buf_arena.copy_shape_from_within(&src_arena_id, &dst_arena_id.unwrap());
         } else {
-            let new_arena_id = self
-                .shape_buf_arena
-                .alloc_and_copy_shape_from_within(&src_arena_id)?;
+            let new_arena_id = shape_buf_arena.alloc_and_copy_shape_from_within(&src_arena_id)?;
             let dst = self.try_get_tensor_mut(dst_id)?;
             dst.set_arena_id(new_arena_id);
         }
@@ -190,14 +190,15 @@ where
         let dst = self.try_get_tensor(node_id)?;
         let arena_id = dst.arena_id().copied();
 
+        let mut shape_buf_arena = ShapeBufArenaMut::new(&mut self.buf_arena);
+
         if arena_id
             .map(|id| id.shape_len() == shape.len())
             .unwrap_or(false)
         {
-            self.shape_buf_arena
-                .try_copy_shape_from_slice(shape, &arena_id.unwrap())?;
+            shape_buf_arena.try_copy_shape_from_slice(shape, &arena_id.unwrap())?;
         } else {
-            let new_arena_id = self.shape_buf_arena.alloc_from_shape_slice(shape)?;
+            let new_arena_id = shape_buf_arena.alloc_from_shape_slice(shape)?;
             let dst = self.try_get_tensor_mut(node_id)?;
             dst.set_arena_id(new_arena_id);
         }
