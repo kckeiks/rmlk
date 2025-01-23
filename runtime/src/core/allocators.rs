@@ -107,7 +107,7 @@ impl<'a> ShapeBufArenaMut<'a> {
 
         // Compute the stride.
         let stride = slab[arena_id.size..].as_mut();
-        utils::calculate_stride(shape_src, stride);
+        utils::compute_stride(shape_src, stride);
 
         Ok(arena_id)
     }
@@ -128,7 +128,7 @@ impl<'a> ShapeBufArenaMut<'a> {
         let stride = self
             .get_stride_buf_mut(dst)
             .expect("Stride buffer exists if a shape buffer exists");
-        utils::calculate_stride(src, stride);
+        utils::compute_stride(src, stride);
         Ok(())
     }
 

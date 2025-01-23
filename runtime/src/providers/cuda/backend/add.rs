@@ -38,11 +38,11 @@ impl AdditionBackend {
                     .copy_shape_from_within(a_index, c_index)?;
             }
             false => {
-                let ndims = a.shape().len();
+                let ndims = cmp::max(a.shape().len(), b.shape().len());
                 let alloc = ctx.execution_state().scratch_alloc().clone();
                 let c_shape = alloc.allocate_fill(ndims, 0)?;
 
-                if !utils::broadcast(a.shape(), b.shape(), c_shape) {
+                if !utils::compute_broadcast_output_shape(a.shape(), b.shape(), c_shape) {
                     let a_id = a.src_id();
                     let b_id = b.src_id();
                     return Err(InternalError::IncompatibleTensorShape {
@@ -73,9 +73,7 @@ impl AdditionBackend {
     {
         // The output should have the same dimensions.
         // We do it now to avoid lifetime errors.
-        {
-            self.process_shapes(ctx)?;
-        }
+        self.process_shapes(ctx)?;
 
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;

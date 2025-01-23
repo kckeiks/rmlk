@@ -119,7 +119,7 @@ impl ConvolutionBackend {
                 bias_shape[1] = bias_tensor.shape()[0] as i32;
 
                 let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
-                utils::calculate_stride(&bias_shape, bias_stride);
+                utils::compute_stride(&bias_shape, bias_stride);
 
                 let device_data = bias_tensor.try_dev_data_ptr()?;
 

@@ -2,7 +2,7 @@ use num_traits::Num;
 use std::cmp;
 use std::ops::AddAssign;
 
-pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
+pub fn compute_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let ndims = shape.len();
 
     debug_assert_eq!(ndims, stride.len());
@@ -13,6 +13,7 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
     }
 }
 
+// This function assumes that a and b are compatible for broadcasting.
 pub fn compute_broadcast_stride(
     a_shape: &[usize],
     b_shape: &[usize],
@@ -35,7 +36,7 @@ pub fn compute_broadcast_stride(
         if let Some(a_i) = i.checked_sub(mid - a_len) {
             if i.checked_sub(mid - b_len)
                 .map(|idx| a_shape[a_i] == b_shape[idx] || b_shape[idx] == 1)
-                .unwrap_or(false)
+                .unwrap_or(true)
             {
                 strides_a[i] = a_stride[a_i];
             }
@@ -44,7 +45,7 @@ pub fn compute_broadcast_stride(
         if let Some(b_i) = i.checked_sub(mid - b_len) {
             if i.checked_sub(mid - a_len)
                 .map(|idx| a_shape[idx] == b_shape[b_i] || a_shape[idx] == 1)
-                .unwrap_or(false)
+                .unwrap_or(true)
             {
                 strides_b[i] = b_stride[b_i];
             }
@@ -52,13 +53,11 @@ pub fn compute_broadcast_stride(
     }
 }
 
-pub fn broadcast(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
+// Assumes the dst buffer is the size of a or b, whichever is larger.
+pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
     let ndims = dst.len();
 
-    // Ensure neither input shape exceeds the destination dimensions.
-    if a.len() > ndims || b.len() > ndims {
-        return false;
-    }
+    debug_assert_eq!(ndims, cmp::max(a.len(), b.len()));
 
     // Compute offsets for aligning shorter arrays with the destination.
     let a_offset = ndims - a.len();
@@ -66,8 +65,14 @@ pub fn broadcast(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
 
     for i in 0..ndims {
         // Fill missing dimensions with 1.
-        let a_dim = a.get(i - a_offset).copied().unwrap_or(1);
-        let b_dim = b.get(i - b_offset).copied().unwrap_or(1);
+        let a_dim = i
+            .checked_sub(a_offset)
+            .map(|idx| a.get(idx).copied().unwrap_or(1))
+            .unwrap_or(1);
+        let b_dim = i
+            .checked_sub(b_offset)
+            .map(|idx| b.get(idx).copied().unwrap_or(1))
+            .unwrap_or(1);
 
         // Check broadcasting rules.
         if a_dim != b_dim && a_dim != 1 && b_dim != 1 {
