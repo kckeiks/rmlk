@@ -4,6 +4,7 @@ pub mod conv;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
+pub mod whereop;
 
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;

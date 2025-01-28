@@ -1,0 +1,247 @@
+use crate::core::error::{InternalError, Result};
+use crate::core::Context;
+use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
+use crate::utils;
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{
+    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
+};
+use log::debug;
+use num_traits::Num;
+use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::cmp;
+use std::sync::Arc;
+
+pub struct Where {
+    device: Arc<CudaDevice>,
+    f: CudaFunction,
+}
+
+impl Where {
+    pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
+        Self { device, f }
+    }
+}
+
+impl Where {
+    fn process_shapes(&self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_input(1)?;
+        let condition = ctx.get_input(2)?;
+
+        match x.shape() == y.shape() && x.shape() == condition.shape() {
+            true => {
+                let output = ctx.get_output(0)?;
+                let x_index = x.src_id();
+                let output_index = output.dst_id();
+                ctx.execution_state_mut()
+                    .copy_shape_from_within(x_index, output_index)?;
+            }
+            false => {
+                let ndims = [x.shape().len(), y.shape().len(), condition.shape().len()]
+                    .into_iter()
+                    .max()
+                    .expect("Iterator is not empty");
+
+                let alloc = ctx.execution_state().scratch_alloc().clone();
+                let inter_shape = alloc.allocate_fill(ndims, 0)?;
+
+                if !utils::compute_broadcast_output_shape(x.shape(), y.shape(), inter_shape) {
+                    return Err(InternalError::IncompatibleTensorShape {
+                        shapes: [
+                            (x.src_id().into(), x.shape().to_vec()),
+                            (y.src_id().into(), y.shape().to_vec()),
+                        ]
+                        .try_into()
+                        .expect("Small map so should succeed"),
+                        op: Op::Where,
+                    });
+                }
+
+                let output_shape = alloc.allocate_fill(ndims, 0)?;
+
+                if !utils::compute_broadcast_output_shape(
+                    inter_shape,
+                    condition.shape(),
+                    output_shape,
+                ) {
+                    return Err(InternalError::IncompatibleTensorShape {
+                        shapes: [(condition.src_id().into(), y.shape().to_vec())]
+                            .try_into()
+                            .expect("Small map so should succeed"),
+                        op: Op::Where,
+                    });
+                }
+
+                let output = ctx.get_output(0)?;
+                let output_index = output.dst_id();
+                ctx.execution_state_mut()
+                    .copy_shape_from_slice(output_shape, output_index)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compute_where<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: WhereKernel,
+    {
+        // The output should have the same dimensions.
+        // We do it now to avoid lifetime errors.
+        self.process_shapes(ctx)?;
+
+        let x = ctx.get_input(0)?;
+        let y = ctx.get_input(1)?;
+        let condition = ctx.get_input(2)?;
+
+        {
+            let output = ctx.get_output(0)?;
+            debug!("[x][add][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+            debug!("[y][add][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+            debug!(
+                "[condition][add][shape={:?}][stride=[{:?}]",
+                condition.shape(),
+                condition.stride()
+            );
+            debug!(
+                "[output][add][shape={:?}][stride=[{:?}]",
+                output.shape(),
+                output.stride()
+            );
+        }
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+        let info_buffer = scratch_alloc.allocate(3 * x.shape().len())?;
+
+        let x_dev_data_ref = x.try_dev_data_ptr()?;
+        let x_dev_data = x_dev_data_ref.data::<D>();
+
+        let y_dev_data_ref = y.try_dev_data_ptr()?;
+        let y_dev_data = y_dev_data_ref.data::<D>();
+
+        let condition_dev_data_ref = condition.try_dev_data_ptr()?;
+        let condition_dev_data = condition_dev_data_ref.data::<D>();
+
+        let elem_count: usize = x.shape().iter().product();
+
+        // Allocate device data for the tensor if we haven't done it yet
+        // or if the existing allocated data has a different size.
+        {
+            let mut output = ctx.get_output(0)?;
+            let output_dev_data_ref = output.dev_data_ptr_mut();
+            let need_to_alloc_dev_data = output_dev_data_ref.is_none()
+                || output_dev_data_ref
+                    .as_ref()
+                    .map(|data| data.data::<D>().len() != elem_count)
+                    .unwrap_or(true);
+
+            // We need to remove this immutable reference so we can mutate `y`.
+            drop(output_dev_data_ref);
+
+            if need_to_alloc_dev_data {
+                let output_dev_data = self
+                    .device
+                    .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
+                    .map_err(rmlk_cuda::Error::from)?;
+                output.set_dev_data(CudaData::new(output_dev_data));
+            };
+        }
+
+        let output = ctx.get_output(0)?;
+
+        let x_stride = scratch_alloc.allocate_fill::<usize>(output.shape().len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            x.shape(),
+            x.stride(),
+            output.shape(),
+            x_stride,
+        );
+
+        let y_stride = scratch_alloc.allocate_fill::<usize>(output.shape().len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            y.shape(),
+            y.stride(),
+            output.shape(),
+            y_stride,
+        );
+
+        let condition_stride = scratch_alloc.allocate_fill::<usize>(output.shape().len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            condition.shape(),
+            condition.stride(),
+            output.shape(),
+            condition_stride,
+        );
+
+        debug!("[x][where][broadcast][stride={:?}]", x_stride);
+        debug!("[y][where][broadcast][stride={:?}]", y_stride);
+        debug!(
+            "[condition][where][broadcast][stride={:?}]",
+            condition_stride
+        );
+
+        // The device data should exist so we will execute the kernel
+        // and update the destination device data with the result.
+        let output = ctx.get_output(0)?;
+        let mut output_dev_data_ref = output.dev_data_ptr_mut();
+        let mut output_dev_data = output_dev_data_ref
+            .as_mut()
+            .expect("we already checked that it initialized")
+            .data_mut();
+
+        T::execute::<D>(
+            self.device,
+            self.f,
+            &x_dev_data,
+            &x.shape(),
+            x_stride,
+            &y_dev_data,
+            &y.shape(),
+            y_stride,
+            &condition_dev_data,
+            &condition.shape(),
+            condition_stride,
+            &mut output_dev_data,
+            info_buffer,
+        )?;
+
+        Ok(())
+    }
+
+    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: WhereKernel,
+    {
+        let dtype = ctx.get_input(0)?.dtype();
+        match dtype {
+            DataType::Float => self.compute_where::<f32, T>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Where,
+                dtype,
+            }),
+        }
+    }
+}
+
+pub trait WhereKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        func: CudaFunction,
+        x_dev_data: &CudaSlice<T>,
+        x_shape: &[usize],
+        x_stride: &[usize],
+        y_dev_data: &CudaSlice<T>,
+        y_shape: &[usize],
+        y_stride: &[usize],
+        condition_dev_data: &CudaSlice<T>,
+        condition_shape: &[usize],
+        condition_stride: &[usize],
+        output_dev_data: &mut CudaSlice<T>,
+        info_buffer: &mut [usize],
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
+}

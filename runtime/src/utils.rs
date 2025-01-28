@@ -53,6 +53,26 @@ pub fn compute_broadcast_stride(
     }
 }
 
+pub fn compute_broadcast_stride_from_output_shape(
+    a_shape: &[usize],
+    a_stride: &[usize],
+    output_shape: &[usize],
+    broadcast_stride: &mut [usize],
+) {
+    assert!(a_shape.len() > 0 || output_shape.len() > 0);
+
+    let a_ndims = a_shape.len();
+    let ndims = broadcast_stride.len();
+
+    for i in (0..ndims).rev() {
+        if let Some(a_i) = i.checked_sub(ndims - a_ndims) {
+            if a_shape[a_i] == output_shape[i] && a_shape[a_i] != 1 {
+                broadcast_stride[i] = a_stride[a_i];
+            }
+        }
+    }
+}
+
 // Assumes the dst buffer is the size of a or b, whichever is larger.
 pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
     let ndims = dst.len();
