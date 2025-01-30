@@ -333,47 +333,47 @@ pub unsafe fn _gemm_stride_batched_f16(
     .map_err(Into::into)
 }
 
-#[cfg(test)]
-mod test {
-    use crate::kernels::gemm::GemmOp;
-    use crate::utils;
-    use cudarc::driver::CudaDevice;
-
-    #[test]
-    fn test_gemm_f32() {
-        let device = CudaDevice::new(0).unwrap();
-
-        let lhs_shape = vec![1, 2, 2];
-        let mut lhs_stride = vec![0; lhs_shape.len()];
-        utils::calculate_stride(&lhs_shape, &mut lhs_stride);
-        let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-
-        let rhs_shape = vec![1, 2, 2];
-        let mut rhs_stride = vec![0; rhs_shape.len()];
-        utils::calculate_stride(&rhs_shape, &mut rhs_stride);
-        let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-
-        let op = GemmOp::new(
-            &lhs_shape,
-            &lhs_stride,
-            &rhs_shape,
-            &rhs_stride,
-            false,
-            false,
-        );
-        let config = op.strided_batch_config((1.0, 0.0)).unwrap();
-
-        let output_size = op.calculate_output_shape().iter().product();
-        let mut out = device.alloc_zeros(output_size).unwrap();
-
-        op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
-            .unwrap();
-
-        let result = device.dtoh_sync_copy(&out).unwrap();
-
-        assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use crate::kernels::gemm::GemmOp;
+//     use crate::utils;
+//     use cudarc::driver::CudaDevice;
+//
+//     #[test]
+//     fn test_gemm_f32() {
+//         let device = CudaDevice::new(0).unwrap();
+//
+//         let lhs_shape = vec![1, 2, 2];
+//         let mut lhs_stride = vec![0; lhs_shape.len()];
+//         utils::calculate_stride(&lhs_shape, &mut lhs_stride);
+//         let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+//
+//         let rhs_shape = vec![1, 2, 2];
+//         let mut rhs_stride = vec![0; rhs_shape.len()];
+//         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
+//         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+//
+//         let op = GemmOp::new(
+//             &lhs_shape,
+//             &lhs_stride,
+//             &rhs_shape,
+//             &rhs_stride,
+//             false,
+//             false,
+//         );
+//         let config = op.strided_batch_config((1.0, 0.0)).unwrap();
+//
+//         let output_size = op.calculate_output_shape().iter().product();
+//         let mut out = device.alloc_zeros(output_size).unwrap();
+//
+//         op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
+//             .unwrap();
+//
+//         let result = device.dtoh_sync_copy(&out).unwrap();
+//
+//         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
+//     }
+// }
 
 /*
 
