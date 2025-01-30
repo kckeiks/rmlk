@@ -7,5 +7,6 @@ mod cuda {
 
     mod add_broadcast;
     mod add_broadcast_diff_len_shapes;
+    mod where_broadcast_diff_shape_len;
     mod where_two_inputs;
 }

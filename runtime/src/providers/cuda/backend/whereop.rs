@@ -99,15 +99,15 @@ impl WhereBackend {
 
         {
             let output = ctx.get_output(0)?;
-            debug!("[x][add][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-            debug!("[y][add][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+            debug!("[x][where][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+            debug!("[y][where][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
             debug!(
-                "[condition][add][shape={:?}][stride=[{:?}]",
+                "[condition][where][shape={:?}][stride=[{:?}]",
                 condition.shape(),
                 condition.stride()
             );
             debug!(
-                "[output][add][shape={:?}][stride=[{:?}]",
+                "[output][where][shape={:?}][stride=[{:?}]",
                 output.shape(),
                 output.stride()
             );
@@ -141,7 +141,7 @@ impl WhereBackend {
             if need_to_alloc_dev_data {
                 let output_dev_data = self
                     .device
-                    .alloc_zeros::<f32>(x.shape().iter().copied().product::<usize>())
+                    .alloc_zeros::<f32>(output.shape().iter().copied().product::<usize>())
                     .map_err(rmlk_cuda::Error::from)?;
                 output.set_dev_data(CudaData::new(output_dev_data));
             };

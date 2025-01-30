@@ -1,9 +1,7 @@
 use crate::error::Result;
 use crate::ptx::BINARY_ADD;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig, ValidAsZeroBits,
-};
+use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig, ValidAsZeroBits};
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "binary_add";
@@ -22,7 +20,9 @@ pub const PTX_SRC: &str = BINARY_ADD;
 /// - Input tensors (`a_data`, `b_data`) **must be allocated on the CUDA device** and match their corresponding shapes and strides.
 ///
 /// # Panics
-/// - Panics if `info_buffer.len() != 3 * ndims`.
+/// # Panics
+/// - Panics if info buffer does not equal to 3 * `ndims`.
+/// - Panics if output slice does not have the expected size based on the output shape.
 pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,
@@ -41,6 +41,9 @@ where
     let info = device.htod_copy(info_buffer.to_vec())?;
 
     let elem_count: usize = info_buffer[..ndims].iter().product();
+
+    assert_eq!(elem_count, c_data.len());
+
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
 
