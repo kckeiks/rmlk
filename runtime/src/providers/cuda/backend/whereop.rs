@@ -274,20 +274,33 @@ impl WhereKernel for ActiveKernel {
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        rmlk_cuda::kernels::whereop::compute(
-            device,
-            func,
-            x_dev_data,
-            x_stride,
-            y_dev_data,
-            y_stride,
-            condition_dev_data,
-            condition_stride,
-            output_shape,
-            output_dev_data,
-            info_buffer,
-        )
-        .map_err(Into::into)
+        let ndims = output_shape.len();
+
+        if info_buffer.len() != 4 * ndims {
+            return Err(InternalError::BufferSizeMismatch {
+                expected: 4 * ndims,
+                actual: info_buffer.len(),
+            });
+        }
+
+        info_buffer[..ndims].copy_from_slice(output_shape);
+        info_buffer[ndims..2 * ndims].copy_from_slice(x_stride);
+        info_buffer[2 * ndims..3 * ndims].copy_from_slice(y_stride);
+        info_buffer[3 * ndims..].copy_from_slice(condition_stride);
+
+        unsafe {
+            rmlk_cuda::kernels::whereop::compute(
+                device,
+                func,
+                ndims,
+                info_buffer,
+                x_dev_data,
+                y_dev_data,
+                condition_dev_data,
+                output_dev_data,
+            )
+            .map_err(Into::into)
+        }
     }
 }
 

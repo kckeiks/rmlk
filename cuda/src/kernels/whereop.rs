@@ -9,41 +9,35 @@ pub const MODULE_NAME: &str = "where";
 pub const FWD_FN_NAMES: [&'static str; 3] = ["where_fwd_f16", "where_fwd_f32", "where_fwd_f64"];
 pub const PTX_SRC: &str = WHERE;
 
-/// Executes the WHERE kernel.
+/// Launches a CUDA kernel that performs an element-wise conditional selection (`where` operation).
 ///
-/// Panics if:
-/// - the number of dimensions in the shape and stride parameters are not the same.
-/// - the info buffer's length is not equal to 4 * number of dimensions.
-pub fn compute<T>(
+/// This function executes a CUDA kernel that applies:
+/// ```text
+/// output[i] = if z[i] != 0 { x[i] } else { y[i] }
+/// ```
+/// The kernel performs efficient element-wise evaluation and supports broadcasting.
+///
+/// This function is **unsafe** because it assumes all input slices and buffers are valid
+/// and correctly sized.
+pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,
+    ndims: usize,
+    info_buffer: &[usize],
     x_data: &CudaSlice<T>,
-    x_stride: &[usize],
     y_data: &CudaSlice<T>,
-    y_stride: &[usize],
     z_data: &CudaSlice<T>,
-    z_stride: &[usize],
-    output_shape: &[usize],
     output_data: &mut CudaSlice<T>,
-    info_buffer: &mut [usize],
 ) -> crate::error::Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let ndims = output_shape.len();
-
-    assert!(ndims == x_stride.len() && ndims == y_stride.len() && ndims == z_stride.len());
-    assert_eq!(info_buffer.len(), 4 * ndims);
-
-    info_buffer[..ndims].copy_from_slice(output_shape);
-    info_buffer[ndims..2 * ndims].copy_from_slice(x_stride);
-    info_buffer[2 * ndims..3 * ndims].copy_from_slice(y_stride);
-    info_buffer[3 * ndims..].copy_from_slice(z_stride);
+    assert_eq!(4 * ndims, info_buffer.len());
 
     // Unfortunately, the asynchronous API only accepts owned vectors.
     let info = device.htod_copy(info_buffer.to_vec())?;
 
-    let elem_count: usize = output_shape.iter().product();
+    let elem_count: usize = info_buffer[..ndims].iter().product();
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
 
@@ -55,7 +49,7 @@ where
 
     let params = (
         elem_count,
-        output_shape.len(),
+        ndims,
         &info,
         x_data,
         y_data,
@@ -74,6 +68,23 @@ mod test {
     use crate::utils;
     use cudarc::driver::CudaDevice;
     use rmlk_schema::{DataType, Op};
+
+    fn create_info_buffer(
+        output_shape: &[usize],
+        x_stride: &[usize],
+        y_stride: &[usize],
+        z_stride: &[usize],
+    ) -> Vec<usize> {
+        let ndims = output_shape.len();
+        let mut info_buffer = vec![0usize; 4 * ndims];
+
+        info_buffer[..ndims].copy_from_slice(output_shape);
+        info_buffer[ndims..2 * ndims].copy_from_slice(x_stride);
+        info_buffer[2 * ndims..3 * ndims].copy_from_slice(y_stride);
+        info_buffer[3 * ndims..].copy_from_slice(z_stride);
+
+        info_buffer
+    }
 
     #[test]
     fn test_where_f32() {
@@ -101,24 +112,23 @@ mod test {
             .alloc_zeros(output_shape.iter().map(|d| *d).product())
             .unwrap();
 
-        let mut info = vec![0; 4 * output_shape.len()];
+        let mut info = create_info_buffer(&output_shape, &x_stride, &y_stride, &z_stride);
 
-        compute::<f32>(
-            device.clone(),
-            f,
-            &x_data,
-            &x_stride,
-            &y_data,
-            &y_stride,
-            &z_data,
-            &z_stride,
-            &output_shape,
-            &mut out_data,
-            &mut info,
-        )
-        .unwrap();
-        let result = device.dtoh_sync_copy(&out_data).unwrap();
+        unsafe {
+            compute::<f32>(
+                device.clone(),
+                f,
+                output_shape.len(),
+                &mut info,
+                &x_data,
+                &y_data,
+                &z_data,
+                &mut out_data,
+            )
+            .unwrap();
+            let result = device.dtoh_sync_copy(&out_data).unwrap();
 
-        assert_eq!(result, vec![10.0, 2.0, 3.0, 40.0])
+            assert_eq!(result, vec![10.0, 2.0, 3.0, 40.0])
+        }
     }
 }
