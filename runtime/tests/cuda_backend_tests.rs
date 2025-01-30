@@ -6,6 +6,6 @@ mod cuda {
     mod add_with_constants;
 
     mod add_broadcast;
-    mod add_broadcast_2;
+    mod add_broadcast_diff_len_shapes;
     mod where_two_inputs;
 }
