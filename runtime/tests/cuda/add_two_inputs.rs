@@ -45,7 +45,7 @@ const GRAPH_DEFINITION: &str = r#"
 "#;
 
 #[test]
-fn test_add() {
+fn test_run() {
     let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
     let input: HashMap<String, Value> = [
         (

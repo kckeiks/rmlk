@@ -111,7 +111,7 @@ impl AdditionBackend {
             if need_to_alloc_dev_data {
                 let c_dev_data = self
                     .device
-                    .alloc_zeros::<f32>(a.shape().iter().copied().product::<usize>())
+                    .alloc_zeros::<f32>(c.shape().iter().copied().product::<usize>())
                     .map_err(rmlk_cuda::Error::from)?;
                 c.set_dev_data(CudaData::new(c_dev_data));
             };
@@ -211,7 +211,7 @@ impl AdditionKernel for ActiveKernel {
         let info_buffer = alloc.allocate(3 * ndims)?;
         info_buffer[..ndims].copy_from_slice(c_shape);
         info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
-        info_buffer[2 * ndims..3 * ndims].copy_from_slice(b_stride);
+        info_buffer[2 * ndims..].copy_from_slice(b_stride);
 
         unsafe {
             rmlk_cuda::kernels::add::compute(

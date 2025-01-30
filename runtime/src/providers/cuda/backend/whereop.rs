@@ -99,8 +99,16 @@ impl WhereBackend {
 
         {
             let output = ctx.get_output(0)?;
-            debug!("[x][where][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-            debug!("[y][where][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+            debug!(
+                "[x][where][shape={:?}][stride=[{:?}]",
+                x.shape(),
+                x.stride()
+            );
+            debug!(
+                "[y][where][shape={:?}][stride=[{:?}]",
+                y.shape(),
+                y.stride()
+            );
             debug!(
                 "[condition][where][shape={:?}][stride=[{:?}]",
                 condition.shape(),

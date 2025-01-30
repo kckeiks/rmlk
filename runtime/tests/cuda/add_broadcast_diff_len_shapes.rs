@@ -25,8 +25,7 @@ const GRAPH_DEFINITION: &str = r#"
       "info": {
         "type": "value",
         "name": "a+b",
-        "dtype": "float",
-        "shape": [2, 4, 3]
+        "dtype": "float"
       }
     },
     {

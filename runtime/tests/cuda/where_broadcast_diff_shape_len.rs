@@ -84,7 +84,11 @@ fn test_run() {
     ]
     .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("where(const1, a, b)").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output
+        .remove("where(const1, a, b)")
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(
         data,
         vec![
