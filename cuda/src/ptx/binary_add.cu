@@ -1,19 +1,20 @@
-// Copied from https://github.com/coreylowman/dfdx.
+/*
+ * This file is derived from the `dfdx` project:
+ * Original Repository: https://github.com/coreylowman/dfdx
+ * Original File Path: dfdx-core/src/tensor_ops/add/binary_add.cu
+ * Original Author: Corey Lowman
+ * Original License: MIT License
+ *
+ * Modifications by: Michael Meier
+ * Date of Modification: 2025
+ *
+ * This modified file is distributed under the MIT License,
+ * in accordance with the original license terms.
+ */
 #include "binary_op_macros.cuh"
 
-struct BinaryAddOp {};
+BINARY_OP(__half, badd_fwd_f16, x + y)
 
-BINARY_OP(__half, badd_fwd_f16, badd_bwd_lhs_f16, badd_bwd_rhs_f16, BinaryAddOp,
-    x + y,
-    1.0,
-    1.0)
+BINARY_OP(float, badd_fwd_f32, x + y)
 
-BINARY_OP(float, badd_fwd_f32, badd_bwd_lhs_f32, badd_bwd_rhs_f32, BinaryAddOp,
-    x + y,
-    1.0,
-    1.0)
-
-BINARY_OP(double, badd_fwd_f64, badd_bwd_lhs_f64, badd_bwd_rhs_f64, BinaryAddOp,
-    x + y,
-    1.0,
-    1.0)
+BINARY_OP(double, badd_fwd_f64, x + y)
