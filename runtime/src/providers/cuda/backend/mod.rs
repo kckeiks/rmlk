@@ -16,6 +16,7 @@ use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
 
 pub enum CudaKernel {
@@ -26,6 +27,7 @@ pub enum CudaKernel {
     GlobalAveragePool(GlobalAverageBackend),
     MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
+    Where(WhereBackend),
 }
 
 impl OperationBackend<Cuda> for CudaKernel {
@@ -40,6 +42,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             }
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
         }
     }
 }
@@ -56,6 +59,7 @@ impl CudaKernel {
             }
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::NoOpKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Where(kernel) => kernel.compute::<whereop::NoOpKernel>(ctx),
         }
     }
 }

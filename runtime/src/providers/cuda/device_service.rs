@@ -8,6 +8,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DriverError};
 use rmlk_schema::{DataType, Op};
@@ -56,6 +57,10 @@ impl DeviceService for Cuda {
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
+            Op::Where => {
+                let f = self.load_kernel(op, dtype)?;
+                CudaKernel::Where(WhereBackend::new(self.device.clone(), f))
+            }
             op => {
                 return Err(InternalError::UnsupportedOp { op });
             }

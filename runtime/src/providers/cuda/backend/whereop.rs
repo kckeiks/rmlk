@@ -10,21 +10,20 @@ use cudarc::driver::{
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::cmp;
 use std::sync::Arc;
 
-pub struct Where {
+pub struct WhereBackend {
     device: Arc<CudaDevice>,
     f: CudaFunction,
 }
 
-impl Where {
+impl WhereBackend {
     pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
         Self { device, f }
     }
 }
 
-impl Where {
+impl WhereBackend {
     fn process_shapes(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
         let y = ctx.get_input(1)?;
@@ -113,8 +112,13 @@ impl Where {
             );
         }
 
+        let ndims = {
+            let output = ctx.get_output(0)?;
+            output.shape().len()
+        };
+
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let info_buffer = scratch_alloc.allocate(3 * x.shape().len())?;
+        let info_buffer = scratch_alloc.allocate(4 * ndims)?;
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data::<D>();
@@ -204,6 +208,7 @@ impl Where {
             &condition_dev_data,
             &condition.shape(),
             condition_stride,
+            &output.shape(),
             &mut output_dev_data,
             info_buffer,
         )?;
@@ -239,9 +244,75 @@ pub trait WhereKernel {
         condition_dev_data: &CudaSlice<T>,
         condition_shape: &[usize],
         condition_stride: &[usize],
+        output_shape: &[usize],
         output_dev_data: &mut CudaSlice<T>,
         info_buffer: &mut [usize],
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
+}
+
+pub struct ActiveKernel(());
+
+impl WhereKernel for ActiveKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        func: CudaFunction,
+        x_dev_data: &CudaSlice<T>,
+        _x_shape: &[usize],
+        x_stride: &[usize],
+        y_dev_data: &CudaSlice<T>,
+        _y_shape: &[usize],
+        y_stride: &[usize],
+        condition_dev_data: &CudaSlice<T>,
+        _condition_shape: &[usize],
+        condition_stride: &[usize],
+        output_shape: &[usize],
+        output_dev_data: &mut CudaSlice<T>,
+        info_buffer: &mut [usize],
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
+        rmlk_cuda::kernels::whereop::compute(
+            device,
+            func,
+            x_dev_data,
+            x_stride,
+            y_dev_data,
+            y_stride,
+            condition_dev_data,
+            condition_stride,
+            output_shape,
+            output_dev_data,
+            info_buffer,
+        )
+        .map_err(Into::into)
+    }
+}
+
+pub struct NoOpKernel(());
+
+impl WhereKernel for NoOpKernel {
+    fn execute<T>(
+        _device: Arc<CudaDevice>,
+        _func: CudaFunction,
+        _x_dev_data: &CudaSlice<T>,
+        _x_shape: &[usize],
+        _x_stride: &[usize],
+        _y_dev_data: &CudaSlice<T>,
+        _y_shape: &[usize],
+        _y_stride: &[usize],
+        _condition_dev_data: &CudaSlice<T>,
+        _condition_shape: &[usize],
+        _condition_stride: &[usize],
+        _output_shape: &[usize],
+        _output_dev_data: &mut CudaSlice<T>,
+        _info_buffer: &mut [usize],
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    {
+        Ok(())
+    }
 }
