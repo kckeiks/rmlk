@@ -11,14 +11,19 @@ pub const PTX_SRC: &str = WHERE;
 
 /// Launches a CUDA kernel that performs an element-wise conditional selection (`where` operation).
 ///
-/// This function executes a CUDA kernel that applies:
+/// This function applies the following operation:
 /// ```text
 /// output[i] = if z[i] != 0 { x[i] } else { y[i] }
 /// ```
-/// The kernel performs efficient element-wise evaluation and supports broadcasting.
+/// Supports **multidirectional (NumPy-style) broadcasting** for inputs of different shapes.
 ///
-/// This function is **unsafe** because it assumes all input slices and buffers are valid
-/// and correctly sized.
+/// # Safety
+/// - The `info_buffer` **must contain exactly `4 * ndims` elements**, structured as:
+///   - First `ndims` entries: **Output shape**.
+///   - Next `ndims` entries: **Strides for `x`**.
+///   - Next `ndims` entries: **Strides for `y`**.
+///   - Last `ndims` entries: **Strides for `z`**.
+/// - Input tensors (`x_data`, `y_data`, `z_data`) **must be allocated on the CUDA device** and match their corresponding shapes and strides.
 pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,

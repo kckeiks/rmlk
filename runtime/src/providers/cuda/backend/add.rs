@@ -1,3 +1,4 @@
+use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -85,9 +86,6 @@ impl AdditionBackend {
             debug!("[c][add][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
         }
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let info_buffer = scratch_alloc.allocate(3 * a.shape().len())?;
-
         let a_dev_data_ref = a.try_dev_data_ptr()?;
         let a_dev_data = a_dev_data_ref.data::<D>();
 
@@ -120,7 +118,10 @@ impl AdditionBackend {
         }
 
         let stride_buf_len = cmp::max(a.shape().len(), b.shape().len());
-        let strides = scratch_alloc.allocate_fill::<usize>(2 * stride_buf_len, 0)?;
+        let strides = ctx
+            .execution_state()
+            .scratch_alloc()
+            .allocate_fill::<usize>(2 * stride_buf_len, 0)?;
         utils::compute_broadcast_stride(a.shape(), b.shape(), a.stride(), b.stride(), strides);
         let (a_stride, b_stride) = strides.split_at(stride_buf_len);
 
@@ -136,17 +137,20 @@ impl AdditionBackend {
             .expect("we already checked that it initialized")
             .data_mut();
 
+        let scratch_alloc = &ctx.execution_state().scratch_alloc();
+
         T::execute::<D>(
             self.device,
             self.f,
+            scratch_alloc,
             &a_dev_data,
             &a.shape(),
             a_stride,
             &b_dev_data,
             &b.shape(),
             b_stride,
+            c.shape(),
             &mut c_dev_data,
-            info_buffer,
         )?;
 
         Ok(())
@@ -169,14 +173,15 @@ pub trait AdditionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
+        alloc: &ScratchAllocator,
         a_dev_data: &CudaSlice<T>,
         a_shape: &[usize],
         a_stride: &[usize],
         b_dev_data: &CudaSlice<T>,
         b_shape: &[usize],
         b_stride: &[usize],
+        c_shape: &[usize],
         c_dev_data: &mut CudaSlice<T>,
-        info_buffer: &mut [usize],
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
@@ -188,31 +193,38 @@ impl AdditionKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
+        alloc: &ScratchAllocator,
         a_dev_data: &CudaSlice<T>,
-        a_shape: &[usize],
+        _a_shape: &[usize],
         a_stride: &[usize],
         b_dev_data: &CudaSlice<T>,
-        b_shape: &[usize],
+        _b_shape: &[usize],
         b_stride: &[usize],
-        y_dev_data: &mut CudaSlice<T>,
-        info_buffer: &mut [usize],
+        c_shape: &[usize],
+        c_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        rmlk_cuda::kernels::add::compute(
-            device,
-            func,
-            a_dev_data,
-            a_shape,
-            a_stride,
-            b_dev_data,
-            b_shape,
-            b_stride,
-            y_dev_data,
-            info_buffer,
-        )
-        .map_err(Into::into)
+        let ndims = c_shape.len();
+
+        let info_buffer = alloc.allocate(3 * ndims)?;
+        info_buffer[..ndims].copy_from_slice(c_shape);
+        info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
+        info_buffer[2 * ndims..3 * ndims].copy_from_slice(b_stride);
+
+        unsafe {
+            rmlk_cuda::kernels::add::compute(
+                device,
+                func,
+                ndims,
+                info_buffer,
+                a_dev_data,
+                b_dev_data,
+                c_dev_data,
+            )
+            .map_err(Into::into)
+        }
     }
 }
 
@@ -222,14 +234,15 @@ impl AdditionKernel for NoOpKernel {
     fn execute<T>(
         _: Arc<CudaDevice>,
         _: CudaFunction,
+        _: &ScratchAllocator,
         _: &CudaSlice<T>,
         _: &[usize],
         _: &[usize],
         _: &CudaSlice<T>,
+        _: &[usize],
         _: &[usize],
         _: &[usize],
         _: &mut CudaSlice<T>,
-        _: &mut [usize],
     ) -> Result<()> {
         Ok(())
     }

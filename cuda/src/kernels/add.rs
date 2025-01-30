@@ -10,34 +10,37 @@ pub const MODULE_NAME: &str = "binary_add";
 pub const FWD_FN_NAMES: [&'static str; 3] = ["badd_fwd_f16", "badd_fwd_f32", "badd_fwd_f64"];
 pub const PTX_SRC: &str = BINARY_ADD;
 
-pub fn compute<T>(
+/// Launches a CUDA kernel that performs an element-wise addition with broadcasting support.
+///
+/// Supports **multidirectional (NumPy-style) broadcasting** for inputs of different shapes.
+///
+/// # Safety
+/// - The `info_buffer` **must contain exactly `3 * ndims` elements**, structured as:
+///   - First `ndims` entries: **Shape for `c`**.
+///   - Next `ndims` entries: **Strides for `a`**.
+///   - Last `ndims` entries: **Strides for `b`**.
+/// - Input tensors (`a_data`, `b_data`) **must be allocated on the CUDA device** and match their corresponding shapes and strides.
+///
+/// # Panics
+/// - Panics if `info_buffer.len() != 3 * ndims`.
+pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,
-    lhs_data: &CudaSlice<T>,
-    lhs_shape: &[usize],
-    lhs_stride: &[usize],
-    rhs_data: &CudaSlice<T>,
-    _rhs_shape: &[usize],
-    rhs_stride: &[usize],
-    out_data: &mut CudaSlice<T>,
-    info_buffer: &mut [usize],
+    ndims: usize,
+    info_buffer: &[usize],
+    a_data: &CudaSlice<T>,
+    b_data: &CudaSlice<T>,
+    c_data: &mut CudaSlice<T>,
 ) -> Result<()>
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    // Todo: Validate that the tensors are valid for the operation.
-    // Todo: should we directly initialize this in the device?
-    // Todo: pass in vector.
-    let shape_rank = lhs_shape.len();
-
-    info_buffer[..shape_rank].copy_from_slice(lhs_shape);
-    info_buffer[shape_rank..2 * shape_rank].copy_from_slice(lhs_stride);
-    info_buffer[2 * shape_rank..3 * shape_rank].copy_from_slice(rhs_stride);
+    assert_eq!(3 * ndims, info_buffer.len());
 
     // Unfortunately, the asynchronous API only accepts owned vectors.
     let info = device.htod_copy(info_buffer.to_vec())?;
 
-    let elem_count: usize = lhs_shape.iter().product();
+    let elem_count: usize = info_buffer[..ndims].iter().product();
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
 
@@ -47,14 +50,7 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (
-        elem_count,
-        lhs_shape.len(),
-        &info,
-        lhs_data,
-        rhs_data,
-        out_data,
-    );
+    let params = (elem_count, ndims, &info, a_data, b_data, c_data);
 
     unsafe { func.launch(config, params)? };
 

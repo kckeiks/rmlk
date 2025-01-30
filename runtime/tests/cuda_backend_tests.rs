@@ -6,5 +6,6 @@ mod cuda {
     mod add_with_constants;
 
     mod add_broadcast;
+    mod add_broadcast_2;
     mod where_two_inputs;
 }

@@ -1,3 +1,4 @@
+use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
@@ -112,14 +113,6 @@ impl WhereBackend {
             );
         }
 
-        let ndims = {
-            let output = ctx.get_output(0)?;
-            output.shape().len()
-        };
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let info_buffer = scratch_alloc.allocate(4 * ndims)?;
-
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data::<D>();
 
@@ -155,6 +148,7 @@ impl WhereBackend {
         }
 
         let output = ctx.get_output(0)?;
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
         let x_stride = scratch_alloc.allocate_fill::<usize>(output.shape().len(), 0)?;
         utils::compute_broadcast_stride_from_output_shape(
@@ -199,6 +193,7 @@ impl WhereBackend {
         T::execute::<D>(
             self.device,
             self.f,
+            &scratch_alloc,
             &x_dev_data,
             &x.shape(),
             x_stride,
@@ -210,7 +205,6 @@ impl WhereBackend {
             condition_stride,
             &output.shape(),
             &mut output_dev_data,
-            info_buffer,
         )?;
 
         Ok(())
@@ -235,6 +229,7 @@ pub trait WhereKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
+        alloc: &ScratchAllocator,
         x_dev_data: &CudaSlice<T>,
         x_shape: &[usize],
         x_stride: &[usize],
@@ -246,7 +241,6 @@ pub trait WhereKernel {
         condition_stride: &[usize],
         output_shape: &[usize],
         output_dev_data: &mut CudaSlice<T>,
-        info_buffer: &mut [usize],
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
@@ -258,6 +252,7 @@ impl WhereKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
+        alloc: &ScratchAllocator,
         x_dev_data: &CudaSlice<T>,
         _x_shape: &[usize],
         x_stride: &[usize],
@@ -269,20 +264,13 @@ impl WhereKernel for ActiveKernel {
         condition_stride: &[usize],
         output_shape: &[usize],
         output_dev_data: &mut CudaSlice<T>,
-        info_buffer: &mut [usize],
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         let ndims = output_shape.len();
 
-        if info_buffer.len() != 4 * ndims {
-            return Err(InternalError::BufferSizeMismatch {
-                expected: 4 * ndims,
-                actual: info_buffer.len(),
-            });
-        }
-
+        let info_buffer = alloc.allocate(4 * ndims)?;
         info_buffer[..ndims].copy_from_slice(output_shape);
         info_buffer[ndims..2 * ndims].copy_from_slice(x_stride);
         info_buffer[2 * ndims..3 * ndims].copy_from_slice(y_stride);
@@ -310,6 +298,7 @@ impl WhereKernel for NoOpKernel {
     fn execute<T>(
         _device: Arc<CudaDevice>,
         _func: CudaFunction,
+        _: &ScratchAllocator,
         _x_dev_data: &CudaSlice<T>,
         _x_shape: &[usize],
         _x_stride: &[usize],
@@ -321,7 +310,6 @@ impl WhereKernel for NoOpKernel {
         _condition_stride: &[usize],
         _output_shape: &[usize],
         _output_dev_data: &mut CudaSlice<T>,
-        _info_buffer: &mut [usize],
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
