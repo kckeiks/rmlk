@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::kernels::{add, mul, whereop};
+use crate::kernels::{add, mul, sqrt, whereop};
 use cudarc::driver::{CudaDevice, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
@@ -33,6 +33,12 @@ pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<
             mul::FWD_FN_NAMES.as_slice(),
             mul::MODULE_NAME,
             mul::PTX_SRC,
+        ),
+        Op::Sqrt => (
+            sqrt::FWD_FN_NAMES[dtype as usize],
+            sqrt::FWD_FN_NAMES.as_slice(),
+            sqrt::MODULE_NAME,
+            sqrt::PTX_SRC,
         ),
         Op::Where => (
             whereop::FWD_FN_NAMES[dtype as usize],

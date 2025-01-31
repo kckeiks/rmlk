@@ -82,7 +82,7 @@ mod test {
     }
 
     #[test]
-    fn test_add_f32() {
+    fn test_f32() {
         let device = CudaDevice::new(0).unwrap();
 
         let x_shape = vec![2, 2];
