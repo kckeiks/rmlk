@@ -1,5 +1,6 @@
 pub mod activation;
 pub mod add;
+mod binary;
 pub mod conv;
 pub mod gemm;
 pub mod global_average_pool;

@@ -1,0 +1,147 @@
+use crate::core::error::InternalError;
+use crate::core::Context;
+use crate::providers::cuda::add::AdditionKernel;
+use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
+use crate::utils;
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
+use num_traits::Num;
+use rmlk_schema::{DataTypeMap, Op};
+use std::cmp;
+use std::sync::Arc;
+
+pub unsafe fn compute<D, T>(
+    op: &'static str,
+    device: Arc<CudaDevice>,
+    f: CudaFunction,
+    ctx: &mut Context<Cuda>,
+) -> crate::core::error::Result<()>
+where
+    D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    T: AdditionKernel,
+{
+    // The output should have the same dimensions.
+    // We do it now to avoid lifetime errors.
+    process_shapes(ctx)?;
+
+    let a = ctx.get_input(0)?;
+    let b = ctx.get_input(1)?;
+
+    {
+        let c = ctx.get_output(0)?;
+        debug!("[a][{op}][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+        debug!("[b][{op}][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+        debug!("[c][{op}][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
+    }
+
+    let a_dev_data_ref = a.try_dev_data_ptr()?;
+    let a_dev_data = a_dev_data_ref.data::<D>();
+
+    let b_dev_data_ref = b.try_dev_data_ptr()?;
+    let b_dev_data = b_dev_data_ref.data::<D>();
+
+    let elem_count: usize = a.shape().iter().product();
+
+    // Allocate device data for the tensor if we haven't done it yet
+    // or if the existing allocated data has a different size.
+    {
+        let mut c = ctx.get_output(0)?;
+        let c_dev_data_ref = c.dev_data_ptr_mut();
+        let need_to_alloc_dev_data = c_dev_data_ref.is_none()
+            || c_dev_data_ref
+                .as_ref()
+                .map(|data| data.data::<D>().len() != elem_count)
+                .unwrap_or(true);
+
+        // We need to remove this immutable reference so we can mutate `y`.
+        drop(c_dev_data_ref);
+
+        if need_to_alloc_dev_data {
+            let c_dev_data = device
+                .alloc_zeros::<f32>(c.shape().iter().copied().product::<usize>())
+                .map_err(rmlk_cuda::Error::from)?;
+            c.set_dev_data(CudaData::new(c_dev_data));
+        };
+    }
+
+    let stride_buf_len = cmp::max(a.shape().len(), b.shape().len());
+    let strides = ctx
+        .execution_state()
+        .scratch_alloc()
+        .allocate_fill::<usize>(2 * stride_buf_len, 0)?;
+    utils::compute_broadcast_stride(a.shape(), b.shape(), a.stride(), b.stride(), strides);
+    let (a_stride, b_stride) = strides.split_at(stride_buf_len);
+
+    debug!("[a][{op}][broadcast][stride={:?}]", a_stride);
+    debug!("[b][{op}][broadcast][stride={:?}]", b_stride);
+
+    // The device data should exist so we will execute the kernel
+    // and update the destination device data with the result.
+    let c = ctx.get_output(0)?;
+    let mut c_dev_data_ref = c.dev_data_ptr_mut();
+    let mut c_dev_data = c_dev_data_ref
+        .as_mut()
+        .expect("we already checked that it initialized")
+        .data_mut();
+
+    let scratch_alloc = &ctx.execution_state().scratch_alloc();
+
+    T::execute::<D>(
+        device,
+        f,
+        scratch_alloc,
+        &a_dev_data,
+        &a.shape(),
+        a_stride,
+        &b_dev_data,
+        &b.shape(),
+        b_stride,
+        c.shape(),
+        &mut c_dev_data,
+    )?;
+
+    Ok(())
+}
+
+fn process_shapes(ctx: &mut Context<Cuda>) -> crate::core::error::Result<()> {
+    let a = ctx.get_input(0)?;
+    let b = ctx.get_input(1)?;
+
+    match a.shape() == b.shape() {
+        true => {
+            let c = ctx.get_output(0)?;
+            let a_index = a.src_id();
+            let c_index = c.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_within(a_index, c_index)?;
+        }
+        false => {
+            let ndims = cmp::max(a.shape().len(), b.shape().len());
+            let alloc = ctx.execution_state().scratch_alloc().clone();
+            let c_shape = alloc.allocate_fill(ndims, 0)?;
+
+            if !utils::compute_broadcast_output_shape(a.shape(), b.shape(), c_shape) {
+                let a_id = a.src_id();
+                let b_id = b.src_id();
+                return Err(InternalError::IncompatibleTensorShape {
+                    shapes: [
+                        (a_id.into(), a.shape().to_vec()),
+                        (b_id.into(), b.shape().to_vec()),
+                    ]
+                    .try_into()
+                    .expect("Small map so should succeed"),
+                    op: Op::Add,
+                });
+            }
+
+            let c = ctx.get_output(0)?;
+            let c_index = c.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_slice(c_shape, c_index)?;
+        }
+    }
+
+    Ok(())
+}
