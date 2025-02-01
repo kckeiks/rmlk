@@ -104,8 +104,10 @@ impl GemmOp {
             alpha,
             beta,
             (self.b, self.m, self.n, self.k),
-            (&self.lhs_shape, &self.lhs_stride),
-            (&self.rhs_shape, &self.rhs_stride),
+            &self.lhs_shape,
+            &self.lhs_stride,
+            &self.rhs_shape,
+            &self.rhs_stride,
         )
     }
 
@@ -156,44 +158,34 @@ impl GemmOp {
     }
 }
 
-pub fn gemm_config<T>(
+fn gemm_config<T>(
     alpha: T,
     beta: T,
     (b, m, n, k): (usize, usize, usize, usize),
-    // Todo: Make Layout object.
-    // (shape, stride)
-    lhs_layout: (&[usize], &[usize]),
-    rhs_layout: (&[usize], &[usize]),
+    a_shape: &[usize],
+    a_stride: &[usize],
+    b_shape: &[usize],
+    b_stride: &[usize],
 ) -> Result<StridedBatchedConfig<T>> {
-    let rhs_stride = rhs_layout.1;
-    let (transa, lda) = match rhs_stride {
-        [.., k_stride, 1] | [k_stride, 1] if *k_stride == k => {
-            (sys::cublasOperation_t::CUBLAS_OP_N, n)
+    let (transa, lda) = match infer_matrix_layout(b_shape, b_stride)? {
+        MatrixLayout::RowMajor { cols, .. } => {
+            debug_assert_eq!(cols, n);
+            (sys::cublasOperation_t::CUBLAS_OP_N, cols)
         }
-        [.., 1, k_stride] | [1, k_stride] if *k_stride == k => {
-            (sys::cublasOperation_t::CUBLAS_OP_T, k)
-        }
-        // Todo: return an non-contiguous error.
-        _ => {
-            return Err(Error::InvalidArguments(format!(
-                "invalid rhs stride {rhs_stride:?}"
-            )))
+        MatrixLayout::ColumnMajor { rows, .. } => {
+            debug_assert_eq!(rows, k);
+            (sys::cublasOperation_t::CUBLAS_OP_T, rows)
         }
     };
 
-    let lhs_stride = lhs_layout.1;
-    let (transb, ldb) = match lhs_stride {
-        [.., m_stride, 1] | [m_stride, 1] if *m_stride == k => {
-            (sys::cublasOperation_t::CUBLAS_OP_N, k)
+    let (transb, ldb) = match infer_matrix_layout(a_shape, a_stride)? {
+        MatrixLayout::RowMajor { cols, .. } => {
+            debug_assert_eq!(cols, k);
+            (sys::cublasOperation_t::CUBLAS_OP_N, cols)
         }
-        [.., 1, m_stride] | [1, m_stride] if *m_stride == k => {
-            (sys::cublasOperation_t::CUBLAS_OP_T, m)
-        }
-        // Todo: return an non-contiguous error.
-        _ => {
-            return Err(Error::InvalidArguments(format!(
-                "invalid lhs stride {lhs_stride:?}"
-            )))
+        MatrixLayout::ColumnMajor { rows, .. } => {
+            debug_assert_eq!(rows, m);
+            (sys::cublasOperation_t::CUBLAS_OP_T, rows)
         }
     };
 
@@ -333,47 +325,67 @@ pub unsafe fn _gemm_stride_batched_f16(
     .map_err(Into::into)
 }
 
-// #[cfg(test)]
-// mod test {
-//     use crate::kernels::gemm::GemmOp;
-//     use crate::utils;
-//     use cudarc::driver::CudaDevice;
-//
-//     #[test]
-//     fn test_gemm_f32() {
-//         let device = CudaDevice::new(0).unwrap();
-//
-//         let lhs_shape = vec![1, 2, 2];
-//         let mut lhs_stride = vec![0; lhs_shape.len()];
-//         utils::calculate_stride(&lhs_shape, &mut lhs_stride);
-//         let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-//
-//         let rhs_shape = vec![1, 2, 2];
-//         let mut rhs_stride = vec![0; rhs_shape.len()];
-//         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
-//         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-//
-//         let op = GemmOp::new(
-//             &lhs_shape,
-//             &lhs_stride,
-//             &rhs_shape,
-//             &rhs_stride,
-//             false,
-//             false,
-//         );
-//         let config = op.strided_batch_config((1.0, 0.0)).unwrap();
-//
-//         let output_size = op.calculate_output_shape().iter().product();
-//         let mut out = device.alloc_zeros(output_size).unwrap();
-//
-//         op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
-//             .unwrap();
-//
-//         let result = device.dtoh_sync_copy(&out).unwrap();
-//
-//         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
-//     }
-// }
+pub enum MatrixLayout {
+    RowMajor { cols: usize, rows: usize },
+    ColumnMajor { cols: usize, rows: usize },
+}
+
+fn infer_matrix_layout(shape: &[usize], stride: &[usize]) -> Result<MatrixLayout> {
+    assert_eq!(shape.len(), stride.len());
+    assert_eq!(shape.len(), 2);
+
+    let (rows, cols) = (shape[0], shape[1]);
+
+    match stride {
+        [stride_row, 1] if *stride_row == cols => Ok(MatrixLayout::RowMajor { rows, cols }),
+        [1, stride_col] if *stride_col == rows => Ok(MatrixLayout::ColumnMajor { rows, cols }),
+        _ => Err(Error::NonContiguousMemory(format!(
+            "invalid stride {stride:?}"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::kernels::gemm::GemmOp;
+    use crate::utils;
+    use cudarc::driver::CudaDevice;
+
+    #[test]
+    fn test_gemm_f32() {
+        let device = CudaDevice::new(0).unwrap();
+
+        let lhs_shape = vec![1, 2, 2];
+        let mut lhs_stride = vec![0; lhs_shape.len()];
+        utils::calculate_stride(&lhs_shape, &mut lhs_stride);
+        let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+
+        let rhs_shape = vec![1, 2, 2];
+        let mut rhs_stride = vec![0; rhs_shape.len()];
+        utils::calculate_stride(&rhs_shape, &mut rhs_stride);
+        let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+
+        let op = GemmOp::new(
+            &lhs_shape,
+            &lhs_stride,
+            &rhs_shape,
+            &rhs_stride,
+            false,
+            false,
+        );
+        let config = op.strided_batch_config((1.0, 0.0)).unwrap();
+
+        let output_size = op.calculate_output_shape().iter().product();
+        let mut out = device.alloc_zeros(output_size).unwrap();
+
+        op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
+            .unwrap();
+
+        let result = device.dtoh_sync_copy(&out).unwrap();
+
+        assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
+    }
+}
 
 /*
 

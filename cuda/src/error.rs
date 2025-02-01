@@ -4,6 +4,7 @@ use cudarc::driver::DriverError;
 
 #[derive(Debug)]
 pub enum Error {
+    NonContiguousMemory(String),
     InvalidArguments(String),
     Internal(String),
     Cuda(u32),
