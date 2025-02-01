@@ -87,7 +87,7 @@ impl AdditionKernel for ActiveKernel {
         info_buffer[2 * ndims..].copy_from_slice(b_stride);
 
         unsafe {
-            rmlk_cuda::kernels::add::compute(
+            rmlk_cuda::kernels::binary::compute(
                 device,
                 func,
                 ndims,

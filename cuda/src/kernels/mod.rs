@@ -1,6 +1,6 @@
 pub mod activation;
 pub mod add;
-mod binary;
+pub mod binary;
 pub mod conv;
 pub mod div;
 pub mod gemm;
