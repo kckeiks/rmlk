@@ -340,7 +340,7 @@ fn infer_matrix_layout(shape: &[usize], stride: &[usize]) -> Result<MatrixLayout
         [stride_row, 1] if *stride_row == cols => Ok(MatrixLayout::RowMajor { rows, cols }),
         [1, stride_col] if *stride_col == rows => Ok(MatrixLayout::ColumnMajor { rows, cols }),
         _ => Err(Error::NonContiguousMemory(format!(
-            "invalid stride {stride:?}"
+            "Strides {stride:?} do not match row-major or column-major for shape {shape:?}"
         ))),
     }
 }
