@@ -1,4 +1,5 @@
-pub const BINARY_ADD: &str = include_str!(concat!(env!("OUT_DIR"), "/binary_add.ptx"));
-pub const BINARY_MUL: &str = include_str!(concat!(env!("OUT_DIR"), "/binary_mul.ptx"));
-pub const WHERE: &str = include_str!(concat!(env!("OUT_DIR"), "/where.ptx"));
+pub const ADD: &str = include_str!(concat!(env!("OUT_DIR"), "/add.ptx"));
+pub const MUL: &str = include_str!(concat!(env!("OUT_DIR"), "/mul.ptx"));
+pub const DIV: &str = include_str!(concat!(env!("OUT_DIR"), "/div.ptx"));
 pub const SQRT: &str = include_str!(concat!(env!("OUT_DIR"), "/sqrt.ptx"));
+pub const WHERE: &str = include_str!(concat!(env!("OUT_DIR"), "/where.ptx"));

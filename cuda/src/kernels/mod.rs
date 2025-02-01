@@ -7,3 +7,5 @@ pub mod max_pool;
 pub mod mul;
 pub mod sqrt;
 pub mod whereop;
+mod div;
+mod binary;

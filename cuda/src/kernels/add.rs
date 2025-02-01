@@ -1,71 +1,12 @@
-use crate::error::Result;
-use crate::ptx::BINARY_ADD;
-use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
-    ValidAsZeroBits,
-};
-use std::sync::Arc;
+use crate::ptx::ADD;
 
-pub const MODULE_NAME: &str = "binary_add";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["badd_fwd_f16", "badd_fwd_f32", "badd_fwd_f64"];
-pub const PTX_SRC: &str = BINARY_ADD;
-
-/// Launches a CUDA kernel that performs an element-wise addition with broadcasting support.
-///
-/// Supports **multidirectional (NumPy-style) broadcasting** for inputs of different shapes.
-///
-/// # Safety
-/// - The `info_buffer` **must contain exactly `3 * ndims` elements**, structured as:
-///   - First `ndims` entries: **Shape for `c`**.
-///   - Next `ndims` entries: **Strides for `a`**.
-///   - Last `ndims` entries: **Strides for `b`**.
-/// - Input tensors (`a_data`, `b_data`) **must be allocated on the CUDA device** and match their corresponding shapes and strides.
-///
-/// # Panics
-/// # Panics
-/// - Panics if info buffer does not equal to 3 * `ndims`.
-/// - Panics if output slice does not have the expected size based on the output shape.
-pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
-    func: CudaFunction,
-    ndims: usize,
-    info_buffer: &[usize],
-    a_data: &CudaSlice<T>,
-    b_data: &CudaSlice<T>,
-    c_data: &mut CudaSlice<T>,
-) -> Result<()>
-where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-{
-    assert_eq!(3 * ndims, info_buffer.len());
-
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
-
-    let elem_count: usize = info_buffer[..ndims].iter().product();
-
-    assert_eq!(elem_count, c_data.len());
-
-    let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
-
-    let config = LaunchConfig {
-        grid_dim: (num_blocks as u32, 1, 1),
-        block_dim: (num_threads as u32, 1, 1),
-        shared_mem_bytes: 0,
-    };
-
-    let params = (elem_count, ndims, &info, a_data, b_data, c_data);
-
-    unsafe { func.launch(config, params)? };
-
-    Ok(())
-}
+pub const MODULE_NAME: &str = "add";
+pub const FWD_FN_NAMES: [&'static str; 3] = ["add_fwd_f16", "add_fwd_f32", "add_fwd_f64"];
+pub const PTX_SRC: &str = ADD;
 
 #[cfg(test)]
 mod test {
-    use crate::kernels::add::compute;
+    use crate::kernels::binary::compute;
     use crate::utils;
     use cudarc::driver::CudaDevice;
     use rmlk_schema::{DataType, Op};
