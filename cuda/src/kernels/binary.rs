@@ -61,3 +61,15 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+pub fn create_info_buffer(c_shape: &[usize], a_stride: &[usize], b_stride: &[usize]) -> Vec<usize> {
+    let ndims = c_shape.len();
+    let mut info_buffer = vec![0usize; 3 * ndims];
+
+    info_buffer[..ndims].copy_from_slice(c_shape);
+    info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
+    info_buffer[2 * ndims..].copy_from_slice(b_stride);
+
+    info_buffer
+}

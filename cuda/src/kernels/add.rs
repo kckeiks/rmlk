@@ -6,21 +6,11 @@ pub const PTX_SRC: &str = ADD;
 
 #[cfg(test)]
 mod test {
-    use crate::kernels::binary::compute;
+    use crate::kernels::binary::{compute, create_info_buffer};
     use crate::utils;
     use cudarc::driver::CudaDevice;
     use rmlk_schema::{DataType, Op};
 
-    fn create_info_buffer(c_shape: &[usize], a_stride: &[usize], b_stride: &[usize]) -> Vec<usize> {
-        let ndims = c_shape.len();
-        let mut info_buffer = vec![0usize; 3 * ndims];
-
-        info_buffer[..ndims].copy_from_slice(c_shape);
-        info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
-        info_buffer[2 * ndims..].copy_from_slice(b_stride);
-
-        info_buffer
-    }
 
     #[test]
     fn test_f32() {
