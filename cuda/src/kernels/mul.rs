@@ -44,7 +44,7 @@ mod test {
                 &y_data,
                 &mut out_data,
             )
-                .unwrap();
+            .unwrap();
             let result = device.dtoh_sync_copy(&out_data).unwrap();
 
             assert_eq!(result, vec![6.0, 40.0, 8.0, 6.0])

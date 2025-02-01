@@ -11,7 +11,6 @@ mod test {
     use cudarc::driver::CudaDevice;
     use rmlk_schema::{DataType, Op};
 
-
     #[test]
     fn test_f32() {
         let device = CudaDevice::new(0).unwrap();

@@ -1,11 +1,12 @@
 pub mod activation;
 pub mod add;
+mod binary;
 pub mod conv;
+pub mod div;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
 pub mod sqrt;
+mod unary;
 pub mod whereop;
-pub mod div;
-mod binary;
