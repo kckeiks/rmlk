@@ -3,159 +3,135 @@ use crate::error::Result;
 use crate::params::CudaParamMap;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
 use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
-use half::f16;
 use log::trace;
 use std::sync::Arc;
 
-pub struct GemmOp {
-    lhs_shape: [usize; 2],
-    lhs_stride: [usize; 2],
-    rhs_shape: [usize; 2],
-    rhs_stride: [usize; 2],
-    b: usize,
-    m: usize,
-    n: usize,
-    k: usize,
+pub struct GemmParams {
+    pub matrix_a_shape: [usize; 2],
+    pub matrix_a_stride: [usize; 2],
+    pub matrix_b_shape: [usize; 2],
+    pub matrix_b_stride: [usize; 2],
+    pub matrix_output_shape: [usize; 2],
+    pub b: usize,
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
 }
 
-impl GemmOp {
-    pub fn new(
-        lhs_shape: &[usize],
-        lhs_stride: &[usize],
-        rhs_shape: &[usize],
-        rhs_stride: &[usize],
-        trans_a: bool,
-        trans_b: bool,
-    ) -> Self {
-        let b = lhs_shape[..lhs_shape.len() - 2].iter().product::<usize>();
-        let (m, k) = match trans_a {
-            true => {
-                let m = lhs_shape[lhs_shape.len() - 1];
-                let k = lhs_shape[lhs_shape.len() - 2];
-                (m, k)
-            }
-            false => {
-                let m = lhs_shape[lhs_shape.len() - 2];
-                let k = lhs_shape[lhs_shape.len() - 1];
-                (m, k)
-            }
-        };
+pub fn gemm_params(
+    a_shape: &[usize],
+    a_stride: &[usize],
+    b_shape: &[usize],
+    b_stride: &[usize],
+    trans_a: bool,
+    trans_b: bool,
+    b: usize,
+) -> Result<GemmParams> {
+    let (m, k) = match trans_a {
+        true => {
+            let m = a_shape[a_shape.len() - 1];
+            let k = a_shape[a_shape.len() - 2];
+            (m, k)
+        }
+        false => {
+            let m = a_shape[a_shape.len() - 2];
+            let k = a_shape[a_shape.len() - 1];
+            (m, k)
+        }
+    };
 
-        let n = match trans_b {
-            false => rhs_shape[rhs_shape.len() - 1],
-            true => rhs_shape[rhs_shape.len() - 2],
-        };
+    let n = match trans_b {
+        false => b_shape[b_shape.len() - 1],
+        true => b_shape[b_shape.len() - 2],
+    };
 
-        let lhs_dims = lhs_shape.len();
-        let (lhs_shape, lhs_stride) = match trans_a {
-            true => (
-                [lhs_shape[lhs_dims - 1], lhs_shape[lhs_dims - 2]],
-                [lhs_stride[lhs_dims - 1], lhs_stride[lhs_dims - 2]],
-            ),
-            false => (
-                [lhs_shape[lhs_dims - 2], lhs_shape[lhs_dims - 1]],
-                [lhs_stride[lhs_dims - 2], lhs_stride[lhs_dims - 1]],
-            ),
-        };
+    let a_dims = a_shape.len();
+    let (matrix_a_shape, matrix_a_stride) = match trans_a {
+        true => (
+            // We perform a logical transpose.
+            [a_shape[a_dims - 1], a_shape[a_dims - 2]],
+            [a_stride[a_dims - 1], a_stride[a_dims - 2]],
+        ),
+        false => (
+            [a_shape[a_dims - 2], a_shape[a_dims - 1]],
+            [a_stride[a_dims - 2], a_stride[a_dims - 1]],
+        ),
+    };
 
-        let rhs_dims = rhs_shape.len();
-        let (rhs_shape, rhs_stride) = match trans_b {
-            true => (
-                [rhs_shape[rhs_dims - 1], rhs_shape[rhs_dims - 2]],
-                [rhs_stride[rhs_dims - 1], rhs_stride[rhs_dims - 2]],
-            ),
-            false => (
-                [rhs_shape[rhs_dims - 2], rhs_shape[rhs_dims - 1]],
-                [rhs_stride[rhs_dims - 2], rhs_stride[rhs_dims - 1]],
-            ),
-        };
+    let b_dims = b_shape.len();
+    let (matrix_b_shape, matrix_b_stride) = match trans_b {
+        true => (
+            // We perform a logical transpose.
+            [b_shape[b_dims - 1], b_shape[b_dims - 2]],
+            [b_stride[b_dims - 1], b_stride[b_dims - 2]],
+        ),
+        false => (
+            [b_shape[b_dims - 2], b_shape[b_dims - 1]],
+            [b_stride[b_dims - 2], b_stride[b_dims - 1]],
+        ),
+    };
 
-        trace!(
-            "lhs_shape={lhs_shape:?},\
-             lhs_stride={lhs_stride:?},\
-             rhs_shape={rhs_shape:?},\
-             rhs_stride={rhs_stride:?}\
+    trace!(
+        "matrix_a_shape={matrix_a_shape:?},\
+             matrix_a_stride={matrix_a_stride:?},\
+             matrix_b_shape={matrix_b_shape:?},\
+             matrix_b_stride={matrix_b_stride:?}\
              m={m:?},\
              k={k:?},\
              n={n:?}",
-        );
+    );
 
-        Self {
-            lhs_shape,
-            lhs_stride,
-            rhs_shape,
-            rhs_stride,
-            b,
-            m,
-            n,
-            k,
-        }
-    }
+    Ok(GemmParams {
+        matrix_a_shape,
+        matrix_a_stride,
+        matrix_b_shape,
+        matrix_b_stride,
+        matrix_output_shape: [m, n],
+        b,
+        m,
+        n,
+        k,
+    })
+}
 
-    pub fn calculate_output_shape(&self) -> [usize; 3] {
-        [self.b, self.m, self.n]
-    }
+pub fn strided_batch_config<T>(
+    (alpha, beta): (T, T),
+    gemm_params: &GemmParams,
+) -> Result<StridedBatchedConfig<T>> {
+    gemm_config::<T>(
+        alpha,
+        beta,
+        (gemm_params.b, gemm_params.m, gemm_params.n, gemm_params.k),
+        &gemm_params.matrix_a_shape,
+        &gemm_params.matrix_a_stride,
+        &gemm_params.matrix_b_shape,
+        &gemm_params.matrix_b_stride,
+    )
+}
 
-    pub fn strided_batch_config<T>(
-        &self,
-        (alpha, beta): (T, T),
-    ) -> Result<StridedBatchedConfig<T>> {
-        gemm_config::<T>(
-            alpha,
-            beta,
-            (self.b, self.m, self.n, self.k),
-            &self.lhs_shape,
-            &self.lhs_stride,
-            &self.rhs_shape,
-            &self.rhs_stride,
-        )
-    }
+pub fn compute<T: CudaParamMap>(
+    device: Arc<CudaDevice>,
+    a_data: &CudaSlice<T>,
+    b_data: &CudaSlice<T>,
+    y_data: &mut CudaSlice<T>,
+    config: StridedBatchedConfig<T>,
+) -> Result<()> {
+    let cublas = CudaBlas::new(device)?;
 
-    pub fn compute<T: CudaParamMap>(
-        &self,
-        device: Arc<CudaDevice>,
-        lhs_data: &CudaSlice<T>,
-        rhs_data: &CudaSlice<T>,
-        out: &mut CudaSlice<T>,
-        config: StridedBatchedConfig<T>,
-    ) -> Result<()> {
-        let cublas = CudaBlas::new(device)?;
+    // NOTE: We pass b_data as the `A` pointer for cuBLAS, and a_data as the `B` pointer.
+    // This is because the shape/stride logic in gemm_config is reversed for
+    // handling cuBLAS's column-major assumption.
+    unsafe {
+        gemm_stride_batched::<T>(
+            &cublas,
+            config,
+            &b_data.slice(..),
+            &a_data.slice(..),
+            y_data,
+        )?;
+    };
 
-        unsafe {
-            gemm_stride_batched::<T>(
-                &cublas,
-                config,
-                &rhs_data.slice(..),
-                &lhs_data.slice(..),
-                out,
-            )?;
-        };
-
-        Ok(())
-    }
-
-    pub fn compute_f32(
-        &self,
-        device: Arc<CudaDevice>,
-        lhs_data: &CudaSlice<f32>,
-        rhs_data: &CudaSlice<f32>,
-        out: &mut CudaSlice<f32>,
-        config: StridedBatchedConfig<f32>,
-    ) -> Result<()> {
-        let cublas = CudaBlas::new(device)?;
-
-        unsafe {
-            gemm_stride_batched_f32(
-                &cublas,
-                config,
-                &rhs_data.slice(..),
-                &lhs_data.slice(..),
-                out,
-            )?;
-        };
-
-        Ok(())
-    }
+    Ok(())
 }
 
 fn gemm_config<T>(
@@ -211,12 +187,12 @@ fn gemm_config<T>(
     })
 }
 
-pub unsafe fn gemm_stride_batched<T>(
+pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
     cublas: &CudaBlas,
     config: StridedBatchedConfig<T>,
     a: &CudaView<T>,
     b: &CudaView<T>,
-    c: &mut CudaSlice<T>,
+    y: &mut CudaSlice<T>,
 ) -> Result<()> {
     let alpha = &config.gemm.alpha as *const T as *const _;
     let beta = &config.gemm.beta as *const T as *const _;
@@ -230,21 +206,21 @@ pub unsafe fn gemm_stride_batched<T>(
         config.gemm.k,
         alpha,
         *a.device_ptr() as *const _,
-        sys::cudaDataType_t::CUDA_R_32F,
+        T::data_type(),
         config.gemm.lda,
         config.stride_a,
         *b.device_ptr() as *const _,
-        sys::cudaDataType_t::CUDA_R_32F,
+        T::data_type(),
         config.gemm.ldb,
         config.stride_b,
         beta,
-        *c.device_ptr_mut() as *mut _,
-        sys::cudaDataType_t::CUDA_R_32F,
+        *y.device_ptr_mut() as *mut _,
+        T::data_type(),
         config.gemm.ldc,
         config.stride_c,
         config.batch_size,
-        sys::cublasComputeType_t::CUBLAS_COMPUTE_32F,
-        sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+        T::cublas_compute_type(),
+        T::cublas_gemma_algo(),
     )
     .map_err(Into::into)
 }
@@ -287,44 +263,6 @@ pub unsafe fn gemm_stride_batched_f32(
     .map_err(Into::into)
 }
 
-pub unsafe fn _gemm_stride_batched_f16(
-    cublas: &CudaBlas,
-    config: StridedBatchedConfig<f16>,
-    a: &CudaView<f16>,
-    b: &CudaView<f16>,
-    c: &mut CudaSlice<f16>,
-) -> Result<()> {
-    let alpha = &config.gemm.alpha as *const f16 as *const _;
-    let beta = &config.gemm.beta as *const f16 as *const _;
-
-    cudarc::cublas::result::gemm_strided_batched_ex(
-        *cublas.handle(),
-        config.gemm.transa,
-        config.gemm.transb,
-        config.gemm.m,
-        config.gemm.n,
-        config.gemm.k,
-        alpha,
-        *a.device_ptr() as *const _,
-        sys::cudaDataType_t::CUDA_R_16F,
-        config.gemm.lda,
-        config.stride_a,
-        *b.device_ptr() as *const _,
-        sys::cudaDataType_t::CUDA_R_16F,
-        config.gemm.ldb,
-        config.stride_b,
-        beta,
-        *c.device_ptr_mut() as *mut _,
-        sys::cudaDataType_t::CUDA_R_16F,
-        config.gemm.ldc,
-        config.stride_c,
-        config.batch_size,
-        sys::cublasComputeType_t::CUBLAS_COMPUTE_16F,
-        sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
-    )
-    .map_err(Into::into)
-}
-
 pub enum MatrixLayout {
     RowMajor { cols: usize, rows: usize },
     ColumnMajor { cols: usize, rows: usize },
@@ -347,7 +285,7 @@ fn infer_matrix_layout(shape: &[usize], stride: &[usize]) -> Result<MatrixLayout
 
 #[cfg(test)]
 mod test {
-    use crate::kernels::gemm::GemmOp;
+    use crate::kernels::gemm::{compute, gemm_params, strided_batch_config};
     use crate::utils;
     use cudarc::driver::CudaDevice;
 
@@ -365,21 +303,24 @@ mod test {
         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
         let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let op = GemmOp::new(
+        let output_shape = vec![1, 2, 2];
+
+        let params = gemm_params(
             &lhs_shape,
             &lhs_stride,
             &rhs_shape,
             &rhs_stride,
             false,
             false,
-        );
-        let config = op.strided_batch_config((1.0, 0.0)).unwrap();
+            1,
+        )
+        .unwrap();
+        let config = strided_batch_config((1.0, 0.0), &params).unwrap();
 
-        let output_size = op.calculate_output_shape().iter().product();
+        let output_size = output_shape.iter().product();
         let mut out = device.alloc_zeros(output_size).unwrap();
 
-        op.compute_f32(device.clone(), &lhs_data, &rhs_data, &mut out, config)
-            .unwrap();
+        compute::<f32>(device.clone(), &lhs_data, &rhs_data, &mut out, config).unwrap();
 
         let result = device.dtoh_sync_copy(&out).unwrap();
 

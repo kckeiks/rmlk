@@ -20,6 +20,28 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
     }
 }
 
+pub fn load_add_kernel_alpha_beta_inplace(
+    device: &Arc<CudaDevice>,
+    dtype: DataType,
+) -> Result<CudaFunction> {
+    let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = (
+        add::FWD_FN_NAMES_ALPHA_BETA_INPLACE[dtype as usize],
+        add::FWD_FN_NAMES_ALPHA_BETA_INPLACE.as_slice(),
+        add::MODULE_NAME,
+        add::PTX_SRC,
+    );
+
+    if !device.has_func(module_name, fwd_fn_name) {
+        device
+            .load_ptx(ptx_src.into(), module_name, fwd_fn_all)
+            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
+    }
+
+    Ok(device
+        .get_func(module_name, fwd_fn_name)
+        .expect("To have been loaded"))
+}
+
 pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
     let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
         Op::Add => (

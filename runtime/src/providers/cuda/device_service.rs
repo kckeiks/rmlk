@@ -49,7 +49,10 @@ impl DeviceService for Cuda {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
             }
-            Op::Gemm => CudaKernel::Gemm(GemmBackend::new(self.device.clone())),
+            Op::Gemm => {
+                let f = rmlk_cuda::load_add_kernel_alpha_beta_inplace(&self.device, dtype)?;
+                CudaKernel::Gemm(GemmBackend::new(self.device.clone(), f))
+            }
             Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.device.clone())),
             Op::Conv => CudaKernel::Conv(ConvolutionBackend::new(self.device.clone())),
             Op::GlobalAveragePool => {

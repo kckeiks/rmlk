@@ -18,3 +18,9 @@ BINARY_OP(__half, add_fwd_f16, x + y)
 BINARY_OP(float, add_fwd_f32, x + y)
 
 BINARY_OP(double, add_fwd_f64, x + y)
+
+BINARY_OP_ALPHA_BETA_INPLACE(__half, add_alpha_beta_inplace_fwd_f16, alpha * x + beta * y)
+
+BINARY_OP_ALPHA_BETA_INPLACE(float, add_alpha_beta_inplace_fwd_f32, alpha * x + beta * y)
+
+BINARY_OP_ALPHA_BETA_INPLACE(double, add_alpha_beta_inplace_fwd_f64, alpha * x + beta * y)
