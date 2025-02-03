@@ -37,16 +37,13 @@ impl GemmBackend {
     ) -> Result<GemmParams> {
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
-        let c = ctx.get_input(2)?;
 
         let output_ndims = cmp::max(a.shape().len(), b.shape().len());
-
-        if output_ndims != 2 || c.shape().len() > output_ndims {
+        if output_ndims != 2 {
             return Err(InternalError::IncompatibleTensorShape {
                 shapes: [
                     (a.src_id().into(), a.shape().to_vec()),
                     (b.src_id().into(), b.shape().to_vec()),
-                    (c.src_id().into(), c.shape().to_vec()),
                 ]
                 .try_into()
                 .expect("Small map so should succeed"),
@@ -235,14 +232,18 @@ impl GemmBackend {
             + TryFrom<f32>,
         T: GemmKernel,
     {
-        let attrs = GemmAttributes::new(
-            ctx.get_attributes()
-                .ok_or(InternalError::MissingAttributes)?,
-        )?;
+        let attrs = match ctx.get_attributes() {
+            Some(attrs) => GemmAttributes::new(attrs)?,
+            None => GemmAttributes::default(),
+        };
+
         let params = self.prepare_gemm_params(&attrs, ctx)?;
 
         self.compute_multiplication::<D, T>(&params, &attrs, ctx)?;
-        self.compute_bias_addition::<D, T>(&params, &attrs, ctx)?;
+
+        if ctx.input_exists(2) {
+            self.compute_bias_addition::<D, T>(&params, &attrs, ctx)?;
+        }
 
         Ok(())
     }

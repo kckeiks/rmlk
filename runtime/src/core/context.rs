@@ -72,6 +72,15 @@ where
             .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
     }
 
+    pub fn input_exists(&self, index: usize) -> bool {
+        let node_index = self.input_start_index + index;
+        if self.output_start_index <= node_index {
+            return false;
+        }
+
+        self.execution_state.get_tensor(node_index).is_some()
+    }
+
     pub fn get_output(&self, index: usize) -> Result<Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {

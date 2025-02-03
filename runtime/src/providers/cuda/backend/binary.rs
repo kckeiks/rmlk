@@ -1,4 +1,5 @@
 use crate::core::error::InternalError;
+use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::add::AdditionKernel;
 use crate::providers::cuda::data::CudaData;
@@ -17,7 +18,7 @@ pub unsafe fn compute<D, T>(
     device: Arc<CudaDevice>,
     f: CudaFunction,
     ctx: &mut Context<Cuda>,
-) -> crate::core::error::Result<()>
+) -> Result<()>
 where
     D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     T: AdditionKernel,
@@ -105,7 +106,7 @@ where
     Ok(())
 }
 
-fn process_shapes(ctx: &mut Context<Cuda>) -> crate::core::error::Result<()> {
+fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
     let a = ctx.get_input(0)?;
     let b = ctx.get_input(1)?;
 
