@@ -2,6 +2,7 @@ pub mod activation;
 pub mod add;
 mod binary;
 pub mod conv;
+mod gather;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
