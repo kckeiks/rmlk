@@ -127,11 +127,11 @@ where
         graph: &'a Graph<Definition>,
         initializers: HashMap<usize, rmlk_schema::Tensor>,
     ) -> Self {
-        let mut buf_arena = BufferArena::with_capacity(4096);
-        // Todo: We might need the max id of the graph instead.
+        let arena = BufferArena::with_capacity(4096);
         let node_count = graph.node_count();
         let mut tensors = Vec::with_capacity(node_count);
         for _ in 0..node_count {
+            // TensorHandle does not implement clone so we cannot use the macro.
             tensors.push(None);
         }
 
@@ -139,7 +139,7 @@ where
             provider,
             graph,
             initializers: Some(initializers),
-            arena: buf_arena,
+            arena,
             tensors,
         }
     }
@@ -156,16 +156,16 @@ where
                 Some(Op::Const)
             );
 
-            let data = match ir_tensor.float_data.is_empty() {
+            let on_host_data = match ir_tensor.float_data.is_empty() {
                 true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
                     InternalError::TensorStore("failed to parse tensor raw data".to_string())
                 })?),
                 false => {
                     // Todo: remove allocation.
-                    ir_tensor.float_data.clone()
+                    ir_tensor.float_data
                 }
             };
-            let data = self.provider.htod_float(data)?;
+            let data = self.provider.htod_float(on_host_data)?;
 
             let arena_id = ShapeBufArenaMut::new(&mut self.arena)
                 .alloc_from_shape_slice(ir_tensor.dims.as_slice())?;
@@ -174,7 +174,6 @@ where
                 ir_tensor.data_type,
                 Some(arena_id),
                 Rc::new(RefCell::new(Some(data))),
-                None,
             );
             self.tensors[node_id].replace(tensor);
         }
@@ -196,7 +195,7 @@ where
                     let arena_id = ShapeBufArenaMut::new(&mut self.arena)
                         .alloc_from_shape_slice(shape.as_slice())?;
                     let tensor =
-                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)), None);
+                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)));
                     self.tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -224,7 +223,7 @@ where
                     let arena_id = ShapeBufArenaMut::new(&mut self.arena)
                         .alloc_from_shape_slice(shape.as_slice())?;
                     let tensor =
-                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)), None);
+                        TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)));
                     self.tensors[node_id].replace(tensor);
                 }
                 None => {
@@ -256,7 +255,7 @@ where
                             })?
                             .is_none()
                         {
-                            self.tensors[*output].replace(TensorHandle::new(DataType::Undefined, None, Rc::new(RefCell::new(None)), None));
+                            self.tensors[*output].replace(TensorHandle::new(DataType::Undefined, None, Rc::new(RefCell::new(None))));
                         }
                     }
                     None => {

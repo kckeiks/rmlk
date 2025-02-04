@@ -246,9 +246,4 @@ impl BufferArena {
             dst_content_start,
         );
     }
-
-    pub fn alloc_from_len(&mut self, size: usize) -> Result<ArenaId> {
-        let key = self.alloc(size)?;
-        Ok(ArenaId { key, size })
-    }
 }

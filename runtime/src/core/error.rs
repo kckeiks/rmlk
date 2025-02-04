@@ -59,6 +59,13 @@ pub enum InternalError {
     MissingAttribute {
         name: String,
     },
+    MissingNode {
+        id: usize,
+    },
+    ExpectedNodeInfo {
+        info: String,
+        node_id: usize,
+    },
     ExpectedShapeInDef {
         node_id: usize,
     },
@@ -109,6 +116,9 @@ impl Display for InternalError {
             InternalError::ExpectedShapeInDef { node_id } => {
                 write!(f, "expected shape in node `{node_id}`")
             }
+            InternalError::ExpectedNodeInfo { info, node_id } => {
+                write!(f, "expected node info `{info}` from node `{node_id}`")
+            }
             InternalError::Device { error: msg } => {
                 write!(f, "device error `{msg:?}`")
             }
@@ -138,6 +148,9 @@ impl Display for InternalError {
             }
             InternalError::MissingAttribute { name } => {
                 write!(f, "missing `{name}` attribute")
+            }
+            InternalError::MissingNode { id } => {
+                write!(f, "missing node `{id}`")
             }
             InternalError::InvalidAttribute { name } => {
                 write!(f, "invalid attribute `{name}`")

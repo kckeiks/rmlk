@@ -10,8 +10,8 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
-use cudarc::driver::{CudaDevice, CudaFunction, DriverError};
-use rmlk_schema::{DataType, Op};
+use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct Cuda {
@@ -27,8 +27,11 @@ impl Cuda {
         Ok(rmlk_cuda::load_kernel(&self.device, op, dtype)?)
     }
 
-    pub fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
-        let ptr = self.device.htod_copy(data)?;
+    pub fn htod<T>(&self, data: Vec<T>) -> Result<CudaData>
+    where
+        T: Unpin + DeviceRepr + DataTypeMap,
+    {
+        let ptr = self.device.htod_copy::<T>(data)?;
         Ok(CudaData::new(ptr))
     }
 
@@ -73,7 +76,7 @@ impl DeviceService for Cuda {
     }
 
     fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
-        self.htod_float(data)
+        self.htod(data)
     }
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {

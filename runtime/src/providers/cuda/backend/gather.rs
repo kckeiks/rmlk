@@ -7,7 +7,6 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct GatherBackend {
