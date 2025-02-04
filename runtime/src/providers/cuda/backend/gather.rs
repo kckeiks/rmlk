@@ -31,6 +31,11 @@ impl GatherBackend {
             .map(attributes::gather::get_axis)
             .unwrap_or(0);
 
+        let data = ctx.get_input(0)?;
+        let indices = ctx.get_input(1)?;
+
+
+
         Ok(())
     }
 
