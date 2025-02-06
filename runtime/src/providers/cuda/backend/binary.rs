@@ -87,19 +87,20 @@ where
         .expect("we already checked that it initialized")
         .data_mut();
 
-    let scratch_alloc = &ctx.execution_state().scratch_alloc();
+    let ndims = c.shape().len();
+
+    let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * ndims)?;
+    info_buffer[..ndims].copy_from_slice(c.shape());
+    info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
+    info_buffer[2 * ndims..].copy_from_slice(b_stride);
 
     T::execute::<D>(
         device,
         f,
-        scratch_alloc,
+        ndims,
+        info_buffer,
         &a_dev_data,
-        &a.shape(),
-        a_stride,
         &b_dev_data,
-        &b.shape(),
-        b_stride,
-        c.shape(),
         &mut c_dev_data,
     )?;
 

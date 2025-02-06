@@ -46,14 +46,10 @@ pub trait AdditionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        alloc: &ScratchAllocator,
+        ndims: usize,
+        info: &mut [usize],
         a_dev_data: &CudaSlice<T>,
-        a_shape: &[usize],
-        a_stride: &[usize],
         b_dev_data: &CudaSlice<T>,
-        b_shape: &[usize],
-        b_stride: &[usize],
-        c_shape: &[usize],
         c_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
     where
@@ -66,35 +62,18 @@ impl AdditionKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        alloc: &ScratchAllocator,
+        ndims: usize,
+        info: &mut [usize],
         a_dev_data: &CudaSlice<T>,
-        _a_shape: &[usize],
-        a_stride: &[usize],
         b_dev_data: &CudaSlice<T>,
-        _b_shape: &[usize],
-        b_stride: &[usize],
-        c_shape: &[usize],
         c_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        let ndims = c_shape.len();
-
-        let info_buffer = alloc.allocate(3 * ndims)?;
-        info_buffer[..ndims].copy_from_slice(c_shape);
-        info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
-        info_buffer[2 * ndims..].copy_from_slice(b_stride);
-
         unsafe {
             rmlk_cuda::kernels::binary::compute(
-                device,
-                func,
-                ndims,
-                info_buffer,
-                a_dev_data,
-                b_dev_data,
-                c_dev_data,
+                device, func, ndims, info, a_dev_data, b_dev_data, c_dev_data,
             )
             .map_err(Into::into)
         }
@@ -107,14 +86,10 @@ impl AdditionKernel for NoOpKernel {
     fn execute<T>(
         _: Arc<CudaDevice>,
         _: CudaFunction,
-        _: &ScratchAllocator,
+        _: usize,
+        _: &mut [usize],
         _: &CudaSlice<T>,
-        _: &[usize],
-        _: &[usize],
         _: &CudaSlice<T>,
-        _: &[usize],
-        _: &[usize],
-        _: &[usize],
         _: &mut CudaSlice<T>,
     ) -> Result<()> {
         Ok(())
