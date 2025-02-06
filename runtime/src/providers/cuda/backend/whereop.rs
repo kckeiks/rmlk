@@ -198,20 +198,22 @@ impl WhereBackend {
             .expect("we already checked that it initialized")
             .data_mut();
 
+        let rank = output.shape().len();
+
+        let info_buffer = ctx.execution_state().scratch_alloc().allocate(4 * rank)?;
+        info_buffer[..rank].copy_from_slice(output.shape());
+        info_buffer[rank..2 * rank].copy_from_slice(x_stride);
+        info_buffer[2 * rank..3 * rank].copy_from_slice(y_stride);
+        info_buffer[3 * rank..].copy_from_slice(condition_stride);
+
         T::execute::<D>(
             self.device,
             self.f,
-            &scratch_alloc,
+            rank,
+            info_buffer,
             &x_dev_data,
-            &x.shape(),
-            x_stride,
             &y_dev_data,
-            &y.shape(),
-            y_stride,
             &condition_dev_data,
-            &condition.shape(),
-            condition_stride,
-            &output.shape(),
             &mut output_dev_data,
         )?;
 
@@ -237,17 +239,11 @@ pub trait WhereKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        alloc: &ScratchAllocator,
+        rank: usize,
+        info: &[usize],
         x_dev_data: &CudaSlice<T>,
-        x_shape: &[usize],
-        x_stride: &[usize],
         y_dev_data: &CudaSlice<T>,
-        y_shape: &[usize],
-        y_stride: &[usize],
         condition_dev_data: &CudaSlice<T>,
-        condition_shape: &[usize],
-        condition_stride: &[usize],
-        output_shape: &[usize],
         output_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
     where
@@ -260,36 +256,22 @@ impl WhereKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        alloc: &ScratchAllocator,
+        rank: usize,
+        info: &[usize],
         x_dev_data: &CudaSlice<T>,
-        _x_shape: &[usize],
-        x_stride: &[usize],
         y_dev_data: &CudaSlice<T>,
-        _y_shape: &[usize],
-        y_stride: &[usize],
         condition_dev_data: &CudaSlice<T>,
-        _condition_shape: &[usize],
-        condition_stride: &[usize],
-        output_shape: &[usize],
         output_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        let ndims = output_shape.len();
-
-        let info_buffer = alloc.allocate(4 * ndims)?;
-        info_buffer[..ndims].copy_from_slice(output_shape);
-        info_buffer[ndims..2 * ndims].copy_from_slice(x_stride);
-        info_buffer[2 * ndims..3 * ndims].copy_from_slice(y_stride);
-        info_buffer[3 * ndims..].copy_from_slice(condition_stride);
-
         unsafe {
             rmlk_cuda::kernels::whereop::compute(
                 device,
                 func,
-                ndims,
-                info_buffer,
+                rank,
+                info,
                 x_dev_data,
                 y_dev_data,
                 condition_dev_data,
@@ -304,20 +286,14 @@ pub struct NoOpKernel(());
 
 impl WhereKernel for NoOpKernel {
     fn execute<T>(
-        _device: Arc<CudaDevice>,
-        _func: CudaFunction,
-        _: &ScratchAllocator,
-        _x_dev_data: &CudaSlice<T>,
-        _x_shape: &[usize],
-        _x_stride: &[usize],
-        _y_dev_data: &CudaSlice<T>,
-        _y_shape: &[usize],
-        _y_stride: &[usize],
-        _condition_dev_data: &CudaSlice<T>,
-        _condition_shape: &[usize],
-        _condition_stride: &[usize],
-        _output_shape: &[usize],
-        _output_dev_data: &mut CudaSlice<T>,
+        _: Arc<CudaDevice>,
+        _: CudaFunction,
+        _: usize,
+        _: &[usize],
+        _: &CudaSlice<T>,
+        _: &CudaSlice<T>,
+        _: &CudaSlice<T>,
+        _: &mut CudaSlice<T>,
     ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
