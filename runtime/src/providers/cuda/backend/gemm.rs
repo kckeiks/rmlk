@@ -121,19 +121,22 @@ impl GemmBackend {
 
         let beta = D::try_from(attrs.beta()).map_err(|_| InternalError::UnableToConvertValue)?;
 
-        let (c_shape, c_stride) = compute_bias_shape(c.shape(), params)?;
+        let (_, c_stride) = compute_bias_shape(c.shape(), params)?;
+
+        let ndims = y.shape().len();
+        let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * ndims)?;
+        info_buffer[..ndims].copy_from_slice(y.shape());
+        info_buffer[ndims..2 * ndims].copy_from_slice(&c_stride);
+        info_buffer[2 * ndims..].copy_from_slice(y.stride());
 
         T::execute_bias_addition::<D>(
             self.func,
             self.device.clone(),
+            ndims,
+            info_buffer,
             beta,
-            &c_shape,
-            &c_stride,
             &c_dev_data,
-            y.shape(),
-            y.stride(),
             &mut y_dev_data,
-            ctx.execution_state().scratch_alloc(),
         )?;
 
         Ok(())
@@ -269,14 +272,11 @@ pub trait GemmKernel {
     fn execute_bias_addition<T>(
         func: CudaFunction,
         device: Arc<CudaDevice>,
+        ndims: usize,
+        info: &[usize],
         beta: T,
-        c_shape: &[usize],
-        c_stride: &[usize],
         c_dev_data: &CudaSlice<T>,
-        ab_shape: &[usize],
-        ab_stride: &[usize],
         ab_dev_data: &mut CudaSlice<T>,
-        alloc: &ScratchAllocator,
     ) -> Result<()>
     where
         T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num;
@@ -298,24 +298,15 @@ impl GemmKernel for ActiveKernel {
     fn execute_bias_addition<T>(
         func: CudaFunction,
         device: Arc<CudaDevice>,
+        ndims: usize,
+        info: &[usize],
         beta: T,
-        _c_shape: &[usize],
-        c_stride: &[usize],
         c_dev_data: &CudaSlice<T>,
-        ab_shape: &[usize],
-        ab_stride: &[usize],
         ab_dev_data: &mut CudaSlice<T>,
-        alloc: &ScratchAllocator,
     ) -> Result<()>
     where
         T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let ndims = ab_shape.len();
-        let info_buffer = alloc.allocate(3 * ndims)?;
-        info_buffer[..ndims].copy_from_slice(ab_shape);
-        info_buffer[ndims..2 * ndims].copy_from_slice(c_stride);
-        info_buffer[2 * ndims..].copy_from_slice(ab_stride);
-
         unsafe {
             binary::compute_alpha_beta_inplace(
                 device,
@@ -323,7 +314,7 @@ impl GemmKernel for ActiveKernel {
                 beta,
                 T::one(),
                 ndims,
-                info_buffer,
+                info,
                 c_dev_data,
                 ab_dev_data,
             )
@@ -351,14 +342,11 @@ impl GemmKernel for NoOpKernel {
     fn execute_bias_addition<T>(
         _: CudaFunction,
         _: Arc<CudaDevice>,
+        _: usize,
+        _: &[usize],
         _: T,
-        _: &[usize],
-        _: &[usize],
         _: &CudaSlice<T>,
-        _: &[usize],
-        _: &[usize],
         _: &mut CudaSlice<T>,
-        _: &ScratchAllocator,
     ) -> Result<()>
     where
         T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
