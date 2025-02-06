@@ -87,17 +87,17 @@ where
         .expect("we already checked that it initialized")
         .data_mut();
 
-    let ndims = c.shape().len();
+    let rank = c.shape().len();
 
-    let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * ndims)?;
-    info_buffer[..ndims].copy_from_slice(c.shape());
-    info_buffer[ndims..2 * ndims].copy_from_slice(a_stride);
-    info_buffer[2 * ndims..].copy_from_slice(b_stride);
+    let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * rank)?;
+    info_buffer[..rank].copy_from_slice(c.shape());
+    info_buffer[rank..2 * rank].copy_from_slice(a_stride);
+    info_buffer[2 * rank..].copy_from_slice(b_stride);
 
     T::execute::<D>(
         device,
         f,
-        ndims,
+        rank,
         info_buffer,
         &a_dev_data,
         &b_dev_data,
@@ -120,9 +120,9 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
                 .copy_shape_from_within(a_index, c_index)?;
         }
         false => {
-            let ndims = cmp::max(a.shape().len(), b.shape().len());
+            let rank = cmp::max(a.shape().len(), b.shape().len());
             let alloc = ctx.execution_state().scratch_alloc().clone();
-            let c_shape = alloc.allocate_fill(ndims, 0)?;
+            let c_shape = alloc.allocate_fill(rank, 0)?;
 
             if !utils::compute_broadcast_output_shape(a.shape(), b.shape(), c_shape) {
                 let a_id = a.src_id();

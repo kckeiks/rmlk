@@ -39,13 +39,13 @@ impl WhereBackend {
                     .copy_shape_from_within(x_index, output_index)?;
             }
             false => {
-                let ndims = [x.shape().len(), y.shape().len(), condition.shape().len()]
+                let rank = [x.shape().len(), y.shape().len(), condition.shape().len()]
                     .into_iter()
                     .max()
                     .expect("Iterator is not empty");
 
                 let alloc = ctx.execution_state().scratch_alloc().clone();
-                let inter_shape = alloc.allocate_fill(ndims, 0)?;
+                let inter_shape = alloc.allocate_fill(rank, 0)?;
 
                 if !utils::compute_broadcast_output_shape(x.shape(), y.shape(), inter_shape) {
                     return Err(InternalError::IncompatibleTensorShape {
@@ -59,7 +59,7 @@ impl WhereBackend {
                     });
                 }
 
-                let output_shape = alloc.allocate_fill(ndims, 0)?;
+                let output_shape = alloc.allocate_fill(rank, 0)?;
 
                 if !utils::compute_broadcast_output_shape(
                     inter_shape,

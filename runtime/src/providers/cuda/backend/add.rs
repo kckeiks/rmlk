@@ -46,7 +46,7 @@ pub trait AdditionKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        ndims: usize,
+        rank: usize,
         info: &[usize],
         a_dev_data: &CudaSlice<T>,
         b_dev_data: &CudaSlice<T>,
@@ -62,7 +62,7 @@ impl AdditionKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
-        ndims: usize,
+        rank: usize,
         info: &[usize],
         a_dev_data: &CudaSlice<T>,
         b_dev_data: &CudaSlice<T>,
@@ -73,7 +73,7 @@ impl AdditionKernel for ActiveKernel {
     {
         unsafe {
             rmlk_cuda::kernels::binary::compute(
-                device, func, ndims, info, a_dev_data, b_dev_data, c_dev_data,
+                device, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
             )
             .map_err(Into::into)
         }

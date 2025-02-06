@@ -123,16 +123,16 @@ impl GemmBackend {
 
         let (_, c_stride) = compute_bias_shape(c.shape(), params)?;
 
-        let ndims = y.shape().len();
-        let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * ndims)?;
-        info_buffer[..ndims].copy_from_slice(y.shape());
-        info_buffer[ndims..2 * ndims].copy_from_slice(&c_stride);
-        info_buffer[2 * ndims..].copy_from_slice(y.stride());
+        let rank = y.shape().len();
+        let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * rank)?;
+        info_buffer[..rank].copy_from_slice(y.shape());
+        info_buffer[rank..2 * rank].copy_from_slice(&c_stride);
+        info_buffer[2 * rank..].copy_from_slice(y.stride());
 
         T::execute_bias_addition::<D>(
             self.func,
             self.device.clone(),
-            ndims,
+            rank,
             info_buffer,
             beta,
             &c_dev_data,
@@ -272,7 +272,7 @@ pub trait GemmKernel {
     fn execute_bias_addition<T>(
         func: CudaFunction,
         device: Arc<CudaDevice>,
-        ndims: usize,
+        rank: usize,
         info: &[usize],
         beta: T,
         c_dev_data: &CudaSlice<T>,
@@ -298,7 +298,7 @@ impl GemmKernel for ActiveKernel {
     fn execute_bias_addition<T>(
         func: CudaFunction,
         device: Arc<CudaDevice>,
-        ndims: usize,
+        rank: usize,
         info: &[usize],
         beta: T,
         c_dev_data: &CudaSlice<T>,
@@ -313,7 +313,7 @@ impl GemmKernel for ActiveKernel {
                 func,
                 beta,
                 T::one(),
-                ndims,
+                rank,
                 info,
                 c_dev_data,
                 ab_dev_data,
