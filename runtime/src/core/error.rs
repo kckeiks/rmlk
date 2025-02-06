@@ -52,7 +52,7 @@ pub enum InternalError {
         op: Op,
     },
     InvalidAxis {
-        axis: i32,
+        axis: i64,
     },
     MissingDeviceData,
     MissingAttributes,

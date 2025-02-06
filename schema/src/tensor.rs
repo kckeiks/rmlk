@@ -404,6 +404,18 @@ impl DataTypeMap for f32 {
     }
 }
 
+impl DataTypeMap for i32 {
+    fn data_type() -> DataType {
+        DataType::Int32
+    }
+}
+
+impl DataTypeMap for i64 {
+    fn data_type() -> DataType {
+        DataType::Int64
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Segment {
     pub begin: Option<i64>,

@@ -1,5 +1,6 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::{device_service::DeviceService, Context};
+use num_traits::ToPrimitive;
 
 pub struct FlattenTemplate(());
 
@@ -33,7 +34,9 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
             y_shape[1] = x.shape().iter().product();
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
-            return Err(InternalError::InvalidAxis { axis });
+            return Err(InternalError::InvalidAxis {
+                axis: axis.to_i64().expect("`i32` values fit in `i64`"),
+            });
         }
         axis => {
             let axis = axis.unsigned_abs() as usize;

@@ -60,8 +60,12 @@ impl CudaData {
     }
 
     #[inline]
-    pub fn is_dtype(&self, other: DataType) -> bool {
+    fn is_dtype(&self, other: DataType) -> bool {
         self.dtype == other
+    }
+
+    pub fn dtype(&self) -> DataType {
+        self.dtype
     }
 
     pub fn zero<T>(&mut self) -> Result<()>
