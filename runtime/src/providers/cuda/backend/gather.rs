@@ -1,6 +1,6 @@
-use crate::attributes;
+use std::fmt::Debug;
+use crate::{attributes, utils};
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError::InvalidTensorShape;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
@@ -9,10 +9,10 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
 };
-use num_traits::{Num, Signed, ToPrimitive};
+use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-
+use crate::utils::DataIterator;
 /*
     [
         [
@@ -121,12 +121,11 @@ use std::sync::Arc;
 
 pub struct GatherBackend {
     device: Arc<CudaDevice>,
-    f: CudaFunction,
 }
 
 impl GatherBackend {
-    pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
-        Self { device, f }
+    pub fn new(device: Arc<CudaDevice>) -> Self {
+        Self { device }
     }
 }
 
@@ -165,7 +164,7 @@ impl GatherBackend {
     fn _slice_data<D, S>(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        S: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Copy,
+        S: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Copy + Debug,
         i64: From<S>,
     {
         let data = ctx.get_input(0)?;
@@ -184,24 +183,32 @@ impl GatherBackend {
             .dtoh_sync_copy_into(view.as_ref(), indices_on_host)
             .map_err(rmlk_cuda::Error::from)?;
 
-        for (i, dim_idx) in
-            DataIterator::new(indices.shape(), indices.stride(), indices_on_host).enumerate()
-        {
-            let norm_i = normalize_index(i64::from(*dim_idx), data.shape().len())?;
-            let start = norm_i * data.stride()[axis];
+        let output = ctx.get_output(0)?;
+        let (lfh, _,) = output.shape().split_at(axis);
 
-            let rem = match axis == data.shape().len() - 1 {
-                true => 1,
-                false => data.shape()[axis + 1..].iter().product(),
-            };
+        let mut counter = 0;
+        for j in 0..lfh.iter().product::<usize>() {
+            for (i, dim_idx) in
+                DataIterator::new(indices.shape(), indices.stride(), indices_on_host).enumerate()
+            {
+                let norm_i = utils::normalize_index(i64::from(*dim_idx), data.shape()[axis])?;
+                let start = j*(data.shape()[axis]) + (norm_i * data.stride()[axis]);
 
-            let view = data_ptr.data::<D>();
-            let subs = view.slice(start..start + rem);
+                let rem = match axis == data.shape().len() - 1 {
+                    true => 1,
+                    false => data.shape()[axis + 1..].iter().product(),
+                };
 
-            let mut out_data = output_ptr.data_mut::<D>();
-            let mut out_slice = out_data.slice_mut(i * rem..i * rem + rem);
+                let view = data_ptr.data::<D>();
+                println!("i={i}, dim_idx={dim_idx:?}, norm_i={norm_i}, start={start}, rem={rem} counter={counter}");
+                let subs = view.slice(start..start + rem);
 
-            self.device.dtod_copy(&subs, &mut out_slice)?;
+                let mut out_data = output_ptr.data_mut::<D>();
+                let mut out_slice = out_data.slice_mut(counter * rem..counter * rem + rem);
+
+                self.device.dtod_copy(&subs, &mut out_slice)?;
+                counter += 1;
+            }
         }
 
         Ok(())
@@ -211,7 +218,7 @@ impl GatherBackend {
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let dtype = ctx.get_input(0)?.try_dev_data_ptr()?.dtype();
+        let dtype = ctx.get_input(1)?.try_dev_data_ptr()?.dtype();
 
         match dtype {
             DataType::Int32 => {
@@ -241,7 +248,7 @@ impl GatherBackend {
             .unwrap_or(0);
 
         let data_rank = ctx.get_input(0)?.shape().len();
-        let norm_axis = normalize_index(axis as i64, data_rank)?;
+        let norm_axis = utils::normalize_index(axis as i64, data_rank)?;
 
         self.compute_output_shape(norm_axis, ctx)?;
 
@@ -264,74 +271,6 @@ impl GatherBackend {
             _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
         }
     }
-}
-
-pub struct DataIterator<'a, T> {
-    shape: &'a [usize],
-    stride: &'a [usize],
-    data: &'a [T],
-    current: usize,
-    rank: usize,
-}
-
-impl<'a, T> DataIterator<'a, T> {
-    pub fn new(shape: &'a [usize], stride: &'a [usize], data: &'a [T]) -> Self {
-        debug_assert_eq!(shape.len(), stride.len());
-
-        let rank = shape.iter().product::<usize>();
-        Self {
-            shape,
-            stride,
-            data,
-            rank,
-            current: 0,
-        }
-    }
-}
-
-impl<'a, T> Iterator for DataIterator<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let old_current = self.current;
-        self.current += 1;
-
-        match self.shape.len() {
-            0 => self.data.get(old_current),
-            _ => {
-                let mut i = 0;
-                let mut tmp_i = self.current;
-                for (d_i, dim) in self.shape.iter().enumerate().rev() {
-                    let norm_i = tmp_i % dim;
-                    i += norm_i * self.stride[d_i];
-                    tmp_i /= dim;
-                }
-
-                self.data.get(i)
-            }
-        }
-    }
-}
-
-pub fn normalize_index(index: i64, rank: usize) -> Result<usize> {
-    let norm_index = match index < 0 {
-        true => rank
-            .checked_sub(
-                index
-                    .unsigned_abs()
-                    .to_usize()
-                    .expect("the runtime to be running in a `64-bit` system"),
-            )
-            .ok_or(InternalError::InvalidAxis { axis: index })?,
-        false => {
-            index
-                .to_usize()
-                .expect("the runtime to be running in a `64-bit` system")
-                % rank
-        }
-    };
-
-    Ok(norm_index)
 }
 
 trait GatherKernel {
@@ -393,4 +332,10 @@ impl GatherKernel for NoOpKernel {
     ) -> Result<()> {
         Ok(())
     }
+}
+
+fn split_shape(axis: usize, shape: &[usize]) -> (&[usize], usize, &[usize]) {
+    debug_assert!(shape.is_empty());
+    debug_assert!(shape.len() > axis);
+    (&shape[..axis], shape[axis], &shape[axis..])
 }

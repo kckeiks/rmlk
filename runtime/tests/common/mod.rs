@@ -1,4 +1,4 @@
-use crate::common::schema::{GraphDef, NodeTypeInfo, ValueDef};
+use crate::common::schema::{parse_attributes, GraphDef, NodeTypeInfo, ValueDef};
 use rmlk_graph::{Graph, Node};
 use rmlk_runtime::Builder;
 use rmlk_schema::{DataType, Definition, Op, Tensor, TypeValue};
@@ -21,9 +21,14 @@ pub fn build(test_def: &str) -> Builder {
         let mut schema_node = rmlk_schema::Node::new(id);
 
         match node.info {
-            NodeTypeInfo::Op { name } => {
+            NodeTypeInfo::Op { name, attributes } => {
                 schema_node.op_type = name.parse().unwrap();
                 schema_node.name = Some(name);
+
+                if let Some(attrs) = attributes {
+                    schema_node.attribute = Some(parse_attributes(attrs));
+                }
+
             }
             NodeTypeInfo::Value(ValueDef {
                 name,

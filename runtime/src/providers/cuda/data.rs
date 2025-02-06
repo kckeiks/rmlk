@@ -86,6 +86,9 @@ impl Drop for CudaData {
                 DataType::Float => {
                     let _dev_data = self.device.upgrade_device_ptr::<f32>(self.ptr, self.len);
                 }
+                DataType::Int32 => {
+                    let _dev_data = self.device.upgrade_device_ptr::<i32>(self.ptr, self.len);
+                }
                 _ => unimplemented!("CudaDevData::drop unimplemented!"),
             }
         }

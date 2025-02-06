@@ -3,7 +3,7 @@ pub mod add;
 mod binary;
 mod common;
 pub mod conv;
-mod gather;
+pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
@@ -15,6 +15,7 @@ use crate::core::Context;
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
+use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
@@ -26,6 +27,7 @@ pub enum CudaKernel {
     Add(AdditionBackend),
     Relu(ActivationBackend),
     Conv(ConvolutionBackend),
+    Gather(GatherBackend),
     Gemm(GemmBackend),
     GlobalAveragePool(GlobalAverageBackend),
     MaxPool(MaxPoolBackend),
@@ -39,6 +41,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
+            CudaKernel::Gather(kernel) => kernel.compute::<gather::ActiveKernel>(ctx),
             CudaKernel::Gemm(kernel) => kernel.compute::<gemm::ActiveKernel>(ctx),
             CudaKernel::GlobalAveragePool(kernel) => {
                 kernel.compute::<global_average_pool::ActiveKernel>(ctx)
@@ -56,6 +59,7 @@ impl CudaKernel {
             CudaKernel::Add(kernel) => kernel.compute::<add::NoOpKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::NoOpKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
+            CudaKernel::Gather(kernel) => kernel.compute::<gather::NoOpKernel>(ctx),
             CudaKernel::Gemm(kernel) => kernel.compute::<gemm::NoOpKernel>(ctx),
             CudaKernel::GlobalAveragePool(kernel) => {
                 kernel.compute::<global_average_pool::NoOpKernel>(ctx)

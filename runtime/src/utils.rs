@@ -1,6 +1,8 @@
-use num_traits::Num;
+use num_traits::{Num, ToPrimitive};
 use std::cmp;
 use std::ops::AddAssign;
+use crate::core::error;
+use crate::core::error::InternalError;
 
 pub fn compute_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let ndims = shape.len();
@@ -103,4 +105,76 @@ pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize
     }
 
     true
+}
+
+pub struct DataIterator<'a, T> {
+    shape: &'a [usize],
+    stride: &'a [usize],
+    data: &'a [T],
+    current: usize,
+    rank: usize,
+}
+
+impl<'a, T> DataIterator<'a, T> {
+    pub fn new(shape: &'a [usize], stride: &'a [usize], data: &'a [T]) -> Self {
+        debug_assert_eq!(shape.len(), stride.len());
+
+        let rank = shape.iter().product::<usize>();
+        Self {
+            shape,
+            stride,
+            data,
+            rank,
+            current: 0,
+        }
+    }
+}
+
+impl<'a, T> Iterator for DataIterator<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.data.len() {
+            return None;
+        }
+
+        let old_current = self.current;
+        self.current += 1;
+
+        match self.shape.len() {
+            0 => self.data.get(old_current),
+            _ => {
+                let mut i = 0;
+                let mut tmp_i = old_current;
+                for (d_i, dim) in self.shape.iter().enumerate().rev() {
+                    let norm_i = tmp_i % dim;
+                    i += norm_i * self.stride[d_i];
+                    tmp_i /= dim;
+                }
+
+                self.data.get(i)
+            }
+        }
+    }
+}
+
+pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
+    let norm_index = match index < 0 {
+        true => size
+            .checked_sub(
+                index
+                    .unsigned_abs()
+                    .to_usize()
+                    .expect("the runtime to be running in a `64-bit` system"),
+            )
+            .ok_or(InternalError::InvalidAxis { axis: index })?,
+        false => {
+            index
+                .to_usize()
+                .expect("the runtime to be running in a `64-bit` system")
+                % size
+        }
+    };
+
+    Ok(norm_index)
 }

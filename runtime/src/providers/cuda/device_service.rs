@@ -5,6 +5,7 @@ use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
@@ -52,6 +53,7 @@ impl DeviceService for Cuda {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
             }
+            Op::Gather => CudaKernel::Gather(GatherBackend::new(self.device.clone())),
             Op::Gemm => {
                 let f = rmlk_cuda::load_add_kernel_alpha_beta_inplace(&self.device, dtype)?;
                 CudaKernel::Gemm(GemmBackend::new(self.device.clone(), f))
@@ -81,6 +83,10 @@ impl DeviceService for Cuda {
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
         self.dtoh_float(data)
+    }
+
+    fn htod_i32(&self, data: Vec<i32>) -> Result<Self::Data> {
+        self.htod(data)
     }
 
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
