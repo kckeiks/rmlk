@@ -10,7 +10,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "data",
         "dtype": "float",
-        "shape": [3, 4]
+        "shape": [2, 3]
       }
     },
     {
@@ -18,7 +18,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "indices",
         "dtype": "float",
-        "shape": [2]
+        "shape": [2, 2]
       }
     },
     {
@@ -26,13 +26,19 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "gather(data, indices)",
         "dtype": "float",
-        "shape": [2, 4]
+        "shape": [2, 2, 3]
       }
     },
     {
       "info": {
         "type": "op",
-        "name": "gather"
+        "name": "gather",
+        "attributes": {
+            "axis": {
+                "type": "int",
+                "data": 0
+            }
+        }
       },
       "input": ["data", "indices"],
       "output": ["gather(data, indices)"]
@@ -51,21 +57,30 @@ fn test_run() {
         (
             "data".to_string(),
             vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                1.0, 2.0, 3.0,  // row 0
+                4.0, 5.0, 6.0,  // row 1
             ]
-            .try_into()
-            .unwrap(),
+                .try_into()
+                .unwrap(),
         ),
-        ("indices".to_string(), vec![0i32, 2i32].try_into().unwrap()),
+        ("indices".to_string(), vec![0i32, 1i32, 1i32, 0i32].try_into().unwrap()),
     ]
-    .into();
+        .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output
         .remove("gather(data, indices)")
         .unwrap()
         .try_into()
         .unwrap();
-    assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0, 9.0, 10.0, 11.0, 12.0]);
+    assert_eq!(
+        data,
+        vec![
+            1.0, 2.0, 3.0, // for indices[0,0]=0
+            4.0, 5.0, 6.0, // for indices[0,1]=1
+            4.0, 5.0, 6.0, // for indices[1,0]=1
+            1.0, 2.0, 3.0, // for indices[1,1]=0
+        ]
+    );
 }
 
 #[test]
@@ -75,12 +90,13 @@ fn test_run_negative_indices() {
         (
             "data".to_string(),
             vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                1.0, 2.0, 3.0,  // row 0
+                4.0, 5.0, 6.0,  // row 1
             ]
                 .try_into()
                 .unwrap(),
         ),
-        ("indices".to_string(), vec![-3i32, -1i32].try_into().unwrap()),
+        ("indices".to_string(), vec![0i32, -1i32, 1i32, -2i32].try_into().unwrap()),
     ]
         .into();
     let mut output = instance.run(input).unwrap();
@@ -89,5 +105,13 @@ fn test_run_negative_indices() {
         .unwrap()
         .try_into()
         .unwrap();
-    assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0, 9.0, 10.0, 11.0, 12.0]);
+    assert_eq!(
+        data,
+        vec![
+            1.0, 2.0, 3.0, // for indices[0,0]=0
+            4.0, 5.0, 6.0, // for indices[0,1]=1
+            4.0, 5.0, 6.0, // for indices[1,0]=1
+            1.0, 2.0, 3.0, // for indices[1,1]=0
+        ]
+    );
 }
