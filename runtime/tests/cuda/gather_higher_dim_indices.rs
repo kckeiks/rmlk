@@ -57,15 +57,18 @@ fn test_run() {
         (
             "data".to_string(),
             vec![
-                1.0, 2.0, 3.0,  // row 0
-                4.0, 5.0, 6.0,  // row 1
+                1.0, 2.0, 3.0, // row 0
+                4.0, 5.0, 6.0, // row 1
             ]
-                .try_into()
-                .unwrap(),
+            .try_into()
+            .unwrap(),
         ),
-        ("indices".to_string(), vec![0i32, 1i32, 1i32, 0i32].try_into().unwrap()),
+        (
+            "indices".to_string(),
+            vec![0i32, 1i32, 1i32, 0i32].try_into().unwrap(),
+        ),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output
         .remove("gather(data, indices)")
@@ -90,15 +93,18 @@ fn test_run_negative_indices() {
         (
             "data".to_string(),
             vec![
-                1.0, 2.0, 3.0,  // row 0
-                4.0, 5.0, 6.0,  // row 1
+                1.0, 2.0, 3.0, // row 0
+                4.0, 5.0, 6.0, // row 1
             ]
-                .try_into()
-                .unwrap(),
+            .try_into()
+            .unwrap(),
         ),
-        ("indices".to_string(), vec![0i32, -1i32, 1i32, -2i32].try_into().unwrap()),
+        (
+            "indices".to_string(),
+            vec![0i32, -1i32, 1i32, -2i32].try_into().unwrap(),
+        ),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output
         .remove("gather(data, indices)")

@@ -97,12 +97,15 @@ fn test_run_negative_indices() {
                 // Batch 1:
                 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
             ]
-                .try_into()
-                .unwrap(),
+            .try_into()
+            .unwrap(),
         ),
-        ("indices".to_string(), vec![-2i32, -1i32].try_into().unwrap()),
+        (
+            "indices".to_string(),
+            vec![-2i32, -1i32].try_into().unwrap(),
+        ),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output
         .remove("gather(data, indices)")
