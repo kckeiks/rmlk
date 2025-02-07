@@ -113,19 +113,16 @@ pub struct DataIterator<'a, T> {
     stride: &'a [usize],
     data: &'a [T],
     current: usize,
-    rank: usize,
 }
 
 impl<'a, T> DataIterator<'a, T> {
     pub fn new(shape: &'a [usize], stride: &'a [usize], data: &'a [T]) -> Self {
         debug_assert_eq!(shape.len(), stride.len());
 
-        let rank = shape.iter().product::<usize>();
         Self {
             shape,
             stride,
             data,
-            rank,
             current: 0,
         }
     }

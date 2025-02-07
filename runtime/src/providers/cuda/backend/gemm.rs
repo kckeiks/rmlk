@@ -1,5 +1,4 @@
 use crate::attributes::gemm::GemmAttributes;
-use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;

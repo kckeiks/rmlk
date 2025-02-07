@@ -151,7 +151,6 @@ where
                 })?;
                 tensor.set_dev_data(data);
             }
-            _ => unimplemented!(),
         }
 
         Ok(())

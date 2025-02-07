@@ -1,4 +1,3 @@
-use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;

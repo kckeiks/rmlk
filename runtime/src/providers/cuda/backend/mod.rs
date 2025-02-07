@@ -41,7 +41,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
-            CudaKernel::Gather(kernel) => kernel.compute::<gather::ActiveKernel>(ctx),
+            CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),
             CudaKernel::Gemm(kernel) => kernel.compute::<gemm::ActiveKernel>(ctx),
             CudaKernel::GlobalAveragePool(kernel) => {
                 kernel.compute::<global_average_pool::ActiveKernel>(ctx)
@@ -59,7 +59,7 @@ impl CudaKernel {
             CudaKernel::Add(kernel) => kernel.compute::<add::NoOpKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::NoOpKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
-            CudaKernel::Gather(kernel) => kernel.compute::<gather::NoOpKernel>(ctx),
+            CudaKernel::Gather(kernel) => kernel.compute::<gather::NoOpGatherProcessor>(ctx),
             CudaKernel::Gemm(kernel) => kernel.compute::<gemm::NoOpKernel>(ctx),
             CudaKernel::GlobalAveragePool(kernel) => {
                 kernel.compute::<global_average_pool::NoOpKernel>(ctx)
