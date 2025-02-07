@@ -168,7 +168,7 @@ pub trait GatherDeviceProcessor {
     ) -> Result<()>
     where
         D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-        I: Num + Copy,
+        I: Num + Copy + Debug,
         i64: From<I>;
 }
 
@@ -186,7 +186,7 @@ impl GatherDeviceProcessor for DefaultGatherProcessor {
     ) -> Result<()>
     where
         D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-        I: Num + Copy,
+        I: Num + Copy + Debug,
         i64: From<I>,
     {
         // Given `axis` and the `data` shape S=[d_i, d_i2, ..., d_n-1, dn],
@@ -201,30 +201,29 @@ impl GatherDeviceProcessor for DefaultGatherProcessor {
         // We must traverse the dimensions `d_axis+1, d_axis+2, ..., d_n`,
         // so we loop `d_1 * d_2 * ... * d_axis-1` times while advancing by
         // section of size `d_axis+1 * d_axis+2 * ... * d_n`.
-        let (lhs, _) = shape.split_at(axis);
-        // Element count on the dimensions derived from `axis`.
-        let elem_count = shape[axis];
+        let batch_count = shape[..axis].iter().product::<usize>();
+        // Fixed offset per batch used to index into the data tensor.
+        let batch_offset = stride[..axis].iter().product::<usize>();
         // Count of the slices we will write in the output tensor.
         let mut slice_count = 0;
         // Size of one slice.
-        let slice_size = match axis == shape.len() - 1 {
+        let batch_size = match axis == shape.len() - 1 {
             true => 1,
             false => shape[axis + 1..].iter().product(),
         };
-        // We stack these dimensions on the `lhs`.
-        let stack_size = lhs.iter().product::<usize>();
-        for stack_level in 0..stack_size {
+        for batch_index in 0..batch_count {
             for dim_i in DataIterator::new(shape, stride, indices) {
                 // Get the index.
                 let norm_i = utils::normalize_index(i64::from(*dim_i), shape[axis])?;
-                let start = stack_level * elem_count + (norm_i * stride[axis]);
+                let start = batch_index * batch_offset + (norm_i * stride[axis]);
 
+                println!("stack_size={batch_count}, stack_level={batch_index}, elem_count={batch_offset}, dim_i={dim_i:?}, norm_i={norm_i}, start={start}, slice_count={slice_count}, slice_size={batch_size}");
                 // Slice the input.
-                let subslice = data_dev_data.slice(start..start + slice_size);
+                let subslice = data_dev_data.slice(start..start + batch_size);
 
                 // Create a writeable slice of the output.
                 let mut out_slice = output_dev_data
-                    .slice_mut(slice_count * slice_size..slice_count * slice_size + slice_size);
+                    .slice_mut(slice_count * batch_size..slice_count * batch_size + batch_size);
 
                 // Write to the output slice.
                 device.dtod_copy(&subslice, &mut out_slice)?;
