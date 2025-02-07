@@ -1,8 +1,8 @@
+use crate::core::error;
+use crate::core::error::InternalError;
 use num_traits::{Num, ToPrimitive};
 use std::cmp;
 use std::ops::AddAssign;
-use crate::core::error;
-use crate::core::error::InternalError;
 
 pub fn compute_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let ndims = shape.len();
@@ -107,6 +107,7 @@ pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize
     true
 }
 
+#[derive(Clone)]
 pub struct DataIterator<'a, T> {
     shape: &'a [usize],
     stride: &'a [usize],

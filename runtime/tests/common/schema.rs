@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use rmlk_schema::{Attribute, AttributeType, DataType, Tensor};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GraphDef {
@@ -21,7 +21,10 @@ pub struct NodeDef {
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
 pub enum NodeTypeInfo {
-    Op { name: String, attributes: Option<HashMap<String, AttributeValue>> },
+    Op {
+        name: String,
+        attributes: Option<HashMap<String, AttributeValue>>,
+    },
     Value(ValueDef),
 }
 
@@ -92,33 +95,15 @@ pub fn parse_attributes(attributes: HashMap<String, AttributeValue>) -> Vec<Attr
     let mut res = Vec::new();
     for (name, attribute_value) in attributes {
         let attr_ty = match attribute_value {
-            AttributeValue::Float(v) => {
-                AttributeType::Float(v)
-            }
-            AttributeValue::Int(v) => {
-                AttributeType::Int(v)
-            }
-            AttributeValue::String(v) => {
-                AttributeType::String(v)
-            }
-            AttributeValue::Tensor(v) => {
-                AttributeType::Tensor(v)
-            }
-            AttributeValue::Floats(v) => {
-                AttributeType::Floats(v)
-            }
-            AttributeValue::Doubles(v) => {
-                AttributeType::Doubles(v)
-            }
-            AttributeValue::Ints(v) => {
-                AttributeType::Ints(v)
-            }
-            AttributeValue::Strings(v) => {
-                AttributeType::Strings(v)
-            }
-            AttributeValue::Tensors(v) => {
-                AttributeType::Tensors(v)
-            }
+            AttributeValue::Float(v) => AttributeType::Float(v),
+            AttributeValue::Int(v) => AttributeType::Int(v),
+            AttributeValue::String(v) => AttributeType::String(v),
+            AttributeValue::Tensor(v) => AttributeType::Tensor(v),
+            AttributeValue::Floats(v) => AttributeType::Floats(v),
+            AttributeValue::Doubles(v) => AttributeType::Doubles(v),
+            AttributeValue::Ints(v) => AttributeType::Ints(v),
+            AttributeValue::Strings(v) => AttributeType::Strings(v),
+            AttributeValue::Tensors(v) => AttributeType::Tensors(v),
         };
         res.push(Attribute {
             name,

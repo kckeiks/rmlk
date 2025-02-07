@@ -28,7 +28,6 @@ pub fn build(test_def: &str) -> Builder {
                 if let Some(attrs) = attributes {
                     schema_node.attribute = Some(parse_attributes(attrs));
                 }
-
             }
             NodeTypeInfo::Value(ValueDef {
                 name,

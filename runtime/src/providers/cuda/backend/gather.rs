@@ -1,18 +1,18 @@
-use std::fmt::Debug;
-use crate::{attributes, utils};
 use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use crate::utils::DataIterator;
+use crate::{attributes, utils};
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
 };
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::fmt::Debug;
 use std::sync::Arc;
-use crate::utils::DataIterator;
 /*
     [
         [
@@ -183,31 +183,48 @@ impl GatherBackend {
             .dtoh_sync_copy_into(view.as_ref(), indices_on_host)
             .map_err(rmlk_cuda::Error::from)?;
 
-        let output = ctx.get_output(0)?;
-        let (lfh, _,) = output.shape().split_at(axis);
+        // Given `axis` and the `data` shape S=[d_i, d_i2, ..., d_n-1, dn],
+        // we split the shape at `axis` to create:
+        //
+        //              S_lhs = [d_1, d_2, ..., d_axis-1]
+        //              S_rhs = [d_axis+1, d_axis+2, ..., d_n]
+        //
+        // We take sub-slices of size `d_axis+1 * d_axis+2 * ... * d_n` from `data`
+        // using `indices`, `axis` and the `data` stride and
+        // copy these sub-slices to the output tensor.
+        // We must traverse the dimensions `d_axis+1, d_axis+2, ..., d_n`,
+        // so we loop `d_1 * d_2 * ... * d_axis-1` times while advancing by
+        // section of size `d_axis+1 * d_axis+2 * ... * d_n`.
+        let (lhs, _) = data.shape().split_at(axis);
+        // Element count on the dimensions derived from `axis`.
+        let elem_count = data.shape()[axis];
+        // Count of the slices we will write in the output tensor.
+        let mut slice_count = 0;
+        // Size of one slice.
+        let slice_size = match axis == data.shape().len() - 1 {
+            true => 1,
+            false => data.shape()[axis + 1..].iter().product(),
+        };
+        // We stack these dimensions on the `lhs`.
+        let stack_size = lhs.iter().product::<usize>();
+        for stack_level in 0..stack_size {
+            for dim_i in DataIterator::new(indices.shape(), indices.stride(), indices_on_host) {
+                // Get the index.
+                let norm_i = utils::normalize_index(i64::from(*dim_i), data.shape()[axis])?;
+                let start = stack_level * elem_count + (norm_i * data.stride()[axis]);
 
-        let mut counter = 0;
-        for j in 0..lfh.iter().product::<usize>() {
-            for (i, dim_idx) in
-                DataIterator::new(indices.shape(), indices.stride(), indices_on_host).enumerate()
-            {
-                let norm_i = utils::normalize_index(i64::from(*dim_idx), data.shape()[axis])?;
-                let start = j*(data.shape()[axis]) + (norm_i * data.stride()[axis]);
-
-                let rem = match axis == data.shape().len() - 1 {
-                    true => 1,
-                    false => data.shape()[axis + 1..].iter().product(),
-                };
-
+                // Slice the input.
                 let view = data_ptr.data::<D>();
-                println!("i={i}, dim_idx={dim_idx:?}, norm_i={norm_i}, start={start}, rem={rem} counter={counter}");
-                let subs = view.slice(start..start + rem);
+                let subslice = view.slice(start..start + slice_size);
 
+                // Create a writeable slice of the output.
                 let mut out_data = output_ptr.data_mut::<D>();
-                let mut out_slice = out_data.slice_mut(counter * rem..counter * rem + rem);
+                let mut out_slice = out_data.slice_mut(slice_count * slice_size..slice_count * slice_size + slice_size);
 
-                self.device.dtod_copy(&subs, &mut out_slice)?;
-                counter += 1;
+                // Write to the output slice.
+                self.device.dtod_copy(&subslice, &mut out_slice)?;
+
+                slice_count += 1;
             }
         }
 
