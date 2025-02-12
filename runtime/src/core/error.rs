@@ -24,6 +24,9 @@ impl From<InternalError> for Error {
 
 #[derive(Debug)]
 pub enum InternalError {
+    AxisOutOfBounds {
+        axis: i64,
+    },
     BufferSizeMismatch {
         expected: usize,
         actual: usize,
@@ -41,6 +44,10 @@ pub enum InternalError {
     InvalidAttributeDataType {
         name: String,
     },
+    InvalidRange {
+        start: i64,
+        end: i64,
+    },
     InvalidTensorShape {
         shape: Vec<usize>,
     },
@@ -50,9 +57,6 @@ pub enum InternalError {
     IncompatibleTensorShape {
         shapes: HashMap<usize, Vec<usize>>,
         op: Op,
-    },
-    InvalidAxis {
-        axis: i64,
     },
     MissingDeviceData,
     MissingAttributes,
@@ -71,6 +75,9 @@ pub enum InternalError {
     },
     ExpectedDataTypeInDef {
         node_id: usize,
+    },
+    UnsupportedRankSize {
+        message: String,
     },
     TensorStore(String),
     TensorNotFound {
@@ -104,6 +111,9 @@ pub enum InternalError {
 impl Display for InternalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            InternalError::AxisOutOfBounds { axis } => {
+                write!(f, "invalid axis `{axis}`")
+            }
             InternalError::TensorStore(msg) => {
                 write!(f, "tensor store error `{msg}`")
             }
@@ -133,6 +143,9 @@ impl Display for InternalError {
             }
             InternalError::IncompatibleTensorShape { shapes, op } => {
                 write!(f, "incompatible shapes `{shapes:?}` for {op:?}")
+            }
+            InternalError::InvalidRange { start, end } => {
+                write!(f, "invalid range start={start}, end={end}")
             }
             InternalError::InvalidTensorIndex { index } => {
                 write!(f, "invalid tensor index: {index:?}")
@@ -173,11 +186,11 @@ impl Display for InternalError {
             InternalError::UnsupportedOpForDataType { op, dtype } => {
                 write!(f, "unsupported data type `{dtype:?}` for op `{op:?}`")
             }
+            InternalError::UnsupportedRankSize { message } => {
+                write!(f, "unsupported rank size `{message}`")
+            }
             InternalError::InvalidTensorShape { shape } => {
                 write!(f, "invalid tensor shape `{shape:?}`")
-            }
-            InternalError::InvalidAxis { axis } => {
-                write!(f, "invalid axis `{axis}`")
             }
             InternalError::InvalidMemoryAllocation { message } => {
                 write!(f, "invalid memory allocation `{message}`")

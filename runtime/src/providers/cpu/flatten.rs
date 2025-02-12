@@ -34,7 +34,7 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
             y_shape[1] = x.shape().iter().product();
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
-            return Err(InternalError::InvalidAxis {
+            return Err(InternalError::AxisOutOfBounds {
                 axis: axis.to_i64().expect("`i32` values fit in `i64`"),
             });
         }

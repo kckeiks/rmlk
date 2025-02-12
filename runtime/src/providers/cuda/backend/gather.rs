@@ -30,7 +30,7 @@ impl GatherBackend {
         let indices_rank = indices.shape().len();
 
         if data_rank < axis {
-            return Err(InternalError::InvalidAxis { axis: axis as i64 });
+            return Err(InternalError::AxisOutOfBounds { axis: axis as i64 });
         }
 
         let alloc = ctx.execution_state().scratch_alloc().clone();

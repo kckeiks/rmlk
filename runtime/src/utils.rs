@@ -156,6 +156,7 @@ impl<'a, T> Iterator for DataIterator<'a, T> {
     }
 }
 
+// This function converts `index` to a `usize` value in the range `[0, size-1]`.
 pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
     let norm_index = match index < 0 {
         true => size
@@ -165,14 +166,45 @@ pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
                     .to_usize()
                     .expect("the runtime to be running in a `64-bit` system"),
             )
-            .ok_or(InternalError::InvalidAxis { axis: index })?,
-        false => {
-            index
-                .to_usize()
-                .expect("the runtime to be running in a `64-bit` system")
-                % size
+            .ok_or(InternalError::AxisOutOfBounds { axis: index })?,
+        false => index
+            .to_usize()
+            .expect("the runtime to be running in a `64-bit` system"),
+    };
+
+    if norm_index > size {
+        Err(InternalError::AxisOutOfBounds { axis: index })
+    } else {
+        Ok(norm_index)
+    }
+}
+
+pub fn derive_range(start: i64, end: i64, size: usize) -> error::Result<(usize, usize)> {
+    let norm_start = match normalize_index(start, size) {
+        Ok(start) => start,
+        Err(_) => {
+            if start < 0 {
+                0
+            } else {
+                return Err(InternalError::AxisOutOfBounds { axis: start });
+            }
         }
     };
 
-    Ok(norm_index)
+    let norm_end = match normalize_index(end, size) {
+        Ok(end) => end,
+        Err(_) => {
+            if end > 0 {
+                size
+            } else {
+                return Err(InternalError::AxisOutOfBounds { axis: start });
+            }
+        }
+    };
+
+    if start > end {
+        return Err(InternalError::InvalidRange { start, end });
+    }
+
+    Ok((norm_start, norm_end))
 }

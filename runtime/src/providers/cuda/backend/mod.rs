@@ -7,6 +7,7 @@ pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
+mod shape;
 pub mod whereop;
 
 use crate::core::backend::OperationBackend;
