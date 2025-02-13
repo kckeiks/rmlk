@@ -46,9 +46,10 @@ where
         "float" => Ok(Some(DataType::Float)),
         "half" => Ok(Some(DataType::Float16)),
         "int" => Ok(Some(DataType::Int32)),
+        "int64" => Ok(Some(DataType::Int64)),
         _ => Err(serde::de::Error::unknown_variant(
             variant,
-            &["float", "half", "int"],
+            &["float", "half", "int", "int64"],
         )),
     }
 }

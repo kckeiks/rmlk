@@ -13,6 +13,8 @@ mod cuda {
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;
+    mod shape_axis;
+    mod shape_simple;
     mod where_broadcast_diff_shape_len;
     mod where_two_inputs;
 }

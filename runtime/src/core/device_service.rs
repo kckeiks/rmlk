@@ -17,10 +17,13 @@ pub trait DeviceService: Sized {
 
     /// Copies `f32` data from device to host.
     fn dtoh_float(&self, data: &Self::Data) -> Result<Vec<f32>>;
+    fn dtoh_i64(&self, data: &Self::Data) -> Result<Vec<i64>>;
 
     /// Copies `i32` data from host to device.
     fn htod_i32(&self, data: Vec<i32>) -> Result<Self::Data>;
 
+    /// Copies `i32` data from host to device.
+    fn htod_i64(&self, data: Vec<i64>) -> Result<Self::Data>;
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data>;
 }
 

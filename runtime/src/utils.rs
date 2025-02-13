@@ -202,9 +202,52 @@ pub fn derive_range(start: i64, end: i64, size: usize) -> error::Result<(usize, 
         }
     };
 
-    if start > end {
+    if norm_start > norm_end {
         return Err(InternalError::InvalidRange { start, end });
     }
 
     Ok((norm_start, norm_end))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::utils::derive_range;
+    use num_traits::ToPrimitive;
+
+    #[test]
+    fn test_derive_shape() {
+        let input = vec![0; 4];
+
+        let (start, end) = derive_range(0, input.len() as i64, input.len()).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, input.len());
+
+        let (start, end) = derive_range(0, 2 * input.len() as i64, input.len()).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, input.len());
+
+        let (start, end) = derive_range(
+            -input.len().to_i64().unwrap(),
+            2 * input.len() as i64,
+            input.len(),
+        )
+        .unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, input.len());
+
+        let (start, end) = derive_range(-2, input.len() as i64, input.len()).unwrap();
+        assert_eq!(start, 2);
+        assert_eq!(end, input.len());
+
+        let (start, end) = derive_range(-2, -1, input.len()).unwrap();
+        assert_eq!(start, 2);
+        assert_eq!(end, 3);
+
+        let (start, end) =
+            derive_range(-(input.len() as i64), -(input.len() as i64), input.len()).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
+
+        assert!(derive_range(-1, -2, input.len()).is_err());
+    }
 }

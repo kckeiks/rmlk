@@ -9,6 +9,7 @@ pub struct Value {
 #[derive(Debug)]
 pub(crate) enum InnerValue {
     Int32(Vec<i32>),
+    Int64(Vec<i64>),
     Float32(Vec<f32>),
 }
 
@@ -34,6 +35,17 @@ impl TryFrom<Value> for Vec<i32> {
     }
 }
 
+impl TryFrom<Value> for Vec<i64> {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value.inner {
+            InnerValue::Int64(data) => Ok(data),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl From<Vec<f32>> for Value {
     fn from(value: Vec<f32>) -> Self {
         Self {
@@ -46,6 +58,14 @@ impl From<Vec<i32>> for Value {
     fn from(value: Vec<i32>) -> Self {
         Self {
             inner: InnerValue::Int32(value),
+        }
+    }
+}
+
+impl From<Vec<i64>> for Value {
+    fn from(value: Vec<i64>) -> Self {
+        Self {
+            inner: InnerValue::Int64(value),
         }
     }
 }

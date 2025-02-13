@@ -151,6 +151,20 @@ where
                 })?;
                 tensor.set_dev_data(data);
             }
+            InnerValue::Int64(data) => {
+                let data = self
+                    .instance_state
+                    ._plan()
+                    .device(0)
+                    .expect("We always have one device")
+                    .htod_i64(data)?;
+                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
+                    InternalError::ExecutionState(format!(
+                        "failed to load value: missing tensor for node {node_id}"
+                    ))
+                })?;
+                tensor.set_dev_data(data);
+            }
         }
 
         Ok(())
@@ -180,6 +194,7 @@ where
 
         match tensor.dtype() {
             DataType::Float => Ok(provider.dtoh_float(&ptr)?.into()),
+            DataType::Int64 => Ok(provider.dtoh_i64(&ptr)?.into()),
             _ => unimplemented!(),
         }
     }

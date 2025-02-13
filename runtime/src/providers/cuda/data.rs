@@ -34,7 +34,11 @@ impl CudaData {
         T: DataTypeMap,
     {
         if !self.is_dtype(T::data_type()) {
-            panic!("Cuda slice data type mismatch");
+            panic!(
+                "Cuda slice data type mismatch: received `{:?}` but expected `{:?}`",
+                T::data_type(),
+                self.dtype
+            );
         }
         let slice = unsafe { self.device.upgrade_device_ptr::<T>(self.ptr, self.len) };
 
@@ -49,7 +53,11 @@ impl CudaData {
         T: DataTypeMap,
     {
         if !self.is_dtype(T::data_type()) {
-            panic!("Cuda slice data type mismatch");
+            panic!(
+                "Cuda slice data type mismatch: received `{:?}` but expected `{:?}`",
+                T::data_type(),
+                self.dtype
+            );
         }
         let slice = unsafe { self.device.upgrade_device_ptr::<T>(self.ptr, self.len) };
 
@@ -88,6 +96,9 @@ impl Drop for CudaData {
                 }
                 DataType::Int32 => {
                     let _dev_data = self.device.upgrade_device_ptr::<i32>(self.ptr, self.len);
+                }
+                DataType::Int64 => {
+                    let _dev_data = self.device.upgrade_device_ptr::<i64>(self.ptr, self.len);
                 }
                 _ => unimplemented!("CudaDevData::drop unimplemented!"),
             }

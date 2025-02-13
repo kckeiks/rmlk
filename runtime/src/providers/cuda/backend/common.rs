@@ -30,7 +30,7 @@ where
 
     if need_to_alloc_dev_data {
         let dev_data = device
-            .alloc_zeros::<f32>(size)
+            .alloc_zeros::<T>(size)
             .map_err(rmlk_cuda::Error::from)?;
         tensor.set_dev_data(CudaData::new(dev_data));
     };

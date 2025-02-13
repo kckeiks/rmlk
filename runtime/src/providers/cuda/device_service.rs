@@ -9,6 +9,7 @@ use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
@@ -36,9 +37,12 @@ impl Cuda {
         Ok(CudaData::new(ptr))
     }
 
-    pub fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
-        let ptr = data.data::<f32>();
-        Ok(self.device.dtoh_sync_copy::<f32, _>(ptr.as_ref())?)
+    pub fn dtoh<T>(&self, data: &CudaData) -> Result<Vec<T>>
+    where
+        T: Unpin + DeviceRepr + DataTypeMap,
+    {
+        let ptr = data.data::<T>();
+        Ok(self.device.dtoh_sync_copy::<T, _>(ptr.as_ref())?)
     }
 }
 
@@ -65,6 +69,7 @@ impl DeviceService for Cuda {
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
+            Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.device)),
             Op::Where => {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Where(WhereBackend::new(self.device.clone(), f))
@@ -82,10 +87,18 @@ impl DeviceService for Cuda {
     }
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {
-        self.dtoh_float(data)
+        self.dtoh(data)
+    }
+
+    fn dtoh_i64(&self, data: &Self::Data) -> Result<Vec<i64>> {
+        self.dtoh(data)
     }
 
     fn htod_i32(&self, data: Vec<i32>) -> Result<Self::Data> {
+        self.htod(data)
+    }
+
+    fn htod_i64(&self, data: Vec<i64>) -> Result<Self::Data> {
         self.htod(data)
     }
 

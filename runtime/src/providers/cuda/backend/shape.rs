@@ -4,11 +4,9 @@ use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DevicePtrMut, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use num_traits::{Num, ToPrimitive};
-use rmlk_schema::{Attribute, DataType, DataTypeMap, Op};
-use std::collections::HashMap;
-use std::fmt::Debug;
+use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ShapeBackend {
@@ -22,16 +20,20 @@ impl ShapeBackend {
         }
     }
 
-    pub fn compute_output_shape(&mut self, size: usize, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute_output_shape(
+        &mut self,
+        start: usize,
+        end: usize,
+        ctx: &mut Context<Cuda>,
+    ) -> Result<()> {
         let alloc = ctx.execution_state().scratch_alloc().clone();
+        let tensor_shape_buf = alloc.allocate_fill::<usize>(1, end - start)?;
 
-        let output_shape_buf = alloc.allocate::<usize>(size)?;
-
-        let output = ctx.get_output(0)?;
-        let dst_id = output.dst_id();
+        let tensor = ctx.get_output(0)?;
+        let dst_id = tensor.dst_id();
 
         ctx.execution_state_mut()
-            .copy_shape_from_slice(output_shape_buf, dst_id)?;
+            .copy_shape_from_slice(tensor_shape_buf, dst_id)?;
 
         Ok(())
     }
@@ -44,34 +46,39 @@ impl ShapeBackend {
         let data = ctx.get_input(0)?;
         let rank = data.shape().len();
 
-        let start = ctx
+        let raw_start = ctx
             .get_attributes()
             .map(attributes::shape::get_start)
             .unwrap_or(0);
-        let end = match ctx.get_attributes().map(attributes::shape::get_start) {
+        let raw_end = match ctx.get_attributes().and_then(attributes::shape::get_end) {
             None => rank.to_i32().ok_or(InternalError::UnsupportedRankSize {
                 message: format!("failed to convert `{rank}` to i32"),
             })?,
             Some(end) => end,
         };
 
-        let (start, end) = utils::derive_range(start as i64, end as i64, rank)?;
+        let (start, end) = utils::derive_range(raw_start as i64, raw_end as i64, rank)?;
 
-        self.compute_output_shape(end.checked_sub(start).unwrap_or(0), ctx)?;
+        self.compute_output_shape(start, end, ctx)?;
 
         let output = ctx.get_output(0)?;
         common::init_tensor_device_data::<i64>(&self.device, output)?;
 
-        let output = ctx.get_output(0)?;
-        let mut output_ptr = output.try_dev_data_ptr_mut()?;
+        let shape = ctx.get_output(0)?;
+        let mut shape_ptr = shape.try_dev_data_ptr_mut()?;
+        let mut shape_dev_data = shape_ptr.data_mut::<i64>();
 
-        let mut dev_data = output_ptr.data_mut::<i64>();
+        let data = ctx.get_input(0)?;
+        let shape_host_buf = ctx
+            .execution_state()
+            .scratch_alloc()
+            .allocate_and_convert_from_slice::<_, i64>(data.shape())?;
 
-        let alloc = ctx.execution_state().scratch_alloc().clone();
-
-        let output_shape_buf = alloc.allocate_and_convert_from_slice::<_, i64>(output.shape())?;
-
-        T::compute::<i64>(&self.device, &output_shape_buf[start..end], &mut dev_data)
+        T::compute::<i64>(
+            &self.device,
+            &shape_host_buf[start..end],
+            &mut shape_dev_data,
+        )
     }
 
     pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -83,7 +90,7 @@ impl ShapeBackend {
         match dtype {
             DataType::Float => self.compute_shape::<f32, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::NoOp,
+                op: Op::Shape,
                 dtype,
             }),
         }

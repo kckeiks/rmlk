@@ -7,7 +7,7 @@ pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
-mod shape;
+pub mod shape;
 pub mod whereop;
 
 use crate::core::backend::OperationBackend;
@@ -17,6 +17,7 @@ use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
+use crate::providers::cuda::backend::shape::ShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
@@ -33,6 +34,7 @@ pub enum CudaKernel {
     GlobalAveragePool(GlobalAverageBackend),
     MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
+    Shape(ShapeBackend),
     Where(WhereBackend),
 }
 
@@ -49,6 +51,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             }
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
             CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
         }
     }
@@ -67,6 +70,7 @@ impl CudaKernel {
             }
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::NoOpKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Shape(kernel) => kernel.compute::<shape::NoOpShapeProcessor>(ctx),
             CudaKernel::Where(kernel) => kernel.compute::<whereop::NoOpKernel>(ctx),
         }
     }
