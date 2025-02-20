@@ -9,6 +9,7 @@ pub mod global_average_pool;
 pub mod max_pool;
 pub mod shape;
 pub mod whereop;
+mod constant_of_shape;
 
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
