@@ -40,7 +40,7 @@ pub fn build(test_def: &str) -> Builder {
                 if constant.unwrap_or(false) {
                     schema_node.op_type = Op::Const;
                 }
-
+                dtype.clone().unwrap();
                 // Todo: circle back and assess this code.
                 if let Some(shape) = shape {
                     schema_node.set_type_value(TypeValue::Tensor {

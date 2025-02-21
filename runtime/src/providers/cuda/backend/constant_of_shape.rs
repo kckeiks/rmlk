@@ -9,11 +9,11 @@ use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
-pub struct ConstantOfShape {
+pub struct ConstantOfShapeBackend {
     device: Arc<CudaDevice>,
 }
 
-impl ConstantOfShape {
+impl ConstantOfShapeBackend {
     pub fn new(device: &Arc<CudaDevice>) -> Self {
         Self {
             device: device.clone(),
@@ -69,17 +69,27 @@ impl ConstantOfShape {
     }
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let dtype = ctx.get_input(0)?.dtype();
+        let node = ctx
+            .get_output_node()
+            .ok_or(InternalError::MissingOutputNode {
+                op: Op::ConstantOfShape,
+            })?;
+
+        let node_id = node.value().id();
+        let dtype = node
+            .value()
+            .dtype()
+            .ok_or_else(|| InternalError::ExpectedNodeInfo {
+                info: "expected data type of output of ConstantOfShape".to_string(),
+                node_id,
+            })?;
 
         match dtype {
             DataType::Float => self.compute_constant_of_shape::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::ConstantOfShape,
+                dtype,
+            }),
         }
     }
-}
-
-trait ConstantOfShapeProcessor {
-    fn process<T>(&self, shape: &[T], value: T) -> Result<()>
-    where
-        T: Copy;
 }

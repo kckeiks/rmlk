@@ -66,6 +66,9 @@ pub enum InternalError {
     MissingNode {
         id: usize,
     },
+    MissingOutputNode {
+        op: Op,
+    },
     ExpectedNodeInfo {
         info: String,
         node_id: usize,
@@ -164,6 +167,9 @@ impl Display for InternalError {
             }
             InternalError::MissingNode { id } => {
                 write!(f, "missing node `{id}`")
+            }
+            InternalError::MissingOutputNode { op } => {
+                write!(f, "missing output node `{op:?}`")
             }
             InternalError::InvalidAttribute { name } => {
                 write!(f, "invalid attribute `{name}`")

@@ -28,6 +28,10 @@ impl Definition {
         Self { node, attributes }
     }
 
+    pub fn id(&self) -> usize {
+        self.node.id
+    }
+
     // Todo: remove clones in this method.
     pub fn shape(&self) -> Option<&Vec<usize>> {
         self.node.value.as_ref().map(|v| v.dims())

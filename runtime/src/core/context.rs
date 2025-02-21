@@ -2,7 +2,8 @@ use crate::core::device_service::DeviceService;
 use crate::core::error::InternalError;
 use crate::core::execution_state::ExecutionState;
 use crate::core::tensor::Tensor;
-use rmlk_schema::Attribute;
+use rmlk_graph::Node;
+use rmlk_schema::{Attribute, Definition};
 use std::collections::HashMap;
 
 type Result<T> = std::result::Result<T, InternalError>;
@@ -90,6 +91,16 @@ where
         self.execution_state
             .get_tensor(node_index)
             .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
+    }
+
+    pub fn get_node(&self) -> Option<&Node<Definition>> {
+        self.execution_state.graph().get_node(self.original_node_id)
+    }
+
+    pub fn get_output_node(&self) -> Option<&Node<Definition>> {
+        let op_node = self.get_node()?;
+        let output = op_node.outputs().iter().next()?;
+        self.execution_state.graph().get_node(*output)
     }
 
     pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {

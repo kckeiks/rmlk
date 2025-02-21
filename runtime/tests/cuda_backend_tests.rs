@@ -7,6 +7,7 @@ mod cuda {
 
     mod add_broadcast;
     mod add_broadcast_diff_len_shapes;
+    mod constant_of_shape_simple;
     mod gather_higher_dim;
     mod gather_higher_dim_indices;
     mod gather_negative_axis;
