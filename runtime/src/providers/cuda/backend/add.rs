@@ -36,6 +36,7 @@ impl AdditionBackend {
 
         match dtype {
             DataType::Float => self.compute_addition::<f32, T>(ctx),
+            DataType::Int64 => self.compute_addition::<i64, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
         }
     }

@@ -1,7 +1,13 @@
 use crate::ptx::ADD;
 
 pub const MODULE_NAME: &str = "add";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["add_fwd_f16", "add_fwd_f32", "add_fwd_f64"];
+pub const FWD_FN_NAMES: [&'static str; 5] = [
+    "add_fwd_f16",
+    "add_fwd_f32",
+    "add_fwd_f64",
+    "add_fwd_i32",
+    "add_fwd_i64"
+];
 pub const FWD_FN_NAMES_ALPHA_BETA_INPLACE: [&'static str; 3] = [
     "add_alpha_beta_inplace_fwd_f16",
     "add_alpha_beta_inplace_fwd_f32",

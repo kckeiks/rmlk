@@ -20,9 +20,9 @@ impl ConstantOfShapeBackend {
         }
     }
 
-    fn compute_constant_of_shape<O>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_constant_of_shape<O>(&mut self, ctx: &mut Context<Cuda>, value: O) -> Result<()>
     where
-        O: Default + DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        O: Copy + Default + DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
@@ -46,17 +46,14 @@ impl ConstantOfShapeBackend {
         ctx.execution_state_mut()
             .copy_shape_from_slice(output_shape, dst_id)?;
 
-        let value = ctx
-            .get_attributes()
-            .and_then(attributes::constant_of_shape::get_value)
-            .unwrap_or(0);
-        if value == 0 {
-            let output = ctx.get_output(0)?;
-            common::init_tensor_device_data::<O>(&self.device, output)?;
-        } else {
+        let output = ctx.get_output(0)?;
+        common::init_tensor_device_data::<O>(&self.device, output)?;
+
+        if value == O::zero() {
             let output = ctx.get_output(0)?;
             let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-            let on_host_data = scratch_alloc.allocate::<O>(output.shape().iter().product())?;
+            let on_host_data =
+                scratch_alloc.allocate_fill::<O>(output.shape().iter().product(), value)?;
 
             let mut output_data_ptr = output.try_dev_data_ptr_mut()?;
             let mut output_data_view = output_data_ptr.data_mut::<O>();
@@ -69,23 +66,19 @@ impl ConstantOfShapeBackend {
     }
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let node = ctx
-            .get_output_node()
-            .ok_or(InternalError::MissingOutputNode {
-                op: Op::ConstantOfShape,
-            })?;
-
-        let node_id = node.value().id();
-        let dtype = node
-            .value()
-            .dtype()
-            .ok_or_else(|| InternalError::ExpectedNodeInfo {
-                info: "expected data type of output of ConstantOfShape".to_string(),
-                node_id,
-            })?;
+        let dtype = ctx
+            .get_attributes()
+            .and_then(attributes::constant_of_shape::get_dtype)
+            .unwrap_or(DataType::Float);
 
         match dtype {
-            DataType::Float => self.compute_constant_of_shape::<f32>(ctx),
+            DataType::Float => {
+                let value = ctx
+                    .get_attributes()
+                    .and_then(attributes::constant_of_shape::get_value_f32)
+                    .unwrap_or(0.0);
+                self.compute_constant_of_shape::<f32>(ctx, value)
+            }
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::ConstantOfShape,
                 dtype,

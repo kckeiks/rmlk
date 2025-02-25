@@ -11,7 +11,7 @@ use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::{debug, trace};
 use rmlk_graph::Graph;
-use rmlk_schema::{DataType, Definition, Op, Tensor};
+use rmlk_schema::{Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -197,9 +197,10 @@ where
                 node.outputs(),
             );
 
-            provider
-                .get_backend(op, DataType::Float)?
-                .compute(&mut ctx)?;
+            // Todo: we need to spec this out.
+            let dtype = ctx.get_input(0)?.dtype();
+
+            provider.get_backend(op, dtype)?.compute(&mut ctx)?;
         }
 
         let output = self.get_outputs()?;

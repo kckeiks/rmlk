@@ -43,6 +43,7 @@ pub fn load_add_kernel_alpha_beta_inplace(
 }
 
 pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
+    println!("Op={op:?} DataType={dtype:?}");
     let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
         Op::Add => (
             add::FWD_FN_NAMES[dtype as usize],

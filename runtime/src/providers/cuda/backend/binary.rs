@@ -61,7 +61,7 @@ where
 
         if need_to_alloc_dev_data {
             let c_dev_data = device
-                .alloc_zeros::<f32>(c.shape().iter().copied().product::<usize>())
+                .alloc_zeros::<D>(c.shape().iter().copied().product::<usize>())
                 .map_err(rmlk_cuda::Error::from)?;
             c.set_dev_data(CudaData::new(c_dev_data));
         };

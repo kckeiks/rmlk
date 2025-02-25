@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::onnx::AttributeProto;
-use crate::{onnx, Tensor};
+use crate::{onnx, DataType, Tensor};
 use serde::{Deserialize, Serialize};
 
 /// Attributes
@@ -42,6 +42,13 @@ impl Attribute {
     pub fn int(&self) -> Option<i32> {
         match &self.ty {
             AttributeType::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn dtype(&self) -> Option<DataType> {
+        match self.ty {
+            AttributeType::DataType(dtype) => Some(dtype),
             _ => None,
         }
     }
@@ -127,4 +134,5 @@ pub enum AttributeType {
     Ints(Vec<i32>),
     Strings(Vec<Vec<u8>>),
     Tensors(Vec<Tensor>),
+    DataType(DataType),
 }

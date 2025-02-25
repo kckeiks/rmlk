@@ -32,6 +32,7 @@ pub enum NodeTypeInfo {
 pub struct ValueDef {
     pub name: String,
     pub shape: Option<Vec<usize>>,
+    #[serde(default)]
     #[serde(deserialize_with = "deserialize_lowercase")]
     pub dtype: Option<DataType>,
     pub constant: Option<bool>,
@@ -90,6 +91,8 @@ pub enum AttributeValue {
     Ints(Vec<i32>),
     Strings(Vec<Vec<u8>>),
     Tensors(Vec<Tensor>),
+    #[serde(deserialize_with = "deserialize_lowercase")]
+    DataType(Option<DataType>),
 }
 
 pub fn parse_attributes(attributes: HashMap<String, AttributeValue>) -> Vec<Attribute> {
@@ -105,6 +108,7 @@ pub fn parse_attributes(attributes: HashMap<String, AttributeValue>) -> Vec<Attr
             AttributeValue::Ints(v) => AttributeType::Ints(v),
             AttributeValue::Strings(v) => AttributeType::Strings(v),
             AttributeValue::Tensors(v) => AttributeType::Tensors(v),
+            AttributeValue::DataType(v) => AttributeType::DataType(v.unwrap()),
         };
         res.push(Attribute {
             name,

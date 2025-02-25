@@ -246,10 +246,7 @@ where
 
             for output in node.outputs() {
                 match self.graph.get_node(*output) {
-                    Some(node) => {
-                        let dtype = node.value().dtype().ok_or_else(
-                            || InternalError::ExpectedDataTypeInDef { node_id: *output },
-                        )?;
+                    Some(_) => {
                         if self.tensors.get(*output)
                             .ok_or_else(|| {
                                 InternalError::TensorStore(
@@ -258,7 +255,7 @@ where
                             })?
                             .is_none()
                         {
-                            self.tensors[*output].replace(TensorHandle::new(dtype, None, Rc::new(RefCell::new(None))));
+                            self.tensors[*output].replace(TensorHandle::new(DataType::Undefined, None, Rc::new(RefCell::new(None))));
                         }
                     }
                     None => {
