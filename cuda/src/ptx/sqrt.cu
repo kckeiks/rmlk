@@ -1,4 +1,5 @@
 #include "unary_op_macro.cuh"
+#include "cuda_fp16.h"
 #include <math.h>
 
 

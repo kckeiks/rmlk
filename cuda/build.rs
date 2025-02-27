@@ -7,6 +7,7 @@ fn main() {
 
     let builder = bindgen_cuda::Builder::default().kernel_paths(vec![
         "src/ptx/add.cu",
+        "src/ptx/cast.cu",
         "src/ptx/mul.cu",
         "src/ptx/div.cu",
         "src/ptx/sqrt.cu",
