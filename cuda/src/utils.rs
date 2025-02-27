@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
-use crate::kernels::{add, div, mul, sqrt, whereop};
+use crate::kernels::cast::CastKernel;
+use crate::kernels::{add, cast, div, mul, sqrt, whereop};
 use cudarc::driver::{CudaDevice, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
@@ -37,13 +38,13 @@ pub fn load_add_kernel_alpha_beta_inplace(
             .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
     }
 
+    // Todo: circle back and assess if it's safe to unwrap.
     Ok(device
         .get_func(module_name, fwd_fn_name)
         .expect("To have been loaded"))
 }
 
 pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
-    println!("Op={op:?} DataType={dtype:?}");
     let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
         Op::Add => (
             add::FWD_FN_NAMES[dtype as usize],
@@ -84,7 +85,21 @@ pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<
             .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
     }
 
+    // Todo: circle back and assess if it's safe to unwrap.
     Ok(device
         .get_func(module_name, fwd_fn_name)
+        .expect("To have been loaded"))
+}
+
+pub fn load_cast_kernel(device: &Arc<CudaDevice>, kernel_name: CastKernel) -> Result<CudaFunction> {
+    if !device.has_func(cast::MODULE_NAME, kernel_name.as_str()) {
+        device
+            .load_ptx(cast::PTX_SRC.into(), cast::MODULE_NAME, cast::FWD_FN_NAMES)
+            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
+    }
+
+    // Todo: circle back and assess if it's safe to unwrap.
+    Ok(device
+        .get_func(cast::MODULE_NAME, kernel_name.as_str())
         .expect("To have been loaded"))
 }
