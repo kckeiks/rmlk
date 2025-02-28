@@ -57,24 +57,14 @@ where
     info_buffer[..rank].copy_from_slice(output.shape());
     info_buffer[rank..2 * rank].copy_from_slice(input.stride());
 
-    K::execute::<I>(
-        device,
-        f,
-        rank,
-        info_buffer,
-        &input_dev_data,
-        &mut output_dev_data,
-    )?;
+    K::execute::<I>(f, &input_dev_data, &mut output_dev_data)?;
 
     Ok(())
 }
 
 pub trait UnaryKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
         func: CudaFunction,
-        rank: usize,
-        info: &[usize],
         input_dev_data: &CudaSlice<T>,
         output_dev_data: &mut CudaSlice<T>,
     ) -> Result<()>
