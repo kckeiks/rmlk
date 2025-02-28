@@ -1,6 +1,7 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
+use crate::providers::cuda::backend::binary::BinaryKernel;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
@@ -23,14 +24,14 @@ impl AdditionBackend {
     fn compute_addition<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: AdditionKernel,
+        T: BinaryKernel,
     {
         unsafe { binary::compute::<D, T>("add", self.device, self.f, ctx) }
     }
 
     pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: AdditionKernel,
+        T: BinaryKernel,
     {
         let dtype = ctx.get_input(0)?.dtype();
 
@@ -42,23 +43,9 @@ impl AdditionBackend {
     }
 }
 
-pub trait AdditionKernel {
-    fn execute<T>(
-        device: Arc<CudaDevice>,
-        func: CudaFunction,
-        rank: usize,
-        info: &[usize],
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        c_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
-}
-
 pub struct ActiveKernel(());
 
-impl AdditionKernel for ActiveKernel {
+impl BinaryKernel for ActiveKernel {
     fn execute<T>(
         device: Arc<CudaDevice>,
         func: CudaFunction,
@@ -82,7 +69,7 @@ impl AdditionKernel for ActiveKernel {
 
 pub struct NoOpKernel(());
 
-impl AdditionKernel for NoOpKernel {
+impl BinaryKernel for NoOpKernel {
     fn execute<T>(
         _: Arc<CudaDevice>,
         _: CudaFunction,

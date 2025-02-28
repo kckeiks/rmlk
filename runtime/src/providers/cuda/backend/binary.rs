@@ -1,12 +1,13 @@
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::Context;
-use crate::providers::cuda::add::AdditionKernel;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{
+    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
+};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataTypeMap, Op};
@@ -21,7 +22,7 @@ pub unsafe fn compute<D, T>(
 ) -> Result<()>
 where
     D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-    T: AdditionKernel,
+    T: BinaryKernel,
 {
     // The output should have the same dimensions.
     // We do it now to avoid lifetime errors.
@@ -146,4 +147,18 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub trait BinaryKernel {
+    fn execute<T>(
+        device: Arc<CudaDevice>,
+        func: CudaFunction,
+        rank: usize,
+        info: &[usize],
+        a_dev_data: &CudaSlice<T>,
+        b_dev_data: &CudaSlice<T>,
+        c_dev_data: &mut CudaSlice<T>,
+    ) -> Result<()>
+    where
+        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }

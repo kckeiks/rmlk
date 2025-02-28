@@ -9,6 +9,7 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 pub mod shape;
+mod unary;
 pub mod whereop;
 
 use crate::core::backend::OperationBackend;
