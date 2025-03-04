@@ -3,6 +3,7 @@ use crate::core::error::{InternalError, Result};
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
+use crate::providers::cuda::cast::CastBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
@@ -59,6 +60,7 @@ impl DeviceService for Cuda {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
             }
+            Op::Cast => CudaKernel::Cast(CastBackend::new(&self.device)),
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.device))
             }

@@ -1,6 +1,7 @@
 pub mod activation;
 pub mod add;
 mod binary;
+pub mod cast;
 mod common;
 pub mod constant_of_shape;
 pub mod conv;
@@ -19,6 +20,7 @@ use crate::core::Context;
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
+use crate::providers::cuda::backend::cast::CastBackend;
 use crate::providers::cuda::backend::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
@@ -33,6 +35,7 @@ use crate::providers::cuda::Cuda;
 pub enum CudaKernel {
     Add(AdditionBackend),
     Relu(ActivationBackend),
+    Cast(CastBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
     Gather(GatherBackend),
@@ -50,6 +53,7 @@ impl OperationBackend<Cuda> for CudaKernel {
         match self {
             CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
+            CudaKernel::Cast(kernel) => kernel.compute::<cast::ActiveKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
             CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),

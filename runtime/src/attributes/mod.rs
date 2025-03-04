@@ -1,3 +1,4 @@
+pub mod cast;
 pub mod constant_of_shape;
 pub mod conv;
 pub mod gather;
