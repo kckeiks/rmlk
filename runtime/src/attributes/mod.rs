@@ -5,3 +5,4 @@ pub mod gather;
 pub mod gemm;
 pub mod pooling;
 pub mod shape;
+pub mod transpose;
