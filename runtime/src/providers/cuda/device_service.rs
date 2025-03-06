@@ -18,6 +18,7 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
+use crate::providers::cuda::transpose::TransposeBackend;
 
 pub struct Cuda {
     device: Arc<CudaDevice>,
@@ -81,6 +82,7 @@ impl DeviceService for Cuda {
                 let kernel = self.load_kernel(op, dtype)?;
                 CudaKernel::Sqrt(SqrtBackend::new(&self.device, kernel))
             }
+            Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.device.clone())),
             Op::Where => {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::Where(WhereBackend::new(self.device.clone(), f))

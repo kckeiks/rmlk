@@ -11,7 +11,7 @@ pub mod global_average_pool;
 pub mod max_pool;
 pub mod shape;
 pub mod sqrt;
-mod transpose;
+pub mod transpose;
 mod unary;
 pub mod whereop;
 
@@ -26,6 +26,7 @@ use crate::providers::cuda::backend::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
 use crate::providers::cuda::backend::sqrt::SqrtBackend;
+use crate::providers::cuda::backend::transpose::TransposeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
@@ -46,6 +47,7 @@ pub enum CudaKernel {
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
     Shape(ShapeBackend),
     Sqrt(SqrtBackend),
+    Transpose(TransposeBackend),
     Where(WhereBackend),
 }
 
@@ -66,6 +68,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
             CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
             CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),
+            CudaKernel::Transpose(backend) => backend.compute(ctx),
             CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
         }
     }
