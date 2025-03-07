@@ -18,19 +18,13 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "transpose(input)",
         "dtype": "float",
-        "shape": [4, 3, 2]
+        "shape": [2, 4, 3]
       }
     },
     {
       "info": {
         "type": "op",
-        "name": "transpose",
-        "attributes": {
-            "perm": {
-                "type": "ints",
-                "data": [1, 0, 2]
-            }
-        }
+        "name": "transpose"
       },
       "input": ["input"],
       "output": ["transpose(input)"]
