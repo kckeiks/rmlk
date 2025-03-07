@@ -1,12 +1,12 @@
 use crate::attributes::transpose;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
+use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use cudarc::cudnn::CudnnDataType;
-use crate::providers::cuda::data::CudaData;
 
 pub struct TransposeBackend {
     _device: Arc<CudaDevice>,
@@ -41,9 +41,19 @@ impl TransposeBackend {
                     });
                 }
 
-                for dim_i in perm {
-                    let i = usize::try_from(*dim_i).map_err(|_| InternalError::UnableToConvertValue)?;
-                    output_shape[i] = input.shape()[i];
+                for (dst_i, dim_i) in perm.iter().enumerate() {
+                    // Todo: add a more detailed error message.
+                    let i =
+                        usize::try_from(*dim_i).map_err(|_| InternalError::UnableToConvertValue)?;
+                    if i >= output_shape.len() {
+                        return Err(InternalError::InvalidAttribute {
+                            name: format!(
+                                "index `{i}` is out of bounds for input shape `{:?}`",
+                                input.shape()
+                            ),
+                        });
+                    }
+                    output_shape[dst_i] = input.shape()[i];
                 }
             }
         }

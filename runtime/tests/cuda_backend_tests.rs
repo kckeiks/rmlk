@@ -17,6 +17,8 @@ mod cuda {
     mod gemm_simple;
     mod shape_axis;
     mod shape_simple;
+    mod transpose_validate_data;
+    mod transpose_validate_shape;
     mod where_broadcast_diff_shape_len;
     mod where_two_inputs;
 }

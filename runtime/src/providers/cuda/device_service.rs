@@ -13,12 +13,12 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
+use crate::providers::cuda::transpose::TransposeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::transpose::TransposeBackend;
 
 pub struct Cuda {
     device: Arc<CudaDevice>,
