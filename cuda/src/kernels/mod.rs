@@ -11,3 +11,4 @@ pub mod mul;
 pub mod sqrt;
 pub mod unary;
 pub mod whereop;
+mod reduce;
