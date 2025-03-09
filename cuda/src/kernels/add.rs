@@ -56,9 +56,10 @@ mod test {
                 &mut out_data,
             )
             .unwrap();
-            let result = device.dtoh_sync_copy(&out_data).unwrap();
-
-            assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
         }
+
+        let result = device.dtoh_sync_copy(&out_data).unwrap();
+
+        assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
     }
 }

@@ -8,7 +8,7 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
+pub mod reduce_mean;
 pub mod sqrt;
 pub mod unary;
 pub mod whereop;
-mod reduce;

@@ -10,7 +10,7 @@ fn main() {
         "src/ptx/cast.cu",
         "src/ptx/mul.cu",
         "src/ptx/div.cu",
-        "src/ptx/reduce.cu",
+        "src/ptx/reduce_mean.cu",
         "src/ptx/sqrt.cu",
         "src/ptx/where.cu",
     ]);
