@@ -398,6 +398,13 @@ pub trait DataTypeMap {
     fn data_type() -> DataType;
 }
 
+impl DataTypeMap for usize {
+    fn data_type() -> DataType {
+        // We assume that we are running on a 64-bit system.
+        DataType::Uint64
+    }
+}
+
 impl DataTypeMap for f32 {
     fn data_type() -> DataType {
         DataType::Float

@@ -58,6 +58,11 @@ pub enum InternalError {
         shapes: HashMap<usize, Vec<usize>>,
         op: Op,
     },
+    InvalidInput {
+        input: usize,
+        op: Op,
+        message: String,
+    },
     MissingDeviceData,
     MissingAttributes,
     MissingAttribute {
@@ -152,6 +157,9 @@ impl Display for InternalError {
             }
             InternalError::InvalidTensorIndex { index } => {
                 write!(f, "invalid tensor index: {index:?}")
+            }
+            InternalError::InvalidInput { input, op, message } => {
+                write!(f, "invalid input `{input:?}` for op `{op:?}`: {message:?}")
             }
             InternalError::UnableToConvertValue => {
                 write!(f, "unable to convert value")

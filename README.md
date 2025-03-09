@@ -49,3 +49,4 @@ Implement
 ## Notes
 
 * Our changes to definition of ConstantOfShape in terms of attributes needs to be considered in the converter.
+* ReduceMean axes input should be in usize type.

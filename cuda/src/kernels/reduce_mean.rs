@@ -18,8 +18,6 @@ pub const FWD_FN_NAMES: &[&str] = &[
 pub const PTX_SRC: &str = REDUCE_MEAN;
 
 /// Launches a CUDA kernel that performs the reduce mean operation.
-///
-/// Panics if the input and output slice are not equal in size.
 pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,

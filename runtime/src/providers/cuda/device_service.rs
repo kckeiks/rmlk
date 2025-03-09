@@ -11,6 +11,7 @@ use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
 use crate::providers::cuda::transpose::TransposeBackend;
@@ -77,6 +78,10 @@ impl DeviceService for Cuda {
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.device.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
+            Op::ReduceMean => {
+                let f = self.load_kernel(op, dtype)?;
+                CudaKernel::ReduceMean(ReduceMeanBackend::new(self.device.clone(), f))
+            }
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.device)),
             Op::Sqrt => {
                 let kernel = self.load_kernel(op, dtype)?;

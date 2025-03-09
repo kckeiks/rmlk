@@ -4,5 +4,6 @@ pub mod conv;
 pub mod gather;
 pub mod gemm;
 pub mod pooling;
+pub mod reduce_mean;
 pub mod shape;
 pub mod transpose;
