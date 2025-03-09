@@ -1,8 +1,10 @@
 use crate::attributes::reduce_mean;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
@@ -10,7 +12,6 @@ use cudarc::driver::{
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::backend::common;
 
 pub struct ReduceMeanBackend {
     device: Arc<CudaDevice>,
@@ -135,21 +136,20 @@ impl ReduceMeanBackend {
                     let axes_dev_data = axes_dev_ptr.data::<i64>();
 
                     if axes_dev_data.len() > 0 {
-                        let buf = alloc.allocate::<i64>(axes_dev_data.len())?;
+                        let raw_axes = alloc.allocate::<i64>(axes_dev_data.len())?;
                         self.device
-                            .dtoh_sync_copy_into(axes_dev_data.as_ref(), buf)
+                            .dtoh_sync_copy_into(axes_dev_data.as_ref(), raw_axes)
                             .map_err(rmlk_cuda::Error::from)?;
-                        // Todo: process ranges for each axis.
-                        Some(alloc.allocate_and_convert_from_slice(buf)?)
+                        let axes = alloc.allocate::<usize>(axes_dev_data.len())?;
+                        utils::normalize_indices(raw_axes, axes, rank)?;
+                        Some(axes)
                     } else {
                         None
                     }
                 }
                 None => {
                     let buf = alloc.allocate::<usize>(rank)?;
-                    for i in 0..rank {
-                        buf[i] = i;
-                    }
+                    utils::write_increasing_sequence(buf)?;
                     Some(buf)
                 }
             }
@@ -159,9 +159,7 @@ impl ReduceMeanBackend {
             let axes = match axes {
                 None => {
                     let buf = alloc.allocate::<usize>(rank)?;
-                    for i in 0..rank {
-                        buf[i] = i;
-                    }
+                    utils::write_increasing_sequence(buf)?;
                     buf
                 }
                 Some(axes) => axes,

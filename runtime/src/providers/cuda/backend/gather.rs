@@ -129,6 +129,7 @@ impl GatherBackend {
             .unwrap_or(0);
 
         let data_rank = ctx.get_input(0)?.shape().len();
+        // Todo: handle this conversion better.
         let norm_axis = utils::normalize_index(axis as i64, data_rank)?;
 
         self.compute_output_shape(norm_axis, ctx)?;

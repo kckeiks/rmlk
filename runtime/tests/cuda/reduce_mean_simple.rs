@@ -52,13 +52,14 @@ fn test_run() {
             "input".to_string(),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0].try_into().unwrap(),
         ),
-        (
-            "axes".to_string(),
-            vec![0i64].try_into().unwrap(),
-        ),
+        ("axes".to_string(), vec![0i64].try_into().unwrap()),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("reducemean(input, axes)").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output
+        .remove("reducemean(input, axes)")
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(data, vec![2.5, 3.5, 4.5]);
 }

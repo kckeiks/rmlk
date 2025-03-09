@@ -156,6 +156,15 @@ impl<'a, T> Iterator for DataIterator<'a, T> {
     }
 }
 
+pub fn normalize_indices(src: &[i64], dst: &mut [usize], size: usize) -> error::Result<()> {
+    debug_assert_eq!(src.len(), dst.len());
+
+    for (i, axis) in src.iter().copied().enumerate() {
+        dst[i] = normalize_index(axis, size)?;
+    }
+    Ok(())
+}
+
 // This function converts `index` to a `usize` value in the range `[0, size-1]`.
 pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
     let norm_index = match index < 0 {
@@ -207,6 +216,17 @@ pub fn derive_range(start: i64, end: i64, size: usize) -> error::Result<(usize, 
     }
 
     Ok((norm_start, norm_end))
+}
+
+#[inline]
+pub fn write_increasing_sequence<T>(dst: &mut [T]) -> error::Result<()>
+where
+    T: From<usize>,
+{
+    for i in 0..dst.len() {
+        dst[i] = T::try_from(i).map_err(|_| InternalError::UnableToConvertValue)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
