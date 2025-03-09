@@ -1,25 +1,23 @@
-#include "cuda_fp16.h"
-
 #define LONG_TERNARY_OP(TYPENAME, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
-    const size_t numel, \
-    const size_t num_dims, \
-    const size_t *input_info, \
-    const TYPENAME *x_data, \
-    const TYPENAME *y_data, \
-    const TYPENAME *z_data, \
-    TYPENAME *out \
+    const size_t num_elems,        /* The number of elements in the output.     */\
+    const size_t rank,             /* The rank of input tensor (must be > 0).   */\
+    const size_t *info,            /* The shape and stride of the input.        */\
+    const TYPENAME *x_data,        /* The input tensor data.                    */\
+    const TYPENAME *y_data,        /* The input tensor data.                    */\
+    const TYPENAME *z_data,        /* The input tensor data.                    */\
+    TYPENAME *out                  /* The output data.                          */\
 ) { \
-    const size_t *dims = input_info; \
-    const size_t *x_strides = input_info + num_dims; \
-    const size_t *y_strides = input_info + 2 * num_dims; \
-    const size_t *z_strides = input_info + 3 * num_dims; \
-    for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel; i += blockDim.x * gridDim.x) { \
+    const size_t *dims = info; \
+    const size_t *x_strides = info + rank; \
+    const size_t *y_strides = info + 2 * rank; \
+    const size_t *z_strides = info + 3 * rank; \
+    for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_elems; i += blockDim.x * gridDim.x) { \
         unsigned int tmp_i = i; \
         unsigned int x_i = 0; \
         unsigned int y_i = 0; \
         unsigned int z_i = 0; \
-        for (int d = num_dims - 1; d >= 0; d--) { \
+        for (int d = rank - 1; d >= 0; d--) { \
             unsigned int i_dim = tmp_i % dims[d]; \
             x_i += i_dim * x_strides[d]; \
             y_i += i_dim * y_strides[d]; \

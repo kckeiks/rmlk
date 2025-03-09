@@ -1,4 +1,5 @@
 #include "binary_op_macros.cuh"
+#include "cuda_fp16.h"
 
 BINARY_OP(__half, div_fwd_f16, x / y)
 

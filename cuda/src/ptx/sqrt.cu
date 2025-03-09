@@ -2,7 +2,6 @@
 #include "cuda_fp16.h"
 #include <math.h>
 
-
 UNARY_OP(__half, sqrt_fwd_f16, hsqrt(x))
 
 UNARY_OP(float, sqrt_fwd_f32, sqrtf(x))

@@ -12,6 +12,7 @@
  * in accordance with the original license terms.
  */
 #include "binary_op_macros.cuh"
+#include "cuda_fp16.h"
 
 BINARY_OP(__half, add_fwd_f16, x + y)
 
