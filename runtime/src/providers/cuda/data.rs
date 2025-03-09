@@ -100,7 +100,7 @@ impl Drop for CudaData {
                 DataType::Int64 => {
                     let _dev_data = self.device.upgrade_device_ptr::<i64>(self.ptr, self.len);
                 }
-                _ => unimplemented!("CudaDevData::drop unimplemented!"),
+                dtype => unimplemented!("CudaDevData::drop unimplemented for `{dtype:?}`!"),
             }
         }
     }

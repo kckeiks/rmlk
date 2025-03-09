@@ -10,6 +10,7 @@ use cudarc::driver::{
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
+use crate::providers::cuda::backend::common;
 
 pub struct ReduceMeanBackend {
     device: Arc<CudaDevice>,
@@ -131,14 +132,15 @@ impl ReduceMeanBackend {
             match ctx.get_input(1).ok() {
                 Some(tensor) => {
                     let axes_dev_ptr = tensor.try_dev_data_ptr()?;
-                    let axes_dev_data = axes_dev_ptr.data::<usize>();
+                    let axes_dev_data = axes_dev_ptr.data::<i64>();
 
                     if axes_dev_data.len() > 0 {
-                        let buf = alloc.allocate::<usize>(axes_dev_data.len())?;
+                        let buf = alloc.allocate::<i64>(axes_dev_data.len())?;
                         self.device
                             .dtoh_sync_copy_into(axes_dev_data.as_ref(), buf)
                             .map_err(rmlk_cuda::Error::from)?;
-                        Some(buf)
+                        // Todo: process ranges for each axis.
+                        Some(alloc.allocate_and_convert_from_slice(buf)?)
                     } else {
                         None
                     }
@@ -169,12 +171,19 @@ impl ReduceMeanBackend {
 
             let input = ctx.get_input(0)?;
 
+            let mut reduced_dim_prod = 1;
+            for axis in axes.iter().copied() {
+                reduced_dim_prod *= input.shape()[axis]
+            }
+
             let info = alloc.allocate(2 * rank)?;
             info[..rank].copy_from_slice(input.shape());
             info[rank..2 * rank].copy_from_slice(input.stride());
 
             let input_dev_ptr = input.try_dev_data_ptr()?;
             let input_dev_data = input_dev_ptr.data::<I>();
+
+            common::init_tensor_device_data::<I>(&self.device, ctx.get_output(0)?)?;
 
             let output = ctx.get_output(0)?;
             let mut output_dev_ptr = output.try_dev_data_ptr_mut()?;
@@ -183,7 +192,7 @@ impl ReduceMeanBackend {
             K::execute(
                 self.device.clone(),
                 self.kernel,
-                0,
+                reduced_dim_prod,
                 axes,
                 rank,
                 info,

@@ -15,6 +15,7 @@ mod cuda {
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;
+    mod reduce_mean_simple;
     mod shape_axis;
     mod shape_simple;
     mod transpose_validate_data;
