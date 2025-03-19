@@ -14,9 +14,9 @@ Implement
 "Sin",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Sigmoid",              // NEEDS KERNEL, BACKEND AND TESTS
 "Cast",                 // NEEDS BACKEND & TESTS
-"Unsqueeze", 
+"Unsqueeze",
 "Shape",                // DONE
-"ReduceMean", 
+"ReduceMean",           // DONE
 "Pow",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Gather",               // DONE
 "Mul",                  // DONE
@@ -27,11 +27,11 @@ Implement
 "Neg",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Slice", 
 "MatMul",
-"ScatterND", 
+"ScatterND",            //
 "Equal",                // NEEDS KERNEL, BACKEND AND TESTS
 "ConstantOfShape",      // DONE
 "Transpose",            // DONE
-"Range", 
+"Range",
 "Concat", 
 "Div",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Greater",              // NEEDS KERNEL, BACKEND AND TESTS
