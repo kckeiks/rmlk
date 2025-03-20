@@ -1,11 +1,16 @@
 /**
-    Input:
-        data, indices, updates
+    Assumptions:
+    - Rank of data must be >= 1.
+    - Rank of indices must be >= 1.
+    - Rank of updates must be = indices.rank + data.rank - indices.shape[-1] - 1.
+    - The indices.shape[-1] <= data.rank.
+    - The (1, ..., indices.rank - 1) dimensions of indices = (1, ..., indices.rank - 1) dimensions of updates.
+    - The update.shape = indices.shape[0: indices.rank - 1] ++ data.shape[indices.shape[-1] : data.rank].
+    - No negative indices.
+    - The output = data.
 
-     1. We derive the cuda thread index, thread_idx.
-     2. We use mixed-radix decomposition to index into the tuple in indices, which we will call indices.idx_tuple
-     3. We use mixed-radix decomposition to index into the updates input and read the value-slice to use in the output computation, lets call it updates.value_slice
-     4. We use indices.idx_tuple to index in data and update it using value slice.
+    Note: if multiple entries in indices refer to the same slice in data,
+    the final contents of that slice are unspecified.
 */
 #define SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
