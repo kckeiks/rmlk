@@ -7,14 +7,15 @@
     - The indices.shape[-1] <= data.rank.
     - The (1, ..., indices.rank - 1) dimensions of indices = (1, ..., indices.rank - 1) dimensions of updates.
     - The update.shape = indices.shape[0: indices.rank - 1] ++ data.shape[indices.shape[-1] : data.rank].
-    - The parameter num_elems must be the product of the dimensions in indices.shape[0: indices_rank - 1].
+    - If indices.rank > 2, the parameter num_elems must be the product of the dimensions in
+      indices.shape[0:indices.rank - 1]. Otherwise, it must be 1.
     - No negative indices.
     - The output = data.
 
     Note: if multiple entries in indices refer to the same slice in data,
     the final contents of that slice are unspecified.
 */
-#define SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
+#define LONG_SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
     const size_t num_elems,      /* The product of the dimensions in indices.shape[0: indices_rank - 1].              */\
     const size_t data_rank,      /* The rank of data (must be > 0).                                                   */\
@@ -61,6 +62,13 @@ extern "C" __global__ void FORWARD( \
         }\
         \
         for(int i = 0; i < slice_len; i++) {\
-            output[data_offset + i] = updates[updates_offset + i];\
+            TYPENAME in = updates[updates_offset + i];\
+            TYPENAME out = output[data_offset + i];\
+            TYPENAME f;\
+            FUNC\
+            output[data_offset + i] = f;\
         }\
-}
+}\
+
+#define SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
+    LONG_SCATTER_ND_OP(TYPENAME, FORWARD, f = (FUNC);)
