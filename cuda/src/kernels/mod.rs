@@ -12,3 +12,4 @@ pub mod reduce_mean;
 pub mod sqrt;
 pub mod unary;
 pub mod whereop;
+pub mod scatter_nd;
