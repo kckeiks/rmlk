@@ -1,11 +1,13 @@
 /**
-    Assumptions:
+    Assumptions
+    ===========
     - Rank of data must be >= 1.
     - Rank of indices must be >= 1.
     - Rank of updates must be = indices.rank + data.rank - indices.shape[-1] - 1.
     - The indices.shape[-1] <= data.rank.
     - The (1, ..., indices.rank - 1) dimensions of indices = (1, ..., indices.rank - 1) dimensions of updates.
     - The update.shape = indices.shape[0: indices.rank - 1] ++ data.shape[indices.shape[-1] : data.rank].
+    - The parameter num_elems must be the product of the dimensions in indices.shape[0: indices_rank - 1].
     - No negative indices.
     - The output = data.
 
@@ -14,7 +16,7 @@
 */
 #define SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
-    const size_t num_elems,      /* The number of elements in the output.                                             */\
+    const size_t num_elems,      /* The product of the dimensions in indices.shape[0: indices_rank - 1].              */\
     const size_t data_rank,      /* The rank of data (must be > 0).                                                   */\
     const size_t indices_rank,   /* The rank of indices (must be > 0).                                                */\
     const size_t updates_rank,   /* The rank of updates (must be = indices.rank + data.rank - indices.shape[-1] - 1). */\
