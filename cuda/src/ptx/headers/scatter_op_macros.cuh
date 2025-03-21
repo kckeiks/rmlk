@@ -23,10 +23,9 @@ extern "C" __global__ void FORWARD( \
     const size_t indices_rank,   /* The rank of indices (must be > 0).                                                */\
     const size_t updates_rank,   /* The rank of updates (must be = indices.rank + data.rank - indices.shape[-1] - 1). */\
     const size_t *info,          /* The shape and stride of a and b.                                                  */\
-    const TYPENAME *data,        /* The input tensor data.                                                            */\
-    const size_t *indices,       /* The input tensor data.                                                            */\
-    const TYPENAME *updates,     /* The input tensor data.                                                            */\
-    TYPENAME *output,            /* The output data.                                                                  */\
+    const size_t *indices,       /* The indices tensor data.                                                          */\
+    const TYPENAME *updates,     /* The updates tensor data.                                                          */\
+    TYPENAME *output,            /* The output data tensor.                                                           */\
     int *error                   /* Flag to indicate an error.                                                        */\
 ) { \
     if (*error) return;\
