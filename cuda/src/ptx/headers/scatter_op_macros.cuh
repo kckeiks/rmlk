@@ -17,7 +17,7 @@
 */
 #define LONG_SCATTER_ND_OP(TYPENAME, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
-    const size_t num_idx_tuples, /* The product of the dimensions in indices.shape[0: indices_rank - 1].              */\
+    const size_t num_idx_tuples, /* The product of the dimensions in indices.shape[0: q-1].                           */\
     const size_t data_len,       /* The length of the data array.                                                     */\
     const size_t data_rank,      /* The rank of data (must be > 0).                                                   */\
     const size_t indices_rank,   /* The rank of indices (must be > 0).                                                */\
@@ -35,30 +35,32 @@ extern "C" __global__ void FORWARD( \
     const size_t *indices_stride = info + data_rank + indices_rank;\
     const size_t *updates_shape = info + data_rank + 2 * indices_rank;\
     const size_t *updates_stride = info + data_rank + 2 * indices_rank + updates_rank;\
+    const size_t index_tuple_size = indices_rank > 1 ? indices_shape[indices_rank - 1] : 1;\
+    const size_t num_prefix_dims = indices_rank > 1 ? indices_rank - 1 : 1;\
     for (unsigned int thread_idx = blockIdx.x * blockDim.x + threadIdx.x; thread_idx < num_idx_tuples; thread_idx += blockDim.x * gridDim.x) {\
         size_t linear_idx = thread_idx;\
         size_t indices_offset = 0;\
-        for (int d = indices_rank - 2; d >= 0; d--) {\
+        for (int d = num_prefix_dims - 1; d >= 0; d--) {\
             size_t dim_idx = linear_idx % indices_shape[d];\
             indices_offset += dim_idx * indices_stride[d];\
             linear_idx /= indices_shape[d];\
         }\
         \
         size_t data_offset = 0;\
-        for(int i = 0; i < indices_shape[indices_rank - 1]; i++) {\
+        for(int i = 0; i < index_tuple_size; i++) {\
             data_offset += indices[indices_offset + i] * data_stride[i];\
         }\
         \
         linear_idx = thread_idx;\
         size_t updates_offset = 0;\
-        for(int d = indices_rank - 2; d >= 0; d--) {\
+        for(int d = num_prefix_dims - 1; d >= 0; d--) {\
             size_t dim_idx = linear_idx % updates_shape[d];\
             updates_offset += dim_idx * updates_stride[d];\
             linear_idx /= updates_shape[d];\
         }\
         \
         size_t slice_len = 1;\
-        for (int d = indices_rank - 1; d < updates_rank; d++) {\
+        for (int d = num_prefix_dims; d < updates_rank; d++) {\
             slice_len *= updates_shape[d];\
         }\
         \
