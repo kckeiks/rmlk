@@ -1,4 +1,5 @@
 use crate::ptx::SCATTER_ND;
+use crate::Error;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
@@ -36,6 +37,67 @@ pub const FWD_FN_NAMES: &[&str] = &[
 ];
 pub const PTX_SRC: &str = SCATTER_ND;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ScatterNdKernel {
+    FwdF16,
+    AddFwdF16,
+    MulFwdF16,
+    MaxFwdF16,
+    MinFwdF16,
+    FwdF32,
+    AddFwdF32,
+    MulFwdF32,
+    MaxFwdF32,
+    MinFwdF32,
+    FwdF64,
+    AddFwdF64,
+    MulFwdF64,
+    MaxFwdF64,
+    MinFwdF64,
+    FwdI32,
+    AddFwdI32,
+    MulFwdI32,
+    MaxFwdI32,
+    MinFwdI32,
+    FwdI64,
+    AddFwdI64,
+    MulFwdI64,
+    MaxFwdI64,
+    MinFwdI64,
+}
+
+impl From<ScatterNdKernel> for &'static str {
+    fn from(kernel: ScatterNdKernel) -> Self {
+        match kernel {
+            ScatterNdKernel::FwdF16 => "scatter_nd_fwd_f16",
+            ScatterNdKernel::AddFwdF16 => "scatter_nd_add_fwd_f16",
+            ScatterNdKernel::MulFwdF16 => "scatter_nd_mul_fwd_f16",
+            ScatterNdKernel::MaxFwdF16 => "scatter_nd_max_fwd_f16",
+            ScatterNdKernel::MinFwdF16 => "scatter_nd_min_fwd_f16",
+            ScatterNdKernel::FwdF32 => "scatter_nd_fwd_f32",
+            ScatterNdKernel::AddFwdF32 => "scatter_nd_add_fwd_f32",
+            ScatterNdKernel::MulFwdF32 => "scatter_nd_mul_fwd_f32",
+            ScatterNdKernel::MaxFwdF32 => "scatter_nd_max_fwd_f32",
+            ScatterNdKernel::MinFwdF32 => "scatter_nd_min_fwd_f32",
+            ScatterNdKernel::FwdF64 => "scatter_nd_fwd_f64",
+            ScatterNdKernel::AddFwdF64 => "scatter_nd_add_fwd_f64",
+            ScatterNdKernel::MulFwdF64 => "scatter_nd_mul_fwd_f64",
+            ScatterNdKernel::MaxFwdF64 => "scatter_nd_max_fwd_f64",
+            ScatterNdKernel::MinFwdF64 => "scatter_nd_min_fwd_f64",
+            ScatterNdKernel::FwdI32 => "scatter_nd_fwd_i32",
+            ScatterNdKernel::AddFwdI32 => "scatter_nd_add_fwd_i32",
+            ScatterNdKernel::MulFwdI32 => "scatter_nd_mul_fwd_i32",
+            ScatterNdKernel::MaxFwdI32 => "scatter_nd_max_fwd_i32",
+            ScatterNdKernel::MinFwdI32 => "scatter_nd_min_fwd_i32",
+            ScatterNdKernel::FwdI64 => "scatter_nd_fwd_i64",
+            ScatterNdKernel::AddFwdI64 => "scatter_nd_add_fwd_i64",
+            ScatterNdKernel::MulFwdI64 => "scatter_nd_mul_fwd_i64",
+            ScatterNdKernel::MaxFwdI64 => "scatter_nd_max_fwd_i64",
+            ScatterNdKernel::MinFwdI64 => "scatter_nd_min_fwd_i64",
+        }
+    }
+}
+
 pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,
@@ -44,7 +106,7 @@ pub unsafe fn compute<T>(
     indices_rank: usize,
     updates_rank: usize,
     info: &[usize],
-    indices: &CudaSlice<T>,
+    indices: &CudaSlice<usize>,
     updates: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
     error: &mut CudaSlice<i32>,
@@ -56,7 +118,7 @@ where
     assert!(indices_rank > 0, "indices rank must be greater than 0");
     assert_eq!(
         updates_rank,
-        indices_rank + data_rank - info[data_rank + indices_rank - 1] - 1,
+        indices_rank + data_rank - info[2 * data_rank + indices_rank - 1] - 1,
         "Rank of updates must be = indices.rank + data.rank - indices.shape[-1] - 1"
     );
     assert!(
@@ -70,12 +132,16 @@ where
     );
     assert_eq!(
         info[2 * data_rank + 2 * indices_rank + indices_rank - 1
-            ..data_rank + 2 * indices_rank + updates_rank],
-        info[info[data_rank + indices_rank - 1]..data_rank],
+            ..2 * data_rank + 2 * indices_rank + updates_rank],
+        info[info[2 * data_rank + indices_rank - 1]..data_rank],
         "update.shape[indices.rank - 1..] must be equal to data.shape[indices.shape[-1]..]"
     );
     assert!(
-        (indices_rank >= 2 && num_idx_tuples == info[data_rank..indices_rank - 1].iter().product())
+        (indices_rank >= 2
+            && num_idx_tuples
+                == info[2 * data_rank..2 * data_rank + indices_rank - 1]
+                    .iter()
+                    .product())
             || (indices_rank == 1 && num_idx_tuples == 1),
         "invalid value for `num_idx_tuples`"
     );
@@ -108,4 +174,120 @@ where
     unsafe { func.launch(config, params)? };
 
     Ok(())
+}
+
+pub fn load_kernel(
+    device: &Arc<CudaDevice>,
+    kernel_name: ScatterNdKernel,
+) -> crate::error::Result<CudaFunction> {
+    if !device.has_func(MODULE_NAME, kernel_name.into()) {
+        device
+            .load_ptx(PTX_SRC.into(), MODULE_NAME, FWD_FN_NAMES)
+            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
+    }
+
+    Ok(device
+        .get_func(MODULE_NAME, kernel_name.into())
+        .expect("To have been loaded"))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::kernels::scatter_nd::{compute, load_kernel, ScatterNdKernel};
+    use crate::utils;
+    use cudarc::driver::CudaDevice;
+    use rmlk_schema::{DataType, Op};
+
+    #[cfg(test)]
+    pub fn create_info_buffer(
+        data_shape: &[usize],
+        data_stride: &[usize],
+        indices_shape: &[usize],
+        indices_stride: &[usize],
+        updates_shape: &[usize],
+        updates_stride: &[usize],
+    ) -> Vec<usize> {
+        let data_rank = data_shape.len();
+        let indices_rank = indices_shape.len();
+        let updates_rank = updates_shape.len();
+        let mut info_buffer = vec![0usize; 2 * data_rank + 2 * indices_rank + 2 * updates_rank];
+
+        info_buffer[..data_rank].copy_from_slice(data_shape);
+        info_buffer[data_rank..2 * data_rank].copy_from_slice(data_stride);
+        info_buffer[2 * data_rank..2 * data_rank + indices_rank].copy_from_slice(indices_shape);
+        info_buffer[2 * data_rank + indices_rank..2 * data_rank + 2 * indices_rank]
+            .copy_from_slice(indices_stride);
+        info_buffer
+            [2 * data_rank + 2 * indices_rank..2 * data_rank + 2 * indices_rank + updates_rank]
+            .copy_from_slice(updates_shape);
+        info_buffer[2 * data_rank + 2 * indices_rank + updates_rank..]
+            .copy_from_slice(updates_stride);
+
+        info_buffer
+    }
+
+    #[test]
+    fn test_f32() {
+        let device = CudaDevice::new(0).unwrap();
+
+        let data_shape = vec![3, 3];
+        let mut data_stride = vec![0; data_shape.len()];
+        utils::calculate_stride(&data_shape, &mut data_stride);
+        let data = vec![0.0; 3 * 3];
+
+        let indices_shape = vec![2, 2];
+        let mut indices_stride = vec![0; indices_shape.len()];
+        utils::calculate_stride(&indices_shape, &mut indices_stride);
+        let indices = device.htod_copy(vec![0, 1, 2, 2]).unwrap();
+
+        let updates_shape = vec![2];
+        let mut updates_stride = vec![0; updates_shape.len()];
+        utils::calculate_stride(&updates_shape, &mut updates_stride);
+        let updates = device.htod_copy(vec![5.0, 8.0]).unwrap();
+
+        let output_shape = data_shape.clone();
+        let mut output_stride = vec![0; output_shape.len()];
+        utils::calculate_stride(&output_shape, &mut output_stride);
+        let mut output = device.htod_copy(data).unwrap();
+
+        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
+
+        let info = create_info_buffer(
+            &data_shape,
+            &data_stride,
+            &indices_shape,
+            &indices_stride,
+            &updates_shape,
+            &updates_stride,
+        );
+
+        let mut error = device.alloc_zeros(1).unwrap();
+
+        let data_rank = data_shape.len();
+        let indices_rank = indices_shape.len();
+        let updates_rank = updates_shape.len();
+
+        let num_idx_tuples = indices_shape[0..indices_rank - 1].iter().product();
+
+        unsafe {
+            compute::<f32>(
+                device.clone(),
+                f,
+                num_idx_tuples,
+                data_rank,
+                indices_rank,
+                updates_rank,
+                &info,
+                &indices,
+                &updates,
+                &mut output,
+                &mut error,
+            )
+            .unwrap();
+        }
+
+        let result = device.dtoh_sync_copy(&output).unwrap();
+
+        assert_eq!(result, vec![0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0])
+    }
 }
