@@ -9,7 +9,7 @@ pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
 pub mod reduce_mean;
+pub mod scatter_nd;
 pub mod sqrt;
 pub mod unary;
 pub mod whereop;
-pub mod scatter_nd;

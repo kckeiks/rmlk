@@ -7,7 +7,7 @@
     - The indices.shape[-1] <= data.rank.
     - The (1, ..., indices.rank - 1) dimensions of indices = (1, ..., indices.rank - 1) dimensions of updates.
     - The update.shape = indices.shape[0: indices.rank - 1] ++ data.shape[indices.shape[-1] : data.rank].
-    - If indices.rank > 2, the parameter num_idx_tuples must be the product of the dimensions in
+    - If indices.rank >= 2, the parameter num_idx_tuples must be the product of the dimensions in
       indices.shape[0:indices.rank - 1]. Otherwise, it must be 1.
     - No negative indices.
     - The output = data.
@@ -30,11 +30,11 @@ extern "C" __global__ void FORWARD( \
 ) { \
     if (*error) return;\
     \
-    const size_t *data_stride = info + data_rank;\
-    const size_t *indices_shape = info + 2 * data_rank;\
-    const size_t *indices_stride = info + 2 * data_rank + indices_rank;\
-    const size_t *updates_shape = info + 2 * data_rank + 2 * indices_rank;\
-    const size_t *updates_stride = info + 2 * data_rank + 2 * indices_rank + updates_rank;\
+    const size_t *data_stride = info;\
+    const size_t *indices_shape = info + data_rank;\
+    const size_t *indices_stride = info + data_rank + indices_rank;\
+    const size_t *updates_shape = info + data_rank + 2 * indices_rank;\
+    const size_t *updates_stride = info + data_rank + 2 * indices_rank + updates_rank;\
     for (unsigned int thread_idx = blockIdx.x * blockDim.x + threadIdx.x; thread_idx < num_idx_tuples; thread_idx += blockDim.x * gridDim.x) {\
         size_t linear_idx = thread_idx;\
         size_t indices_offset = 0;\
