@@ -9,7 +9,7 @@ Onnx version 1.13.1
 
 Implement
 
-{
+
 "Expand", 
 "Sin",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Sigmoid",              // NEEDS KERNEL, BACKEND AND TESTS
@@ -38,12 +38,11 @@ Implement
 "Softmax", 
 "Reshape",              // DONE
 "Cos"                   // NEEDS KERNEL, BACKEND AND TESTS
-}
 
-{ 
+
+
 "Sub",                  // NEEDS KERNEL, BACKEND AND TESTS  
-"Constant"                    
-}
+"Constant"
  
 
 ## Notes
