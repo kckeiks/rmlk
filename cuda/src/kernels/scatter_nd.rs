@@ -98,6 +98,26 @@ impl From<ScatterNdKernel> for &'static str {
     }
 }
 
+/// Launches a CUDA kernel that performs an ScatterND operation.
+///
+/// # Safety
+/// - The `func` CUDA function must accept the following arguments in that order:
+///   - The number of index tuples.
+///   - The rank of the data.
+///   - The rank of the indices.
+///   - The rank of the updates.
+///   - The `info_buffer` must be structured as:
+///      - The **stride of `data`**.
+///      - The **shape of `indices`**.
+///      - The **stride of `indices`**.
+///      - The **shape of `updates`**.
+///      - The **stride of `updates`**.
+///   - The input data slice `indices`.
+///   - The input data slice `updates`.
+///   - The output data slice `output`.
+///   - The data slice `error` of length 1.
+///
+/// Note that this function assumes that the output slice equals to the data in the `data` input.
 pub unsafe fn compute<T>(
     device: Arc<CudaDevice>,
     func: CudaFunction,
