@@ -98,6 +98,7 @@ impl From<ScatterNdKernel> for &'static str {
     }
 }
 
+// Todo: Add description about cases where this will panic.
 /// Launches a CUDA kernel that performs an ScatterND operation.
 ///
 /// # Safety
