@@ -27,7 +27,7 @@ Implement
 "Neg",                  // NEEDS KERNEL, BACKEND AND TESTS
 "Slice", 
 "MatMul",
-"ScatterND",            //
+"ScatterND",            // NEEDS BACKEND AND MORE TESTS
 "Equal",                // NEEDS KERNEL, BACKEND AND TESTS
 "ConstantOfShape",      // DONE
 "Transpose",            // DONE
