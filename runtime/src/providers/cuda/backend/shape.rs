@@ -89,6 +89,7 @@ impl ShapeBackend {
 
         match dtype {
             DataType::Float => self.compute_shape::<f32, T>(ctx),
+            DataType::Int64 => self.compute_shape::<i64, T>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Shape,
                 dtype,

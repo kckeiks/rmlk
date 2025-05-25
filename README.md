@@ -12,7 +12,7 @@ Based on ONNX version: 1.13.1
 | `Sin`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Sigmoid`           | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Cast`              | 🛠️ In Progress         | Needs backend and tests                |
-| `Unsqueeze`         | ❓ Not Started          |                                        |
+| `Unsqueeze`         | ✅ Done                  |                                        |
 | `Shape`             | ✅ Done                 |                                        |
 | `ReduceMean`        | ✅ Done                 |                                        |
 | `Pow`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
