@@ -25,8 +25,7 @@ const GRAPH_DEFINITION: &str = r#"
       "info": {
         "type": "value",
         "name": "unsqueeze(axes, value)",
-        "dtype": "float",
-        "shape": [1, 3, 4, 5, 1]
+        "dtype": "float"
       }
     },
     {
