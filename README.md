@@ -2,49 +2,45 @@
 
 Rusty Machine Learning Kit is a machine learning library.
 
+Based on ONNX version: 1.13.1
 
-Onnx version 1.13.1
+## Todo Checklist
 
-## Todo
-
-Implement
-
-
-"Expand", 
-"Sin",                  // NEEDS KERNEL, BACKEND AND TESTS
-"Sigmoid",              // NEEDS KERNEL, BACKEND AND TESTS
-"Cast",                 // NEEDS BACKEND & TESTS
-"Unsqueeze",
-"Shape",                // DONE
-"ReduceMean",           // DONE
-"Pow",                  // NEEDS KERNEL, BACKEND AND TESTS
-"Gather",               // DONE
-"Mul",                  // DONE
-"Trilu", 
-"Where",                // DONE
-"Sqrt",                 // NEEDS BACKEND & TESTS
-"Add",                  // DONE
-"Neg",                  // NEEDS KERNEL, BACKEND AND TESTS
-"Slice", 
-"MatMul",
-"ScatterND",            // NEEDS BACKEND AND MORE TESTS
-"Equal",                // NEEDS KERNEL, BACKEND AND TESTS
-"ConstantOfShape",      // DONE
-"Transpose",            // DONE
-"Range",
-"Concat", 
-"Div",                  // NEEDS KERNEL, BACKEND AND TESTS
-"Greater",              // NEEDS KERNEL, BACKEND AND TESTS
-"Softmax", 
-"Reshape",              // DONE
-"Cos"                   // NEEDS KERNEL, BACKEND AND TESTS
-
-"Sub",                  // NEEDS KERNEL, BACKEND AND TESTS  
-"Constant"
- 
+| Operator            | Status                  | Notes                                  |
+|---------------------|------------------------|----------------------------------------|
+| `Expand`            | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Sin`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Sigmoid`           | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Cast`              | 🛠️ In Progress         | Needs backend and tests                |
+| `Unsqueeze`         | ❓ Not Started          |                                        |
+| `Shape`             | ✅ Done                 |                                        |
+| `ReduceMean`        | ✅ Done                 |                                        |
+| `Pow`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Gather`            | ✅ Done                 |                                        |
+| `Mul`               | ✅ Done                 |                                        |
+| `Trilu`             | ❓ Not Started          |                                        |
+| `Where`             | ✅ Done                 |                                        |
+| `Sqrt`              | 🛠️ In Progress         | Needs backend and tests                |
+| `Add`               | ✅ Done                 |                                        |
+| `Neg`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Slice`             | ❓ Not Started          |                                        |
+| `MatMul`            | ❓ Not Started          |                                        |
+| `ScatterND`         | 🛠️ In Progress         | Needs backend and more tests           |
+| `Equal`             | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `ConstantOfShape`   | ✅ Done                 |                                        |
+| `Transpose`         | ✅ Done                 |                                        |
+| `Range`             | ❓ Not Started          |                                        |
+| `Concat`            | ❓ Not Started          |                                        |
+| `Div`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Greater`           | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Softmax`           | ❓ Not Started          |                                        |
+| `Reshape`           | ✅ Done                 |                                        |
+| `Cos`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Sub`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
+| `Constant`          | ❓ Not Started          |                                        |
 
 ## Notes
 
-* Our changes to definition of ConstantOfShape in terms of attributes needs to be considered in the converter.
-* ReduceMean axes input should be in usize type.
-* Check how we handle inputs of scattternd.
+- The `ConstantOfShape` definition change (in terms of attributes) should be considered in the converter.
+- `ReduceMean` axes input should use `usize` type.
+- Check how we handle inputs for `ScatterND`.
