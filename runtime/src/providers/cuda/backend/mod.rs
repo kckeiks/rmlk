@@ -14,6 +14,7 @@ pub mod shape;
 pub mod sqrt;
 pub mod transpose;
 mod unary;
+pub mod unsqueeze;
 pub mod whereop;
 
 use crate::core::backend::OperationBackend;
@@ -33,6 +34,7 @@ use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
+use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
 
@@ -51,6 +53,7 @@ pub enum CudaKernel {
     Shape(ShapeBackend),
     Sqrt(SqrtBackend),
     Transpose(TransposeBackend),
+    Unsqueeze(UnsqueezeBackend),
     Where(WhereBackend),
 }
 
@@ -73,6 +76,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
             CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),
             CudaKernel::Transpose(backend) => backend.compute(ctx),
+            CudaKernel::Unsqueeze(backend) => backend.compute(ctx),
             CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
         }
     }
