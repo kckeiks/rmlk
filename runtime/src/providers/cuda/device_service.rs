@@ -112,6 +112,10 @@ impl DeviceService for Cuda {
         self.dtoh(data)
     }
 
+    fn dtoh_i32(&self, data: &Self::Data) -> Result<Vec<i32>> {
+        self.dtoh(data)
+    }
+
     fn dtoh_i64(&self, data: &Self::Data) -> Result<Vec<i64>> {
         self.dtoh(data)
     }

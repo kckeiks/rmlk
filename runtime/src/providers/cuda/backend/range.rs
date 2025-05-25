@@ -118,7 +118,7 @@ impl RangeBackend {
             DataType::Int32 => self.compute_range::<i32>(ctx),
             DataType::Int64 => self.compute_range::<i64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Unsqueeze,
+                op: Op::Range,
                 dtype,
             }),
         }
@@ -167,4 +167,90 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_positive_int_step() {
+        let count = i32::element_count(3, 9, 3).unwrap();
+        assert_eq!(count, 2);
+        let mut output = vec![0; count];
+        compute_output(3, 3, count, &mut output).unwrap();
+        assert_eq!(output, [3, 6]);
+    }
+
+    #[test]
+    fn test_basic_negative_int_step() {
+        let count = i32::element_count(10, 4, -2).unwrap();
+        assert_eq!(count, 3);
+        let mut output = vec![0; count];
+        compute_output(10, -2, count, &mut output).unwrap();
+        assert_eq!(output, [10, 8, 6]);
+    }
+
+    #[test]
+    fn test_positive_float_step() {
+        let count = f32::element_count(0.1, 1.0, 0.3).unwrap();
+        assert_eq!(count, 3);
+        let mut output = vec![0.0; count];
+        compute_output(0.1, 0.3, count, &mut output).unwrap();
+        assert_eq!(output, [0.1, 0.4, 0.7]);
+    }
+
+    #[test]
+    fn test_negative_float_step() {
+        let count = f32::element_count(2.0, 1.0, -0.3).unwrap();
+        assert_eq!(count, 4);
+        let mut output = vec![0.0; count];
+        compute_output(2.0, -0.3, count, &mut output).unwrap();
+        assert_eq!(output, [2.0, 1.7, 1.4, 1.1]);
+    }
+
+    #[test]
+    fn test_start_equal_limit() {
+        let count = i32::element_count(5, 5, 1).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_incompatible_delta_positive() {
+        let count = i32::element_count(5, 0, 1).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_incompatible_delta_negative() {
+        let count = i32::element_count(0, 5, -1).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_zero_delta_handling() {
+        let result = f32::element_count(1.0, 2.0, 0.0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_large_range() {
+        let count = i64::element_count(0, 1_000_000, 1).unwrap();
+        assert_eq!(count, 1_000_000);
+    }
+
+    #[test]
+    fn test_large_negative_range() {
+        let count = i64::element_count(1_000_000, 0, -1).unwrap();
+        assert_eq!(count, 1_000_000);
+    }
+
+    #[test]
+    fn test_float_precision_edge() {
+        let count = f32::element_count(0.0, 1.0, 0.333).unwrap();
+        assert_eq!(count, 4);
+        let mut output = vec![0.0; count];
+        compute_output(0.0, 0.333, count, &mut output).unwrap();
+        assert!((output[3] < 1.0));
+    }
 }

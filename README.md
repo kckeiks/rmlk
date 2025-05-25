@@ -29,7 +29,7 @@ Based on ONNX version: 1.13.1
 | `Equal`             | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `ConstantOfShape`   | ✅ Done                 |                                        |
 | `Transpose`         | ✅ Done                 |                                        |
-| `Range`             | ❓ Not Started          |                                        |
+| `Range`             | ✅ Done         |                                        |
 | `Concat`            | ❓ Not Started          |                                        |
 | `Div`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Greater`           | 🛠️ In Progress         | Needs kernel, backend, and tests       |

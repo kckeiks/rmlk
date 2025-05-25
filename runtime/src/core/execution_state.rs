@@ -194,6 +194,7 @@ where
 
         match tensor.dtype() {
             DataType::Float => Ok(provider.dtoh_float(&ptr)?.into()),
+            DataType::Int32 => Ok(provider.dtoh_i32(&ptr)?.into()),
             DataType::Int64 => Ok(provider.dtoh_i64(&ptr)?.into()),
             _ => unimplemented!(),
         }
