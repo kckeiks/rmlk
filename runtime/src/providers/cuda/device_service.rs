@@ -15,12 +15,13 @@ use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
 use crate::providers::cuda::transpose::TransposeBackend;
+use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
+use crate::providers::cuda::range::RangeBackend;
 
 pub struct Cuda {
     device: Arc<CudaDevice>,
@@ -83,6 +84,7 @@ impl DeviceService for Cuda {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::ReduceMean(ReduceMeanBackend::new(self.device.clone(), f))
             }
+            Op::Range => CudaKernel::Range(RangeBackend::new(&self.device)),
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.device)),
             Op::Sqrt => {
                 let kernel = self.load_kernel(op, dtype)?;

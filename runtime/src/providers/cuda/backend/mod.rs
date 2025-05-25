@@ -9,6 +9,7 @@ pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
+pub mod range;
 pub mod reduce_mean;
 pub mod shape;
 pub mod sqrt;
@@ -37,6 +38,7 @@ use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
+use crate::providers::cuda::range::RangeBackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
@@ -49,6 +51,7 @@ pub enum CudaKernel {
     GlobalAveragePool(GlobalAverageBackend),
     MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
+    Range(RangeBackend),
     ReduceMean(ReduceMeanBackend),
     Shape(ShapeBackend),
     Sqrt(SqrtBackend),
@@ -72,6 +75,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             }
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
             CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
             CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),

@@ -64,17 +64,15 @@ const GRAPH_DEFINITION: &str = r#"
 fn test_run() {
     let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
     let input: HashMap<String, Value> = [
-        (
-            "data".to_string(),
-            vec![0.0; 3 * 4 * 5].try_into().unwrap(),
-        ),
-        (
-            "axes".to_string(),
-            vec![0i64, 2].try_into().unwrap(),
-        ),
+        ("data".to_string(), vec![0.0; 3 * 4 * 5].try_into().unwrap()),
+        ("axes".to_string(), vec![0i64, 2].try_into().unwrap()),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<i64> = output.remove("shape(unsqueeze(axes, value))").unwrap().try_into().unwrap();
+    let data: Vec<i64> = output
+        .remove("shape(unsqueeze(axes, value))")
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(data, vec![1, 3, 1, 4, 5]);
 }
