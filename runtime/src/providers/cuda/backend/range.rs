@@ -21,7 +21,15 @@ impl RangeBackend {
 
     fn compute_range<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: Copy + DataTypeMap + CudnnDataType + Default + DeviceRepr + Num + NumCast + ValidAsZeroBits + ElementCount,
+        I: Copy
+            + DataTypeMap
+            + CudnnDataType
+            + Default
+            + DeviceRepr
+            + Num
+            + NumCast
+            + ValidAsZeroBits
+            + ElementCount,
     {
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
@@ -33,18 +41,20 @@ impl RangeBackend {
             let start_tensor = ctx.get_input(0)?;
             let start_ptr = start_tensor.try_dev_data_ptr()?;
             let start_view = start_ptr.data::<I>();
-            self.device.dtoh_sync_copy_into(start_view.as_ref(), start_value)?;
+            self.device
+                .dtoh_sync_copy_into(start_view.as_ref(), start_value)?;
 
             let limit_tensor = ctx.get_input(1)?;
             let limit_ptr = limit_tensor.try_dev_data_ptr()?;
             let limit_view = limit_ptr.data::<I>();
-            self.device.dtoh_sync_copy_into(limit_view.as_ref(), limit_value)?;
-
+            self.device
+                .dtoh_sync_copy_into(limit_view.as_ref(), limit_value)?;
 
             let delta_tensor = ctx.get_input(2)?;
             let delta_ptr = delta_tensor.try_dev_data_ptr()?;
             let delta_view = delta_ptr.data::<I>();
-            self.device.dtoh_sync_copy_into(delta_view.as_ref(), delta_value)?;
+            self.device
+                .dtoh_sync_copy_into(delta_view.as_ref(), delta_value)?;
         }
 
         let start = start_value[0];
@@ -75,7 +85,8 @@ impl RangeBackend {
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<I>();
-        self.device.htod_sync_copy_into(&output, output_view.as_mut())?;
+        self.device
+            .htod_sync_copy_into(&output, output_view.as_mut())?;
 
         #[cfg(debug_assertions)]
         {

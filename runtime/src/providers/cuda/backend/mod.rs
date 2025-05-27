@@ -3,6 +3,7 @@ pub mod add;
 mod binary;
 pub mod cast;
 mod common;
+pub mod concat;
 pub mod constant_of_shape;
 pub mod conv;
 pub mod gather;
@@ -30,20 +31,22 @@ use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
 use crate::providers::cuda::backend::sqrt::SqrtBackend;
 use crate::providers::cuda::backend::transpose::TransposeBackend;
+use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
-use crate::providers::cuda::range::RangeBackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
     Relu(ActivationBackend),
     Cast(CastBackend),
+    Concat(ConcatBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
     Gather(GatherBackend),
@@ -66,6 +69,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
             CudaKernel::Cast(kernel) => kernel.compute::<cast::ActiveKernel>(ctx),
+            CudaKernel::Concat(kernel) => kernel.compute(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
             CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),

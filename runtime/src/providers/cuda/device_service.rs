@@ -11,6 +11,7 @@ use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
@@ -21,7 +22,7 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::range::RangeBackend;
+use crate::providers::cuda::concat::ConcatBackend;
 
 pub struct Cuda {
     device: Arc<CudaDevice>,
@@ -65,6 +66,7 @@ impl DeviceService for Cuda {
                 CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
             }
             Op::Cast => CudaKernel::Cast(CastBackend::new(&self.device)),
+            Op::Concat => CudaKernel::Concat(ConcatBackend::new(&self.device)),
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.device))
             }
