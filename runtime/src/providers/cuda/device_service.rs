@@ -4,6 +4,7 @@ use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::cast::CastBackend;
+use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
@@ -22,7 +23,6 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::concat::ConcatBackend;
 
 pub struct Cuda {
     device: Arc<CudaDevice>,

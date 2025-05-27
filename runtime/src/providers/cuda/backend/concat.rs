@@ -24,7 +24,7 @@ impl ConcatBackend {
         let input = ctx.get_input(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let base_shape = scratch_alloc.allocate_from_slice(input.shape())?;
-
+        let mut shape_on_axis = 0;
         for i in 0..usize::MAX {
             match ctx.get_input(i) {
                 Ok(input) => {
@@ -36,7 +36,7 @@ impl ConcatBackend {
                         });
                     }
 
-                    base_shape[axis] += input.shape()[axis];
+                    shape_on_axis += input.shape()[axis];
 
                     for (j, d) in input.shape().iter().enumerate() {
                         if j == axis {
@@ -56,12 +56,39 @@ impl ConcatBackend {
             }
         }
 
+        base_shape[axis] = shape_on_axis;
+
         let output = ctx.get_output(0)?;
         let dst_id = output.dst_id();
         ctx.execution_state_mut()
             .copy_shape_from_slice(base_shape, dst_id)?;
 
         Ok(())
+    }
+
+    fn log_input_and_output(&mut self, ctx: &Context<Cuda>) {
+        use log::debug;
+
+        for i in 0..usize::MAX {
+            match ctx.get_input(i) {
+                Ok(input) => {
+                    debug!(
+                        "[input][{i}][concat][shape={:?}][stride=[{:?}]",
+                        input.shape(),
+                        input.stride()
+                    );
+                }
+                _ => break,
+            }
+        }
+
+        let output = ctx.get_output(0).unwrap();
+
+        debug!(
+            "[output][concat][shape={:?}][stride=[stride=[{:?}]",
+            output.shape(),
+            output.stride()
+        );
     }
 
     // TODO: If axis is last dimension (step == 1), consider larger DtoD copies
@@ -80,6 +107,9 @@ impl ConcatBackend {
         .map_err(|_| InternalError::UnableToConvertValue)?;
 
         self.compute_output_shape(ctx, axis)?;
+
+        #[cfg(debug_assertions)]
+        self.log_input_and_output(ctx);
 
         let output_tensor = ctx.get_output(0)?;
         common::init_tensor_device_data::<I>(&self.device, output_tensor)?;
