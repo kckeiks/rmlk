@@ -30,7 +30,7 @@ Based on ONNX version: 1.13.1
 | `ConstantOfShape`   | ✅ Done                 |                                        |
 | `Transpose`         | ✅ Done                 |                                        |
 | `Range`             | ✅ Done         |                                        |
-| `Concat`            | ❓ Not Started          |                                        |
+| `Concat`            | ✅ Done           |                                        |
 | `Div`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Greater`           | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Softmax`           | ❓ Not Started          |                                        |
