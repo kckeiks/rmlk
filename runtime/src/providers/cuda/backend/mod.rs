@@ -13,6 +13,7 @@ pub mod max_pool;
 pub mod range;
 pub mod reduce_mean;
 pub mod shape;
+mod slice;
 pub mod sqrt;
 pub mod transpose;
 mod unary;

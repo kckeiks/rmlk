@@ -66,6 +66,7 @@ impl ConcatBackend {
         Ok(())
     }
 
+    #[cfg(debug_assertions)]
     fn log_input_and_output(&mut self, ctx: &Context<Cuda>) {
         use log::debug;
 
@@ -96,6 +97,7 @@ impl ConcatBackend {
     where
         I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
+        // Todo: validate axis.
         let attrs = ctx
             .get_attributes()
             .ok_or(InternalError::MissingAttributes)?;
