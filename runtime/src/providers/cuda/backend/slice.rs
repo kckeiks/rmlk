@@ -5,7 +5,6 @@ use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
-use log::debug;
 use num_traits::{Num, PrimInt, Signed, ToPrimitive};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::fmt::Debug;
@@ -56,36 +55,16 @@ impl SliceBackend {
         Ok(())
     }
 
-    #[cfg(debug_assertions)]
-    fn log_input_and_output(&mut self, ctx: &Context<Cuda>) -> Result<()> {
-        use log::debug;
-
-        let data = ctx.get_input(0)?;
-        let starts = ctx.get_input(1)?;
-        let ends = ctx.get_input(2)?;
-
-        debug!(
-            "[data][slice][shape={:?}][stride=[{:?}]",
-            data.shape(),
-            data.stride()
-        );
-        debug!(
-            "[starts][slice][shape={:?}][stride=[{:?}]",
-            starts.shape(),
-            starts.stride()
-        );
-        debug!(
-            "[ends][slice][shape={:?}][stride=[{:?}]",
-            ends.shape(),
-            ends.stride()
-        );
-
-        Ok(())
-    }
-
     fn compute_slice<T, Tind>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Default + Copy,
+        T: DataTypeMap
+            + CudnnDataType
+            + ValidAsZeroBits
+            + DeviceRepr
+            + Num
+            + Default
+            + Copy
+            + Debug,
         Tind: DataTypeMap
             + CudnnDataType
             + ValidAsZeroBits
@@ -98,16 +77,13 @@ impl SliceBackend {
             + Debug,
         i64: From<Tind>,
     {
-        #[cfg(debug_assertions)]
-        self.log_input_and_output(ctx)?;
-
         let rank = ctx.get_input(0)?.shape().len();
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
         let norm_axes;
         match ctx.get_input(3) {
             Ok(axes_tensor) => {
-                debug_assert_eq!(axes_tensor.dtype(), ctx.get_input(0)?.dtype());
+                debug_assert_eq!(axes_tensor.dtype(), ctx.get_input(1)?.dtype());
 
                 // Todo: maybe validate that this is 1D.
                 let axes_ptr = axes_tensor.try_dev_data_ptr()?;
@@ -132,9 +108,6 @@ impl SliceBackend {
             }
         }
 
-        #[cfg(debug_assertions)]
-        debug!("[slice][axes={:?}]", norm_axes);
-
         let mut steps = None;
         if let Ok(steps_tensor) = ctx.get_input(4) {
             let steps_ptr = steps_tensor.try_dev_data_ptr()?;
@@ -144,16 +117,6 @@ impl SliceBackend {
             self.device
                 .dtoh_sync_copy_into(steps_view.as_ref(), steps_data)?;
             steps = Some(steps_data);
-        }
-
-        #[cfg(debug_assertions)]
-        match &steps {
-            None => {
-                debug!("[slice][steps was not provided]");
-            }
-            Some(s) => {
-                debug!("[slice][steps={:?}]", s);
-            }
         }
 
         let starts_data = {
@@ -186,6 +149,17 @@ impl SliceBackend {
 
         self.compute_output_shape(norm_axes, starts_data, ends_data, steps.as_deref(), ctx)?;
 
+        #[cfg(debug_assertions)]
+        {
+            use log::debug;
+            let output = ctx.get_output(0)?;
+            debug!(
+                "[slice][output][shape={:?}][strides={:?}]",
+                output.shape(),
+                output.stride()
+            );
+        }
+
         if ctx.get_output(0)?.shape().iter().any(|&d| d == 0) {
             common::init_tensor_device_data_with_empty_slice::<T>(
                 &self.device,
@@ -201,6 +175,8 @@ impl SliceBackend {
         let input_view = input_ptr.data::<T>();
 
         let input_data = scratch_alloc.allocate::<T>(input_view.len())?;
+        self.device
+            .dtoh_sync_copy_into(input_view.as_ref(), input_data)?;
 
         let output_data =
             scratch_alloc.allocate(ctx.get_output(0)?.shape().iter().product::<usize>())?;
@@ -240,7 +216,7 @@ impl SliceBackend {
             (DataType::Float, DataType::Int32) => self.compute_slice::<f32, i32>(ctx),
             (DataType::Float, DataType::Int64) => self.compute_slice::<f32, i64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Range,
+                op: Op::Slice,
                 dtype: input_dtype,
             }),
         }
@@ -259,8 +235,15 @@ fn compute_slice<T, Tind>(
     output: &mut [T],
 ) -> Result<()>
 where
-    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Copy,
-    Tind: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Copy + ToPrimitive,
+    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Copy + Debug,
+    Tind: DataTypeMap
+        + CudnnDataType
+        + ValidAsZeroBits
+        + DeviceRepr
+        + Num
+        + Copy
+        + ToPrimitive
+        + Debug,
 {
     // Todo: assert output is the right size.
     assert_eq!(axes.len(), starts.len());
@@ -275,6 +258,21 @@ where
                 .to_isize()
                 .ok_or(InternalError::UnableToConvertValue)?;
         }
+    }
+
+    #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
+    {
+        use log::debug;
+
+        debug!("[slice][input={:?}]", input);
+        debug!("[slice][shape={:?}]", shape);
+        debug!("[slice][strides={:?}]", strides);
+        debug!("[slice][axes={:?}]", axes);
+        debug!("[slice][starts={:?}]", starts);
+        debug!("[slice][ends={:?}]", ends);
+        debug!("[slice][steps={:?}]", steps);
+        debug!("[slice][coords={:?}]", coords);
     }
 
     let mut output_offset = 0;
@@ -603,7 +601,7 @@ mod tests {
     fn duplicate_axes_error() {
         let shape = [5, 5, 5];
         let mut out = shape;
-        let err =
+        let _ =
             compute_output_shape::<i64>(&shape, &[1, 1], &[0, 0], &[5, 5], Some(&[1, 1]), &mut out);
         // Todo: We need to decide what to do here.
     }

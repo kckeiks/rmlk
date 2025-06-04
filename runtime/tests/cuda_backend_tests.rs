@@ -23,6 +23,10 @@ mod cuda {
     mod reduce_mean_simple;
     mod shape_axis;
     mod shape_simple;
+    mod slice_basic_2d;
+    mod slice_basic_3d;
+    mod slice_basic_3d_neg;
+    mod slice_basic_empty_output;
     mod transpose_validate_data;
     mod transpose_validate_shape;
     mod unsqueeze_any_order;

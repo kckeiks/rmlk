@@ -162,7 +162,7 @@ impl ConcatBackend {
         match dtype {
             DataType::Float => self.compute_concat::<f32>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Range,
+                op: Op::Concat,
                 dtype,
             }),
         }
