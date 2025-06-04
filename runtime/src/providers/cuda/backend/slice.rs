@@ -144,10 +144,17 @@ impl SliceBackend {
             ends_data
         };
 
-        // Todo: Validate that start and end values are clamped.
         self.compute_output_shape(norm_axes, starts_data, ends_data, steps.as_deref(), ctx)?;
 
-        common::init_tensor_device_data::<T>(&self.device, ctx.get_output(0)?)?;
+        if ctx.get_output(0)?.shape().iter().any(|&d| d == 0) {
+            common::init_tensor_device_data_with_empty_slice::<T>(
+                &self.device,
+                ctx.get_output(0)?,
+            )?;
+            return Ok(());
+        } else {
+            common::init_tensor_device_data::<T>(&self.device, ctx.get_output(0)?)?;
+        }
 
         let input_tensor = ctx.get_input(0)?;
         let input_ptr = input_tensor.try_dev_data_ptr()?;
@@ -246,21 +253,21 @@ where
 
         let mut done = true;
         for dim in (0..rank).rev() {
-            let mut step_size = 1isize;
+            let mut step = 1isize;
             let axis_slot = pos_in_axes(dim, axes);
 
             if let Some(slot) = axis_slot {
                 if let Some(steps_sizes) = steps {
-                    step_size = steps_sizes[slot]
+                    step = steps_sizes[slot]
                         .to_isize()
                         .ok_or(InternalError::UnableToConvertValue)?;
-                    if step_size == 0 {
+                    if step == 0 {
                         panic!("todo: throw error when step==0")
                     }
                 }
             }
 
-            coords[dim] += step_size;
+            coords[dim] += step;
 
             let end = match axis_slot {
                 None => shape[dim]
@@ -271,7 +278,7 @@ where
                     .ok_or(InternalError::UnableToConvertValue)?,
             };
 
-            if (step_size > 0 && coords[dim] < end) || (step_size < 0 && coords[dim] > end) {
+            if (step > 0 && coords[dim] < end) || (step < 0 && coords[dim] > end) {
                 done = false;
                 break;
             }
@@ -422,6 +429,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Neg;
+
+    fn range_tensor(len: usize) -> Vec<i32> {
+        (0..len as i32).collect()
+    }
+
+    fn strides_for(shape: &[usize]) -> Vec<usize> {
+        let mut s = vec![0; shape.len()];
+        utils::compute_stride::<usize>(shape, &mut s);
+        s
+    }
 
     #[test]
     fn pos_step_regular() {
@@ -582,5 +600,146 @@ mod tests {
         let shape = [4, 4, 4];
         let mut out = shape;
         let _ = compute_output_shape::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out);
+    }
+
+    #[test]
+    fn rank1_step1() {
+        let shape = [10];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize];
+        let mut out = vec![0; 6];
+
+        compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[0],
+            &[2],
+            &[8],
+            None,
+            &mut coords,
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(&out, &[2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn rank1_step2_neg() {
+        let shape = [10];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize];
+        let mut out = vec![0; 3];
+
+        compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[0],
+            &[7],
+            &[1],
+            Some(&[-2]),
+            &mut coords,
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(&out, &[7, 5, 3]);
+    }
+
+    #[test]
+    fn rank2_mixed_steps() {
+        let shape = [3, 4];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize; 2];
+        let mut out = vec![0; 4];
+
+        compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[0, 1],
+            &[1, 1],
+            &[3, 4],
+            Some(&[1, -2i64.neg()]),
+            &mut coords,
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(&out, &[5, 7, 9, 11]);
+    }
+
+    #[test]
+    fn rank3_slice_last_axis() {
+        // shape (2,2,3) keep axis-2 1..3
+        let shape = [2, 2, 3];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize; 3];
+        let mut out = vec![0; 8];
+
+        compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[2],
+            &[1],
+            &[3],
+            None,
+            &mut coords,
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(&out, &[1, 2, 4, 5, 7, 8, 10, 11]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn step_zero_panics() {
+        let shape = [5];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize];
+        let mut out = vec![0; 1];
+
+        let _ = compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[0],
+            &[0],
+            &[5],
+            Some(&[0]),
+            &mut coords,
+            &mut out,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn steps_len_mismatch_panics() {
+        let shape = [5];
+        let input = range_tensor(shape.iter().product());
+        let strides = strides_for(&shape);
+        let mut coords = [0isize];
+        let mut out = vec![0; 1];
+
+        let _ = compute_slice::<i32, i64>(
+            &input,
+            &shape,
+            &strides,
+            &[0],
+            &[0],
+            &[5],
+            Some(&[1, 2]),
+            &mut coords,
+            &mut out,
+        );
     }
 }

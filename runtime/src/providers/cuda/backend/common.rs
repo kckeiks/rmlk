@@ -37,3 +37,16 @@ where
 
     Ok(())
 }
+
+pub fn init_tensor_device_data_with_empty_slice<T>(
+    device: &Arc<CudaDevice>,
+    mut tensor: Tensor<CudaData>,
+) -> Result<()>
+where
+    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+{
+    let dev_data = device.alloc_zeros::<T>(0).map_err(rmlk_cuda::Error::from)?;
+    tensor.set_dev_data(CudaData::new(dev_data));
+
+    Ok(())
+}
