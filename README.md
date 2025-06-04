@@ -23,7 +23,7 @@ Based on ONNX version: 1.13.1
 | `Sqrt`              | 🛠️ In Progress         | Needs backend and tests                |
 | `Add`               | ✅ Done                 |                                        |
 | `Neg`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
-| `Slice`             | ❓ Not Started          |                                        |
+| `Slice`             | ✅ Done             |                                        |
 | `MatMul`            | ❓ Not Started          |                                        |
 | `ScatterND`         | 🛠️ In Progress         | Needs backend and more tests           |
 | `Equal`             | 🛠️ In Progress         | Needs kernel, backend, and tests       |
