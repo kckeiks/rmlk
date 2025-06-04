@@ -5,8 +5,10 @@ use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use log::debug;
 use num_traits::{Num, PrimInt, Signed, ToPrimitive};
 use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 pub struct SliceBackend {
@@ -55,9 +57,30 @@ impl SliceBackend {
     }
 
     #[cfg(debug_assertions)]
-    fn log_input_and_output(&mut self, ctx: &Context<Cuda>) {
-        //use log::debug;
-        todo!()
+    fn log_input_and_output(&mut self, ctx: &Context<Cuda>) -> Result<()> {
+        use log::debug;
+
+        let data = ctx.get_input(0)?;
+        let starts = ctx.get_input(1)?;
+        let ends = ctx.get_input(2)?;
+
+        debug!(
+            "[data][slice][shape={:?}][stride=[{:?}]",
+            data.shape(),
+            data.stride()
+        );
+        debug!(
+            "[starts][slice][shape={:?}][stride=[{:?}]",
+            starts.shape(),
+            starts.stride()
+        );
+        debug!(
+            "[ends][slice][shape={:?}][stride=[{:?}]",
+            ends.shape(),
+            ends.stride()
+        );
+
+        Ok(())
     }
 
     fn compute_slice<T, Tind>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -71,9 +94,13 @@ impl SliceBackend {
             + Default
             + Copy
             + Signed
-            + PrimInt,
+            + PrimInt
+            + Debug,
         i64: From<Tind>,
     {
+        #[cfg(debug_assertions)]
+        self.log_input_and_output(ctx)?;
+
         let rank = ctx.get_input(0)?.shape().len();
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
@@ -105,6 +132,9 @@ impl SliceBackend {
             }
         }
 
+        #[cfg(debug_assertions)]
+        debug!("[slice][axes={:?}]", norm_axes);
+
         let mut steps = None;
         if let Ok(steps_tensor) = ctx.get_input(4) {
             let steps_ptr = steps_tensor.try_dev_data_ptr()?;
@@ -114,6 +144,16 @@ impl SliceBackend {
             self.device
                 .dtoh_sync_copy_into(steps_view.as_ref(), steps_data)?;
             steps = Some(steps_data);
+        }
+
+        #[cfg(debug_assertions)]
+        match &steps {
+            None => {
+                debug!("[slice][steps was not provided]");
+            }
+            Some(s) => {
+                debug!("[slice][steps={:?}]", s);
+            }
         }
 
         let starts_data = {
