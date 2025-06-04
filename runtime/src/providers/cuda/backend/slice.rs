@@ -2,7 +2,7 @@ use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
-use crate::{utils};
+use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaDevice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
 use num_traits::{Num, PrimInt, Signed, ToPrimitive};
@@ -43,7 +43,7 @@ impl SliceBackend {
         let input = ctx.get_input(0)?;
         let output_shape = scratch_alloc.allocate_from_slice(input.shape())?;
 
-        compute_output_shape(axes, starts, ends, steps, output_shape)?;
+        compute_output_shape(input.shape(), axes, starts, ends, steps, output_shape)?;
 
         let output_tensor = ctx.get_output(0)?;
         let dst_id = output_tensor.dst_id();
@@ -63,7 +63,15 @@ impl SliceBackend {
     fn compute_slice<T, Tind>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Default + Copy,
-        Tind: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + Default + Copy + Signed + PrimInt,
+        Tind: DataTypeMap
+            + CudnnDataType
+            + ValidAsZeroBits
+            + DeviceRepr
+            + Num
+            + Default
+            + Copy
+            + Signed
+            + PrimInt,
         i64: From<Tind>,
     {
         let rank = ctx.get_input(0)?.shape().len();
@@ -288,9 +296,11 @@ fn pos_in_axes<T: Copy + PartialEq>(target: T, slice: &[T]) -> Option<usize> {
     slice.iter().position(|x| *x == target)
 }
 
-// Requires axes, starts, ends (and steps, if present) to be the same length.
-// Panics in debug if axis ≥ output_shape.len().
+/// Computes the shape of the output tensor after Slice.
+/// Requires axes, starts, ends (and steps, if present) to be the same length.
+/// Panics in debug if axis ≥ output_shape.len().
 fn compute_output_shape<T>(
+    input_shape: &[usize],
     axes: &[usize],
     starts: &[T],
     ends: &[T],
@@ -313,13 +323,17 @@ where
 
     if steps.map_or(false, |s| s.len() != axes.len()) {
         // Todo: refactor errors.
-        panic!("invalid steps size");
+        return Err(InternalError::InvalidInput {
+            input: 4,
+            op: Op::Slice,
+            message: "`steps` length must match `axes`".into(),
+        });
     }
 
     for (slot, axis) in axes.iter().copied().enumerate() {
-        let step_size = steps.map(|s| s[slot]).unwrap_or_else(T::one);
+        let step = steps.map(|s| s[slot]).unwrap_or_else(T::one);
 
-        if step_size.is_zero() {
+        if step.is_zero() {
             return Err(InternalError::InvalidInput {
                 input: 4,
                 op: Op::Slice,
@@ -327,24 +341,65 @@ where
             });
         }
 
-        if (step_size.is_negative() && starts[slot] <= ends[slot])
-            || (step_size.is_positive() && starts[slot] >= ends[slot])
+        if (step.is_negative() && starts[slot] <= ends[slot])
+            || (step.is_positive() && starts[slot] >= ends[slot])
         {
             output_shape[axis] = 0;
-        } else if step_size.is_positive(){
-            let diff = ends[slot]
-                .checked_sub(&starts[slot])
-                .ok_or(InternalError::UnableToConvertValue)?;
-            output_shape[axis] = ceil_div(diff, step_size)
-                .to_usize()
-                .ok_or(InternalError::UnableToConvertValue)?;
         } else {
-            let diff = starts[slot]
-                .checked_sub(&ends[slot])
-                .ok_or(InternalError::UnableToConvertValue)?;
-            output_shape[axis] = ceil_div(diff, step_size.abs())
-                .to_usize()
-                .ok_or(InternalError::UnableToConvertValue)?;
+            let start = starts[slot];
+            if step.is_positive() {
+                if start < T::zero()
+                    || start
+                        .to_usize()
+                        .ok_or(InternalError::UnableToConvertValue)?
+                        > input_shape[axis]
+                {
+                    return Err(InternalError::UnableToConvertValue);
+                }
+            } else {
+                if start < T::zero()
+                    || start
+                        .to_usize()
+                        .ok_or(InternalError::UnableToConvertValue)?
+                        >= input_shape[axis]
+                {
+                    return Err(InternalError::UnableToConvertValue);
+                }
+            }
+
+            let end = ends[slot];
+            if step.is_positive() {
+                if end < T::zero()
+                    || end.to_usize().ok_or(InternalError::UnableToConvertValue)?
+                        > input_shape[axis]
+                {
+                    return Err(InternalError::UnableToConvertValue);
+                }
+            } else {
+                if !(end == T::one().neg()
+                    || (end >= T::zero()
+                        && end.to_usize().ok_or(InternalError::UnableToConvertValue)?
+                            < input_shape[axis]))
+                {
+                    return Err(InternalError::UnableToConvertValue);
+                }
+            }
+
+            if step.is_positive() {
+                let diff = end
+                    .checked_sub(&start)
+                    .ok_or(InternalError::UnableToConvertValue)?;
+                output_shape[axis] = ceil_div(diff, step)
+                    .to_usize()
+                    .ok_or(InternalError::UnableToConvertValue)?;
+            } else {
+                let diff = start
+                    .checked_sub(&end)
+                    .ok_or(InternalError::UnableToConvertValue)?;
+                output_shape[axis] = ceil_div(diff, step.abs())
+                    .to_usize()
+                    .ok_or(InternalError::UnableToConvertValue)?;
+            }
         }
     }
 
