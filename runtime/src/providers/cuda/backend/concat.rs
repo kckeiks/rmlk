@@ -101,7 +101,7 @@ impl ConcatBackend {
         let attrs = ctx
             .get_attributes()
             .ok_or(InternalError::MissingAttributes)?;
-        let axis = usize::try_from(attributes::concat::get_axis(attrs).ok_or_else(|| {
+        let axis = usize::try_from(attributes::concat::get_axis(&attrs).ok_or_else(|| {
             InternalError::MissingAttribute {
                 name: "`axis` is missing".to_string(),
             }

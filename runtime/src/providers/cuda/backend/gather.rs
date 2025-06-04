@@ -125,7 +125,7 @@ impl GatherBackend {
     {
         let axis = ctx
             .get_attributes()
-            .map(attributes::gather::get_axis)
+            .map(|attrs| attributes::gather::get_axis(&attrs))
             .unwrap_or(0);
 
         let data_rank = ctx.get_input(0)?.shape().len();

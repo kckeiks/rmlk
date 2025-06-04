@@ -27,11 +27,10 @@ impl MaxPoolBackend {
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
 
-        let attrs = MaxPoolAttributes::new(
-            ctx.get_attributes()
-                .ok_or(InternalError::MissingAttributes)?,
-            ctx.execution_state().scratch_alloc(),
-        )?;
+        let attrs = ctx
+            .get_attributes()
+            .ok_or(InternalError::MissingAttributes)?;
+        let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
 
         let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
 
@@ -40,9 +39,9 @@ impl MaxPoolBackend {
         // Todo: if attributes were usize, we wouldn't need to do this allocation here.
         rmlk_cuda::kernels::max_pool::compute_output_shape(
             &x_shape,
-            attrs.kernel_shape(),
-            attrs.pads(),
-            attrs.strides(),
+            max_pool_attrs.kernel_shape(),
+            max_pool_attrs.pads(),
+            max_pool_attrs.strides(),
             &mut y_shape,
             false,
         )?;
@@ -66,11 +65,10 @@ impl MaxPoolBackend {
         let x = ctx.get_input(0)?;
         let y = ctx.get_output(0)?;
 
-        let attrs = MaxPoolAttributes::new(
-            ctx.get_attributes()
-                .ok_or(InternalError::MissingAttributes)?,
-            ctx.execution_state().scratch_alloc(),
-        )?;
+        let attrs = ctx
+            .get_attributes()
+            .ok_or(InternalError::MissingAttributes)?;
+        let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
 
         debug!(
             "[x][max_pool][shape={:?}][stride=[{:?}]",
@@ -84,9 +82,9 @@ impl MaxPoolBackend {
         );
         debug!(
             "[max_pool][pads={:?}][strides=[{:?}][kernel_shape={:?}]",
-            attrs.pads(),
-            attrs.strides(),
-            attrs.kernel_shape()
+            max_pool_attrs.pads(),
+            max_pool_attrs.strides(),
+            max_pool_attrs.kernel_shape()
         );
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
@@ -140,9 +138,9 @@ impl MaxPoolBackend {
             &x_dev_data,
             &x_shape,
             &x_stride,
-            attrs.kernel_shape(),
-            attrs.pads(),
-            attrs.strides(),
+            max_pool_attrs.kernel_shape(),
+            max_pool_attrs.pads(),
+            max_pool_attrs.strides(),
             &mut y_dev_data,
             &y_shape,
             &y_stride,

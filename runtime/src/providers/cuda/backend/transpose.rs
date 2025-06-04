@@ -27,7 +27,11 @@ impl TransposeBackend {
 
         let output_shape = alloc.allocate(input.shape().len())?;
 
-        match ctx.get_attributes().and_then(transpose::get_perm) {
+        match ctx
+            .get_attributes()
+            .as_ref()
+            .and_then(|attrs| transpose::get_perm(&attrs))
+        {
             None => {
                 for (dim_i, dim) in input.shape().iter().rev().enumerate() {
                     output_shape[dim_i] = *dim;

@@ -35,6 +35,7 @@ pub enum InternalError {
         error: rmlk_cuda::Error,
     },
     ExecutionState(String),
+    InvalidByteLength,
     InvalidTensorIndex {
         index: usize,
     },
@@ -151,6 +152,9 @@ impl Display for InternalError {
             }
             InternalError::IncompatibleTensorShape { shapes, op } => {
                 write!(f, "incompatible shapes `{shapes:?}` for {op:?}")
+            }
+            InternalError::InvalidByteLength => {
+                write!(f, "invalid byte length")
             }
             InternalError::InvalidRange { start, end } => {
                 write!(f, "invalid range start={start}, end={end}")

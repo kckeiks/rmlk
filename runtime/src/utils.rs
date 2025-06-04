@@ -229,6 +229,66 @@ where
     Ok(())
 }
 
+// Todo: Move to utils after refactor.
+// Todo: What should we do if the chunk_size does not divide the length of the input?
+pub fn to_float_vec(data: &[u8]) -> Vec<f32> {
+    data.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+        .collect()
+}
+
+pub trait FromBytes: Sized {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError>;
+}
+
+impl FromBytes for f32 {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+        if bytes.len() % size_of::<Self>() != 0 {
+            return Err(InternalError::InvalidByteLength);
+        }
+
+        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
+        let mut chunks = bytes.chunks_exact(size_of::<Self>());
+        for chunk in &mut chunks {
+            let arr = chunk.try_into().unwrap();
+            vec.push(Self::from_le_bytes(arr));
+        }
+        Ok(vec)
+    }
+}
+
+impl FromBytes for i32 {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+        if bytes.len() % size_of::<Self>() != 0 {
+            return Err(InternalError::InvalidByteLength);
+        }
+
+        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
+        let mut chunks = bytes.chunks_exact(size_of::<Self>());
+        for chunk in &mut chunks {
+            let arr = chunk.try_into().unwrap();
+            vec.push(Self::from_le_bytes(arr));
+        }
+        Ok(vec)
+    }
+}
+
+impl FromBytes for i64 {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+        if bytes.len() % size_of::<Self>() != 0 {
+            return Err(InternalError::InvalidByteLength);
+        }
+
+        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
+        let mut chunks = bytes.chunks_exact(size_of::<Self>());
+        for chunk in &mut chunks {
+            let arr = chunk.try_into().unwrap();
+            vec.push(Self::from_le_bytes(arr));
+        }
+        Ok(vec)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::utils::derive_range;

@@ -81,7 +81,7 @@ impl CastBackend {
         let in_dtype = ctx.get_input(0)?.dtype();
         let out_dtype = ctx
             .get_attributes()
-            .map(cast::get_value)
+            .map(|attrs| cast::get_value(&attrs))
             .transpose()
             .map(Option::flatten)?
             .ok_or_else(|| InternalError::MissingAttribute {

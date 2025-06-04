@@ -68,14 +68,14 @@ impl ConstantOfShapeBackend {
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx
             .get_attributes()
-            .and_then(attributes::constant_of_shape::get_dtype)
+            .and_then(|attrs| attributes::constant_of_shape::get_dtype(&attrs))
             .unwrap_or(DataType::Float);
 
         match dtype {
             DataType::Float => {
                 let value = ctx
                     .get_attributes()
-                    .and_then(attributes::constant_of_shape::get_value_f32)
+                    .and_then(|attrs| attributes::constant_of_shape::get_value_f32(&attrs))
                     .unwrap_or(0.0);
                 self.compute_constant_of_shape::<f32>(ctx, value)
             }

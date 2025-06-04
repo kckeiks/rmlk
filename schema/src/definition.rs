@@ -1,9 +1,10 @@
 use crate::{Attribute, DataType, Node, Op};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub struct Definition {
     node: Node,
-    attributes: Option<HashMap<Box<str>, Attribute>>,
+    attributes: Option<Rc<HashMap<Box<str>, Attribute>>>,
 }
 
 impl Definition {
@@ -21,7 +22,7 @@ impl Definition {
                     // and then we can leak the string.
                     attrs_map.insert(attr.name.clone().into_boxed_str(), attr);
                 }
-                attributes = Some(attrs_map);
+                attributes = Some(Rc::new(attrs_map));
             }
         }
 
@@ -64,8 +65,8 @@ impl Definition {
         self.node.output.take()
     }
 
-    pub fn attrs(&self) -> Option<&HashMap<Box<str>, Attribute>> {
-        self.attributes.as_ref()
+    pub fn attrs(&self) -> Option<Rc<HashMap<Box<str>, Attribute>>> {
+        self.attributes.clone()
     }
 
     pub fn op(&self) -> Op {

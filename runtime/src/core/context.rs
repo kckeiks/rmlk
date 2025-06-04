@@ -5,6 +5,7 @@ use crate::core::tensor::Tensor;
 use rmlk_graph::Node;
 use rmlk_schema::{Attribute, Definition};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, InternalError>;
 
@@ -103,7 +104,7 @@ where
         self.execution_state.graph().get_node(*output)
     }
 
-    pub fn get_attributes(&self) -> Option<&HashMap<Box<str>, Attribute>> {
+    pub fn get_attributes(&self) -> Option<Rc<HashMap<Box<str>, Attribute>>> {
         self.execution_state
             .graph()
             .get_node(self.original_node_id)?

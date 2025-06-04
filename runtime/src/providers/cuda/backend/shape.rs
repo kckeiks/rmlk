@@ -48,9 +48,12 @@ impl ShapeBackend {
 
         let raw_start = ctx
             .get_attributes()
-            .map(attributes::shape::get_start)
+            .map(|attrs| attributes::shape::get_start(&attrs))
             .unwrap_or(0);
-        let raw_end = match ctx.get_attributes().and_then(attributes::shape::get_end) {
+        let raw_end = match ctx
+            .get_attributes()
+            .and_then(|attrs| attributes::shape::get_end(&attrs))
+        {
             None => rank.to_i32().ok_or(InternalError::UnsupportedRankSize {
                 message: format!("failed to convert `{rank}` to i32"),
             })?,

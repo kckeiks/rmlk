@@ -235,7 +235,7 @@ impl GemmBackend {
         T: GemmKernel,
     {
         let attrs = match ctx.get_attributes() {
-            Some(attrs) => GemmAttributes::new(attrs)?,
+            Some(attrs) => GemmAttributes::new(&attrs)?,
             None => GemmAttributes::default(),
         };
 

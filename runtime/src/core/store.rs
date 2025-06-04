@@ -4,6 +4,7 @@ use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::tensor_handle::TensorHandle;
 use crate::core::{device_service::DeviceService, Tensor};
+use crate::utils;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::cell::RefCell;
@@ -102,13 +103,6 @@ where
     }
 }
 
-// Todo: Move to utils after refactor.
-fn to_float_vec(data: &[u8]) -> Vec<f32> {
-    data.chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-        .collect()
-}
-
 struct Builder<'a, D, T> {
     provider: &'a D,
     graph: &'a Graph<Definition>,
@@ -157,7 +151,7 @@ where
             );
 
             let on_host_data = match ir_tensor.float_data.is_empty() {
-                true => to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
+                true => utils::to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
                     InternalError::TensorStore("failed to parse tensor raw data".to_string())
                 })?),
                 false => {

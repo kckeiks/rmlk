@@ -52,7 +52,7 @@ impl ReduceMeanBackend {
 
         let keep_dims = ctx
             .get_attributes()
-            .map(reduce_mean::get_keep_dims)
+            .map(|attrs| reduce_mean::get_keep_dims(&attrs))
             .unwrap_or(true);
 
         let output_shape = if keep_dims {
@@ -125,7 +125,7 @@ impl ReduceMeanBackend {
 
         let noop_with_empty_axes = ctx
             .get_attributes()
-            .map(reduce_mean::get_noop_with_empty_axes)
+            .map(|attrs| reduce_mean::get_noop_with_empty_axes(&attrs))
             .unwrap_or(false);
 
         // We either return a non-empty axes list or nothing.

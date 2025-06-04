@@ -39,6 +39,13 @@ impl Attribute {
         }
     }
 
+    pub fn floats(&self) -> Option<&[f32]> {
+        match &self.ty {
+            AttributeType::Floats(value) => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn int(&self) -> Option<i32> {
         match &self.ty {
             AttributeType::Int(value) => Some(*value),
@@ -49,6 +56,13 @@ impl Attribute {
     pub fn dtype(&self) -> Option<DataType> {
         match self.ty {
             AttributeType::DataType(dtype) => Some(dtype),
+            _ => None,
+        }
+    }
+
+    pub fn tensor(&self) -> Option<&Tensor> {
+        match &self.ty {
+            AttributeType::Tensor(tensor) => Some(tensor),
             _ => None,
         }
     }

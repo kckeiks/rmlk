@@ -1,5 +1,6 @@
 pub mod cast;
 pub mod concat;
+pub mod constant;
 pub mod constant_of_shape;
 pub mod conv;
 pub mod gather;

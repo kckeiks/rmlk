@@ -34,12 +34,12 @@ impl ConvolutionBackend {
             }
         };
 
-        let attrs = ConvAttributes::new(
-            ctx.get_attributes()
-                .ok_or(InternalError::MissingAttributes)?,
-            ctx.execution_state().scratch_alloc(),
-            filter_dims,
-        )?;
+        let attrs = ctx
+            .get_attributes()
+            .ok_or(InternalError::MissingAttributes)?;
+
+        let conv_attrs =
+            ConvAttributes::new(&attrs, ctx.execution_state().scratch_alloc(), filter_dims)?;
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
@@ -53,9 +53,9 @@ impl ConvolutionBackend {
         rmlk_cuda::kernels::conv::calculate_output_shape(
             &x_shape,
             &w_shape,
-            attrs.pads(),
-            attrs.strides(),
-            attrs.dilations(),
+            conv_attrs.pads(),
+            conv_attrs.strides(),
+            conv_attrs.dilations(),
             &mut y_shape,
         )?;
 
@@ -87,12 +87,12 @@ impl ConvolutionBackend {
             }
         };
 
-        let attrs = ConvAttributes::new(
-            ctx.get_attributes()
-                .ok_or(InternalError::MissingAttributes)?,
-            ctx.execution_state().scratch_alloc(),
-            filter_dims,
-        )?;
+        let attrs = ctx
+            .get_attributes()
+            .ok_or(InternalError::MissingAttributes)?;
+
+        let conv_attrs =
+            ConvAttributes::new(&attrs, ctx.execution_state().scratch_alloc(), filter_dims)?;
 
         let w = ctx.get_input(1)?;
         let bias = ctx.get_input(2).ok();
@@ -185,10 +185,10 @@ impl ConvolutionBackend {
                     &x_stride,
                     &w_dev_data,
                     &w_shape,
-                    attrs.pads(),
-                    attrs.strides(),
-                    attrs.dilations(),
-                    attrs.group(),
+                    conv_attrs.pads(),
+                    conv_attrs.strides(),
+                    conv_attrs.dilations(),
+                    conv_attrs.group(),
                     Some(BiasInput {
                         data: &data,
                         shape: bias.shape,
@@ -209,10 +209,10 @@ impl ConvolutionBackend {
                     &x_stride,
                     &w_dev_data,
                     &w_shape,
-                    attrs.pads(),
-                    attrs.strides(),
-                    attrs.dilations(),
-                    attrs.group(),
+                    conv_attrs.pads(),
+                    conv_attrs.strides(),
+                    conv_attrs.dilations(),
+                    conv_attrs.group(),
                     None,
                     &mut y_dev_data,
                     &y_shape,

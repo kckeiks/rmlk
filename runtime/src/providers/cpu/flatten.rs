@@ -24,6 +24,7 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let mut y_shape = [0; 2];
     let axis = ctx
         .get_attributes()
+        .as_ref()
         .map(|attrs| attrs.get("axis"))
         .flatten()
         .and_then(|attr| attr.int())
