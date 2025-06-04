@@ -318,8 +318,12 @@ where
         + ToPrimitive
         + PrimInt,
 {
-    debug_assert!(starts.len() == axes.len());
-    debug_assert!(output_shape.len() > *axes.iter().max().unwrap_or(&0));
+    debug_assert!(!axes.is_empty());
+    debug_assert!(starts.len() <= axes.len());
+    debug_assert!(
+        output_shape.len() > *axes.iter().max().unwrap(),
+        "axis values must be within range"
+    );
 
     if steps.map_or(false, |s| s.len() != axes.len()) {
         // Todo: refactor errors.
@@ -332,7 +336,6 @@ where
 
     for (slot, axis) in axes.iter().copied().enumerate() {
         let step = steps.map(|s| s[slot]).unwrap_or_else(T::one);
-
         if step.is_zero() {
             return Err(InternalError::InvalidInput {
                 input: 4,
@@ -341,50 +344,47 @@ where
             });
         }
 
-        if (step.is_negative() && starts[slot] <= ends[slot])
-            || (step.is_positive() && starts[slot] >= ends[slot])
-        {
+        let start = starts[slot];
+        if step.is_positive() {
+            if start < T::zero()
+                || start
+                    .to_usize()
+                    .ok_or(InternalError::UnableToConvertValue)?
+                    > input_shape[axis]
+            {
+                return Err(InternalError::UnableToConvertValue);
+            }
+        } else {
+            if start < T::zero()
+                || start
+                    .to_usize()
+                    .ok_or(InternalError::UnableToConvertValue)?
+                    >= input_shape[axis]
+            {
+                return Err(InternalError::UnableToConvertValue);
+            }
+        }
+
+        let end = ends[slot];
+        if step.is_positive() {
+            if end < T::zero()
+                || end.to_usize().ok_or(InternalError::UnableToConvertValue)? > input_shape[axis]
+            {
+                return Err(InternalError::UnableToConvertValue);
+            }
+        } else {
+            if !(end == T::one().neg()
+                || (end >= T::zero()
+                    && end.to_usize().ok_or(InternalError::UnableToConvertValue)?
+                        < input_shape[axis]))
+            {
+                return Err(InternalError::UnableToConvertValue);
+            }
+        }
+
+        if (step.is_negative() && start <= end) || (step.is_positive() && start >= end) {
             output_shape[axis] = 0;
         } else {
-            let start = starts[slot];
-            if step.is_positive() {
-                if start < T::zero()
-                    || start
-                        .to_usize()
-                        .ok_or(InternalError::UnableToConvertValue)?
-                        > input_shape[axis]
-                {
-                    return Err(InternalError::UnableToConvertValue);
-                }
-            } else {
-                if start < T::zero()
-                    || start
-                        .to_usize()
-                        .ok_or(InternalError::UnableToConvertValue)?
-                        >= input_shape[axis]
-                {
-                    return Err(InternalError::UnableToConvertValue);
-                }
-            }
-
-            let end = ends[slot];
-            if step.is_positive() {
-                if end < T::zero()
-                    || end.to_usize().ok_or(InternalError::UnableToConvertValue)?
-                        > input_shape[axis]
-                {
-                    return Err(InternalError::UnableToConvertValue);
-                }
-            } else {
-                if !(end == T::one().neg()
-                    || (end >= T::zero()
-                        && end.to_usize().ok_or(InternalError::UnableToConvertValue)?
-                            < input_shape[axis]))
-                {
-                    return Err(InternalError::UnableToConvertValue);
-                }
-            }
-
             if step.is_positive() {
                 let diff = end
                     .checked_sub(&start)
@@ -417,4 +417,170 @@ where
     };
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pos_step_regular() {
+        let shape = [10];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[2], &[9], Some(&[3]), &mut out).unwrap();
+        assert_eq!(out, [3]);
+    }
+
+    #[test]
+    fn pos_step_end_eq_dim() {
+        let shape = [10];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[0], &[10], Some(&[1]), &mut out).unwrap();
+        assert_eq!(out, [10]);
+    }
+
+    #[test]
+    fn neg_step_regular() {
+        let shape = [10];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[8], &[1], Some(&[-2]), &mut out).unwrap();
+        assert_eq!(out, [4]);
+    }
+
+    #[test]
+    fn neg_step_end_minus1() {
+        let shape = [5];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[4], &[-1], Some(&[-1]), &mut out).unwrap();
+        assert_eq!(out, [5]);
+    }
+
+    #[test]
+    fn empty_slice_pos() {
+        let shape = [6];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[3], &[3], Some(&[1]), &mut out).unwrap();
+        assert_eq!(out, [0]);
+    }
+
+    #[test]
+    fn empty_slice_neg() {
+        let shape = [6];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0], &[2], &[2], Some(&[-1]), &mut out).unwrap();
+        assert_eq!(out, [0]);
+    }
+
+    #[test]
+    fn step_zero_error() {
+        let shape = [4];
+        let mut out = shape;
+        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[4], Some(&[0]), &mut out)
+            .unwrap_err();
+        matches!(err, InternalError::InvalidInput { .. });
+    }
+
+    #[test]
+    fn steps_len_mismatch_error() {
+        let shape = [4];
+        let mut out = shape;
+        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[4], Some(&[1, 2]), &mut out)
+            .unwrap_err();
+        matches!(err, InternalError::InvalidInput { .. });
+    }
+
+    #[test]
+    fn pos_start_oob_error() {
+        let shape = [5];
+        let mut out = shape;
+        let err = compute_output_shape::<i64>(&shape, &[0], &[6], &[6], Some(&[1]), &mut out)
+            .unwrap_err();
+        matches!(err, InternalError::UnableToConvertValue);
+    }
+
+    #[test]
+    fn neg_end_lt_minus1_error() {
+        let shape = [5];
+        let mut out = shape;
+        let err = compute_output_shape::<i64>(&shape, &[0], &[4], &[-2], Some(&[-1]), &mut out)
+            .unwrap_err();
+        matches!(err, InternalError::UnableToConvertValue);
+    }
+
+    #[test]
+    fn rank2_two_axes_mixed_steps() {
+        let shape = [6, 5];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[0, 1], &[1, 4], &[5, -1], Some(&[2, -1]), &mut out)
+            .unwrap();
+        assert_eq!(out, [2, 5]);
+    }
+
+    #[test]
+    fn rank3_slice_one_axis_default_step() {
+        let shape = [3, 4, 10];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[2], &[3], &[10], None, &mut out).unwrap();
+        assert_eq!(out, [3, 4, 7]);
+    }
+
+    #[test]
+    fn rank3_empty_slice_axis1_neg() {
+        let shape = [2, 8, 4];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[1], &[3], &[3], Some(&[-2]), &mut out).unwrap();
+        assert_eq!(out, [2, 0, 4]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "axis values must be within range")]
+    fn axis_out_of_range_error() {
+        let shape = [4, 4];
+        let mut out = shape;
+        compute_output_shape::<i64>(&shape, &[2], &[0], &[1], None, &mut out).unwrap();
+    }
+
+    #[test]
+    fn duplicate_axes_error() {
+        let shape = [5, 5, 5];
+        let mut out = shape;
+        let err =
+            compute_output_shape::<i64>(&shape, &[1, 1], &[0, 0], &[5, 5], Some(&[1, 1]), &mut out);
+        // Todo: We need to decide what to do here.
+    }
+
+    #[test]
+    fn rank2_end_oob_positive_step_error() {
+        let shape = [7, 3];
+        let mut out = shape;
+        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[8], Some(&[1]), &mut out)
+            .unwrap_err();
+        matches!(err, InternalError::UnableToConvertValue);
+    }
+
+    #[test]
+    fn rank3_all_axes_mixed_steps() {
+        let shape = [8, 6, 10];
+        let mut out = shape;
+        compute_output_shape::<i64>(
+            &shape,
+            &[0, 1, 2],
+            &[0, 5, 1],
+            &[8, -1, 10],
+            Some(&[1, -2, 3]),
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(out, [8, 3, 3]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn rank3_starts_too_short_panics() {
+        let shape = [4, 4, 4];
+        let mut out = shape;
+        let _ = compute_output_shape::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out);
+    }
 }
