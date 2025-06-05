@@ -14,6 +14,7 @@ pub mod max_pool;
 pub mod range;
 pub mod reduce_mean;
 pub mod shape;
+pub mod sigmoid;
 pub mod slice;
 pub mod sqrt;
 pub mod transpose;
@@ -41,6 +42,7 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
+use crate::providers::cuda::sigmoid::SigmoidKernel;
 use crate::providers::cuda::slice::SliceBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
@@ -62,6 +64,7 @@ pub enum CudaKernel {
     Range(RangeBackend),
     ReduceMean(ReduceMeanBackend),
     Shape(ShapeBackend),
+    Sigmoid(ActivationBackend),
     Slice(SliceBackend),
     Sqrt(SqrtBackend),
     Transpose(TransposeBackend),
@@ -89,6 +92,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
             CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
+            CudaKernel::Sigmoid(kernel) => kernel.compute::<SigmoidKernel>(ctx),
             CudaKernel::Slice(kernel) => kernel.compute(ctx),
             CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),
             CudaKernel::Transpose(backend) => backend.compute(ctx),

@@ -28,6 +28,7 @@ mod cuda {
     mod reduce_mean_simple;
     mod shape_axis;
     mod shape_simple;
+    mod sigmoid_basic;
     mod slice_basic_2d;
     mod slice_basic_3d;
     mod slice_basic_3d_neg;

@@ -91,6 +91,7 @@ impl DeviceService for Cuda {
             }
             Op::Range => CudaKernel::Range(RangeBackend::new(&self.device)),
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.device)),
+            Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.device.clone())),
             Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.device)),
             Op::Sqrt => {
                 let kernel = self.load_kernel(op, dtype)?;
