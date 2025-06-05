@@ -13,6 +13,7 @@ pub mod global_average_pool;
 pub mod max_pool;
 pub mod range;
 pub mod reduce_mean;
+mod relu;
 pub mod shape;
 pub mod sigmoid;
 pub mod slice;
@@ -76,7 +77,7 @@ impl OperationBackend<Cuda> for CudaKernel {
     fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
             CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
-            CudaKernel::Relu(kernel) => kernel.compute::<activation::ActiveKernel>(ctx),
+            CudaKernel::Relu(kernel) => kernel.compute::<relu::ReluKernel>(ctx),
             CudaKernel::Cast(kernel) => kernel.compute::<cast::ActiveKernel>(ctx),
             CudaKernel::Concat(kernel) => kernel.compute(ctx),
             CudaKernel::Constant(kernel) => kernel.compute(ctx),
@@ -106,7 +107,7 @@ impl CudaKernel {
     pub fn noop_compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
             CudaKernel::Add(kernel) => kernel.compute::<add::NoOpKernel>(ctx),
-            CudaKernel::Relu(kernel) => kernel.compute::<activation::NoOpKernel>(ctx),
+            CudaKernel::Relu(kernel) => kernel.compute::<relu::NoOpKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
             CudaKernel::ConstantOfShape(_) => {
                 // Todo: Some operations complicate things for the noop computations because

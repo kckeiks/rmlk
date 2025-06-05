@@ -26,6 +26,7 @@ mod cuda {
     mod gemm_simple;
     mod range_basic;
     mod reduce_mean_simple;
+    mod relu_basic;
     mod shape_axis;
     mod shape_simple;
     mod sigmoid_basic;

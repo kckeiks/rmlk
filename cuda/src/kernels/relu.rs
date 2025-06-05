@@ -22,7 +22,7 @@ where
         x_shape,
         x_stride,
         y_data,
-        sys::cudnnActivationMode_t::CUDNN_ACTIVATION_SIGMOID,
+        sys::cudnnActivationMode_t::CUDNN_ACTIVATION_RELU,
         sys::cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
         f64::MAX,
     )

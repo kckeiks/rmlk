@@ -1,4 +1,4 @@
-pub mod activation;
+mod activation;
 pub mod add;
 pub mod binary;
 pub mod cast;
@@ -9,6 +9,7 @@ pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
 pub mod reduce_mean;
+pub mod relu;
 pub mod scatter_nd;
 pub mod sigmoid;
 pub mod sqrt;

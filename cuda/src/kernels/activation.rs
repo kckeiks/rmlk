@@ -3,7 +3,7 @@ use cudarc::cudnn::{sys, ActivationForward, Cudnn, CudnnDataType};
 use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
-pub(crate) fn compute_wrapper<T>(
+pub(crate) fn compute<T>(
     device: Arc<CudaDevice>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,
@@ -24,42 +24,6 @@ where
     let y_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
     let activation_desc = cudnn.create_activation::<T>(mode, propagation, coef)?;
-
-    let op = ActivationForward {
-        act: &activation_desc,
-        x: &x_desc,
-        y: &y_desc,
-    };
-
-    unsafe {
-        op.launch((alpha, beta), x_data, y_data)?;
-    }
-
-    Ok(())
-}
-
-pub fn compute<T: CudnnDataType>(
-    device: Arc<CudaDevice>,
-    (alpha, beta): (T, T),
-    x_data: &CudaSlice<T>,
-    x_shape: &[i32],
-    x_stride: &[i32],
-    y_data: &mut CudaSlice<T>,
-) -> Result<()>
-where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-{
-    let cudnn = Cudnn::new(device.clone())?;
-
-    let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
-
-    let y_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
-
-    let activation_desc = cudnn.create_activation::<T>(
-        sys::cudnnActivationMode_t::CUDNN_ACTIVATION_RELU,
-        sys::cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
-        f64::MAX,
-    )?;
 
     let op = ActivationForward {
         act: &activation_desc,

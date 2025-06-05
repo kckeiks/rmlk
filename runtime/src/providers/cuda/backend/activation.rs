@@ -128,49 +128,6 @@ pub trait ActivationKernel {
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
 
-pub struct ActiveKernel(());
-
-impl ActivationKernel for ActiveKernel {
-    fn execute<T>(
-        device: Arc<CudaDevice>,
-        alpha: T,
-        beta: T,
-        x_data: &CudaSlice<T>,
-        x_shape: &[i32],
-        x_stride: &[i32],
-        y_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        rmlk_cuda::kernels::activation::compute(
-            device,
-            (alpha, beta),
-            x_data,
-            x_shape,
-            x_stride,
-            y_data,
-        )
-        .map_err(Into::into)
-    }
-}
-
-pub struct NoOpKernel(());
-
-impl ActivationKernel for NoOpKernel {
-    fn execute<T: CudnnDataType>(
-        _: Arc<CudaDevice>,
-        _: T,
-        _: T,
-        _: &CudaSlice<T>,
-        _: &[i32],
-        _: &[i32],
-        _: &mut CudaSlice<T>,
-    ) -> Result<()> {
-        Ok(())
-    }
-}
-
 // #[cfg(test)]
 // mod test {
 //     use crate::core::Context;
