@@ -11,7 +11,7 @@ use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaDevice;
 use log::{debug, trace};
 use rmlk_graph::Graph;
-use rmlk_schema::{Definition, Op, Tensor};
+use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -184,7 +184,7 @@ where
         for (id, node) in self.instance_state.graph().node_iter() {
             let op = node.value().op();
 
-            if matches!(op, Op::NoOp) || matches!(op, Op::Const) {
+            if matches!(op, Op::NoOp) {
                 continue;
             }
 
@@ -198,7 +198,13 @@ where
             );
 
             // Todo: we need to spec this out.
-            let dtype = ctx.get_input(0)?.dtype();
+            let dtype = match ctx.get_input(0) {
+                Ok(tensor) => tensor.dtype(),
+                Err(_) => {
+                    debug!("[{op:?}] no input found");
+                    DataType::Undefined
+                }
+            };
 
             provider.get_backend(op, dtype)?.compute(&mut ctx)?;
         }

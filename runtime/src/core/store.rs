@@ -147,7 +147,7 @@ where
         {
             debug_assert_eq!(
                 self.graph.get_node(node_id).map(|n| n.value().op()),
-                Some(Op::Const)
+                Some(Op::NoOp)
             );
 
             let on_host_data = match ir_tensor.float_data.is_empty() {
@@ -234,7 +234,7 @@ where
     fn load_op_outputs(&mut self) -> Result<()> {
         for (node_id, node) in self.graph.node_iter() {
             // We already loaded the initializers.
-            if matches!(node.value().op(), Op::Const | Op::NoOp) {
+            if matches!(node.value().op(), Op::NoOp) {
                 continue;
             }
 

@@ -11,8 +11,13 @@ mod cuda {
     mod concat_rank3_axis2;
     mod concat_rank4_axis2;
     mod concat_rank4_axis3;
+    mod constant_float;
+    mod constant_floats;
+    mod constant_int;
+    mod constant_ints;
     mod constant_of_shape_simple;
     mod constant_of_shape_with_attrs;
+    mod constant_raw_value;
     mod gather_higher_dim;
     mod gather_higher_dim_indices;
     mod gather_negative_axis;

@@ -38,7 +38,7 @@ pub fn build(test_def: &str) -> Builder {
                 schema_node.name = Some(name);
 
                 if constant.unwrap_or(false) {
-                    schema_node.op_type = Op::Const;
+                    schema_node.op_type = Op::NoOp;
                 }
 
                 // Todo: circle back and assess this code.

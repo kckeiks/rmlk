@@ -128,7 +128,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         })?;
         // Todo: avoid allocation.
         node.set_name(name.to_string());
-        node.set_op(Op::Const);
+        node.set_op(Op::NoOp);
 
         let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
 
