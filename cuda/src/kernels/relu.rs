@@ -27,3 +27,51 @@ where
         f64::MAX,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::compute;
+    use approx::assert_abs_diff_eq;
+    use cudarc::driver::{CudaDevice, CudaSlice};
+
+    fn run_relu_test(input: &[f32], shape: &[i32], stride: &[i32], expected: &[f32]) {
+        let dev = CudaDevice::new(0).unwrap();
+
+        let input_dev: CudaSlice<f32> = dev.htod_copy(input.to_vec()).unwrap();
+        let mut output_dev: CudaSlice<f32> = unsafe { dev.alloc(input.len()).unwrap() };
+
+        compute::<f32>(
+            dev.clone(),
+            (1.0, 0.0),
+            &input_dev,
+            shape,
+            stride,
+            &mut output_dev,
+        )
+        .unwrap();
+
+        let output = dev.sync_reclaim(output_dev).unwrap();
+
+        for (o, e) in output.iter().zip(expected.iter()) {
+            assert_abs_diff_eq!(*o, *e, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn relu_mixed_floats() {
+        let input = [-1.0, 0.0, 1.0, 1e-6, -1e-6, f32::MAX, f32::MIN];
+        let expected = [0.0, 0.0, 1.0, 1e-6, 0.0, f32::MAX, 0.0];
+        let shape = &[1, 7, 1, 1];
+        let stride = &[7, 1, 1, 1];
+        run_relu_test(&input, shape, stride, &expected);
+    }
+
+    #[test]
+    fn relu_batched_matrix() {
+        let input = [0.0, -5.0, 2.0, -2.0, 50.0, -50.0, 0.1, -0.1];
+        let expected = [0.0, 0.0, 2.0, 0.0, 50.0, 0.0, 0.1, 0.0];
+        let shape = &[2, 2, 2, 1];
+        let stride = &[4, 2, 1, 1];
+        run_relu_test(&input, shape, stride, &expected);
+    }
+}

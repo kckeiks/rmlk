@@ -13,6 +13,7 @@ num-traits.workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
+approx = "0.5"
 
 [build-dependencies]
 bindgen_cuda = "0.1"
