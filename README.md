@@ -37,7 +37,7 @@ Based on ONNX version: 1.13.1
 | `Reshape`           | ✅ Done                 |                                        |
 | `Cos`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
 | `Sub`               | 🛠️ In Progress         | Needs kernel, backend, and tests       |
-| `Constant`          | ❓ Not Started          |                                        |
+| `Constant`          | ✅ Done            |                                        |
 
 ## Notes
 
