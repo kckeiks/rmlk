@@ -11,6 +11,7 @@ fn main() {
         "src/ptx/mul.cu",
         "src/ptx/div.cu",
         "src/ptx/reduce_mean.cu",
+        "src/ptx/trilu.cu",
         "src/ptx/scatter_nd.cu",
         "src/ptx/sqrt.cu",
         "src/ptx/where.cu",

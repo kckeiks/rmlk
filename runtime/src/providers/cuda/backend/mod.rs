@@ -22,6 +22,7 @@ pub mod transpose;
 mod unary;
 pub mod unsqueeze;
 pub mod whereop;
+mod trilu;
 
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;
