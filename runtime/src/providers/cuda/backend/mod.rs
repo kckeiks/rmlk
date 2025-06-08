@@ -19,10 +19,10 @@ pub mod sigmoid;
 pub mod slice;
 pub mod sqrt;
 pub mod transpose;
+mod trilu;
 mod unary;
 pub mod unsqueeze;
 pub mod whereop;
-mod trilu;
 
 use crate::core::backend::OperationBackend;
 use crate::core::error::Result;

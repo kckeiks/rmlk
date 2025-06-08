@@ -39,8 +39,9 @@ pub enum Op {
     Sqrt = 27,
     Sub = 28,
     Transpose = 29,
-    Unsqueeze = 30,
-    Where = 31,
+    Trilu = 30,
+    Unsqueeze = 31,
+    Where = 32,
 }
 
 impl TryFrom<u32> for Op {
