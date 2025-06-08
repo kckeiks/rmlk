@@ -95,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_upper_k0_f32() {
+    fn test_upper_k0_f32() {
         let shape = [1, 3, 3];
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let expected = vec![1.0, 2.0, 3.0, 0.0, 5.0, 6.0, 0.0, 0.0, 9.0];
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_upper_k1_f32() {
+    fn test_upper_k1_f32() {
         let shape = [1, 3, 3];
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let expected = vec![0.0, 2.0, 3.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0];
@@ -115,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_lower_km1_f32() {
+    fn test_lower_k_neg1_f32() {
         let shape = [1, 3, 3];
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let expected = vec![0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0];
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_rect_upper_f64() {
+    fn test_rect_upper_f64() {
         let shape = [1, 2, 4];
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let expected = vec![1.0, 2.0, 3.0, 4.0, 0.0, 6.0, 7.0, 8.0];
@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_batch_lower_i64() {
+    fn test_batch_lower_i64() {
         let shape = [2, 2, 2];
         let input = vec![1, 2, 3, 4, 5, 6, 7, 8];
         let expected = vec![1, 0, 3, 4, 5, 0, 7, 8];
@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn trilu_full_keep_upper_f32() {
+    fn test_full_keep_upper_f32() {
         let shape = [1, 2, 3];
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let expected = vec![0.0; input.len()];

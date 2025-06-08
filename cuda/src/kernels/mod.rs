@@ -4,6 +4,7 @@ pub mod binary;
 pub mod cast;
 pub mod conv;
 pub mod div;
+pub mod expand;
 pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
