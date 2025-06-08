@@ -8,8 +8,8 @@ Based on ONNX version: 1.13.1
 
 | Operator          | Status              | Notes                            |
 |-------------------|---------------------|----------------------------------|
-| `Expand`          | ❓ Not Started       |                                  |
-| `Trilu`           | ❓ Not Started       |                                  |
+| `Expand`          | 🛠️ In Progress       |                                  |
+| `Trilu`           | 🛠️ In Progress        |                                  |
 | `Softmax`         | ❓ Not Started       |                                  |
 | `MatMul`          | ❓ Not Started       |                                  |
 | `ScatterND`       | 🛠️ In Progress     | Needs backend and more tests     |

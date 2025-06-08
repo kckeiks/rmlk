@@ -145,9 +145,11 @@ where
             .take()
             .expect("call load_initializers only once")
         {
-            debug_assert_eq!(
+            debug_assert!(matches!(
                 self.graph.get_node(node_id).map(|n| n.value().op()),
-                Some(Op::NoOp)
+                // Todo: Fix this when we resolve the issue with Constants.
+                Some(Op::Const) | Some(Op::NoOp)
+                )
             );
 
             let on_host_data = match ir_tensor.float_data.is_empty() {

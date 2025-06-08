@@ -184,7 +184,7 @@ where
         for (id, node) in self.instance_state.graph().node_iter() {
             let op = node.value().op();
 
-            if matches!(op, Op::NoOp) {
+            if matches!(op, Op::NoOp | Op::Const) {
                 continue;
             }
 

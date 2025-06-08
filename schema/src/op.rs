@@ -42,6 +42,8 @@ pub enum Op {
     Trilu = 30,
     Unsqueeze = 31,
     Where = 32,
+    // Todo: we have two constants variants. Fix it.
+    Constant = 33,
 }
 
 impl TryFrom<u32> for Op {
@@ -97,7 +99,7 @@ impl FromStr for Op {
             "Cast" | "cast" => Self::Cast,
             "Concat" | "concat" => Self::Concat,
             "Conv" | "conv" => Self::Conv,          // Done.
-            "Constant" | "constant" => Self::Const, // Done.
+            "Constant" | "constant" => Self::Constant, // Done.
             "ConstantOfShape" | "constantofshape" => Self::ConstantOfShape,
             "Div" | "div" => Self::Div,
             "Equal" | "equal" => Self::Equal,

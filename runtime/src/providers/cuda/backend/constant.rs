@@ -91,7 +91,7 @@ impl ConstantBackend {
                     ctx,
                 ),
                 _ => Err(InternalError::UnsupportedOpForDataType {
-                    op: Op::Const,
+                    op: Op::Constant,
                     dtype,
                 }),
             };

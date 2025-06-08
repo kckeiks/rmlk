@@ -69,7 +69,7 @@ impl DeviceService for Cuda {
             }
             Op::Cast => CudaKernel::Cast(CastBackend::new(&self.device)),
             Op::Concat => CudaKernel::Concat(ConcatBackend::new(&self.device)),
-            Op::Const => CudaKernel::Constant(ConstantBackend::new(&self.device)),
+            Op::Constant => CudaKernel::Constant(ConstantBackend::new(&self.device)),
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.device))
             }
