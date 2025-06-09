@@ -4,19 +4,19 @@ use crate::providers::cuda::backend::binary;
 use crate::providers::cuda::backend::binary::BinaryKernel;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct AdditionBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     f: CudaFunction,
 }
 
 impl AdditionBackend {
-    pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
-        Self { device, f }
+    pub fn new(stream: Arc<CudaStream>, f: CudaFunction) -> Self {
+        Self { stream, f }
     }
 }
 
@@ -26,7 +26,7 @@ impl AdditionBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         T: BinaryKernel,
     {
-        unsafe { binary::compute::<D, T>("add", self.device, self.f, ctx) }
+        unsafe { binary::compute::<D, T>("add", self.stream, self.f, ctx) }
     }
 
     pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -47,7 +47,7 @@ pub struct ActiveKernel(());
 
 impl BinaryKernel for ActiveKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
@@ -60,7 +60,7 @@ impl BinaryKernel for ActiveKernel {
     {
         unsafe {
             rmlk_cuda::kernels::binary::compute(
-                device, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
+                stream, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
             )
             .map_err(Into::into)
         }
@@ -71,7 +71,7 @@ pub struct NoOpKernel(());
 
 impl BinaryKernel for NoOpKernel {
     fn execute<T>(
-        _: Arc<CudaDevice>,
+        _: Arc<CudaStream>,
         _: CudaFunction,
         _: usize,
         _: &[usize],

@@ -321,7 +321,7 @@ mod test {
     use crate::kernels::cast::CastKernel;
     use crate::kernels::unary;
     use crate::utils;
-    use cudarc::driver::CudaDevice;
+    use cudarc::driver::CudaContext;
     use half::f16;
 
     macro_rules! generate_cast_test {
@@ -335,21 +335,24 @@ mod test {
             ) => {
                 #[test]
                 fn $test_name() {
-                    let device = CudaDevice::new(0).unwrap();
+                    let ctx = CudaContext::new(0).unwrap();
+                    let stream = ctx.default_stream();
 
                     let x_shape = vec![2, 2];
-                    let x_data = device.htod_copy::<$input_ty>(vec![$($input),*]).unwrap();
+                    let x_on_host = vec![$($input),*];
+                    let x_dev_ptr = stream.memcpy_stod(&x_on_host).unwrap();
 
-                    let f = utils::load_cast_kernel(&device, $variant).unwrap();
+                    let f = utils::load_cast_kernel(&ctx, $variant).unwrap();
 
                     let output_shape = x_shape.clone();
-                    let mut out_data = device.alloc_zeros::<$output_ty>(output_shape.iter().product()).unwrap();
+                    let output_len = output_shape.iter().product::<usize>();
+                    let mut out_data = stream.alloc_zeros::<$output_ty>(output_len).unwrap();
 
                     unsafe {
-                        unary::explicit_io_types_compute(f, &x_data, &mut out_data).unwrap();
+                        unary::explicit_io_types_compute(&stream, f, &x_dev_ptr, &mut out_data).unwrap();
                     }
 
-                    let result: Vec<$output_ty> = device.dtoh_sync_copy(&out_data).unwrap();
+                    let result = stream.memcpy_dtov(&out_data).unwrap();
 
                     assert_eq!(result, vec![$($expected),*]);
                 }
@@ -1371,27 +1374,28 @@ mod test {
 
     #[test]
     fn test_cast_f64_to_f32_inf() {
-        let device = CudaDevice::new(0).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
         let x_shape = vec![1, 5];
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_data = device
-            .htod_copy(vec![1e40, -1e40, f64::NAN, -f64::NAN, 1.0])
+        let x_data = stream
+            .memcpy_stod(&vec![1e40, -1e40, f64::NAN, -f64::NAN, 1.0])
             .unwrap();
 
-        let f = utils::load_cast_kernel(&device, CastKernel::F64ToF32).unwrap();
+        let f = utils::load_cast_kernel(&ctx, CastKernel::F64ToF32).unwrap();
 
         let output_shape = x_shape.clone();
-        let mut out_data = device
+        let mut out_data = stream
             .alloc_zeros::<f32>(output_shape.iter().product())
             .unwrap();
 
         unsafe {
-            unary::explicit_io_types_compute(f, &x_data, &mut out_data).unwrap();
+            unary::explicit_io_types_compute(&stream, f, &x_data, &mut out_data).unwrap();
         }
 
-        let result: Vec<f32> = device.dtoh_sync_copy(&out_data).unwrap();
+        let result: Vec<f32> = stream.memcpy_dtov(&out_data).unwrap();
         assert_eq!(result[0], f32::INFINITY);
         assert_eq!(result[1], f32::NEG_INFINITY);
         assert!(result[2].is_nan());

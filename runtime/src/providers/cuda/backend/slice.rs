@@ -4,20 +4,20 @@ use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::{Num, PrimInt, Signed, ToPrimitive};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::fmt::Debug;
 use std::sync::Arc;
 
 pub struct SliceBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl SliceBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -91,8 +91,7 @@ impl SliceBackend {
                 let axes_len = axes_view.len();
 
                 let axes_data = scratch_alloc.allocate(axes_len)?;
-                self.device
-                    .dtoh_sync_copy_into(axes_view.as_ref(), axes_data)?;
+                self.stream.memcpy_dtoh(axes_view.as_ref(), axes_data)?;
 
                 // Todo: how do we avoid this here? Maybe make the util function generic?
                 let axes_data = scratch_alloc.allocate_and_convert_from_slice(axes_data)?;
@@ -114,8 +113,7 @@ impl SliceBackend {
             let steps_view = steps_ptr.data::<Tind>();
             let steps_len = steps_view.len();
             let steps_data = scratch_alloc.allocate(steps_len)?;
-            self.device
-                .dtoh_sync_copy_into(steps_view.as_ref(), steps_data)?;
+            self.stream.memcpy_dtoh(steps_view.as_ref(), steps_data)?;
             steps = Some(steps_data);
         }
 
@@ -127,8 +125,7 @@ impl SliceBackend {
             let starts_len = starts_view.len();
 
             let starts_data = scratch_alloc.allocate(starts_len)?;
-            self.device
-                .dtoh_sync_copy_into(starts_view.as_ref(), starts_data)?;
+            self.stream.memcpy_dtoh(starts_view.as_ref(), starts_data)?;
 
             starts_data
         };
@@ -141,8 +138,7 @@ impl SliceBackend {
             let ends_len = ends_view.len();
 
             let ends_data = scratch_alloc.allocate(ends_len)?;
-            self.device
-                .dtoh_sync_copy_into(ends_view.as_ref(), ends_data)?;
+            self.stream.memcpy_dtoh(ends_view.as_ref(), ends_data)?;
 
             ends_data
         };
@@ -162,12 +158,12 @@ impl SliceBackend {
 
         if ctx.get_output(0)?.shape().iter().any(|&d| d == 0) {
             common::init_tensor_device_data_with_empty_slice::<T>(
-                &self.device,
+                &self.stream,
                 ctx.get_output(0)?,
             )?;
             return Ok(());
         } else {
-            common::init_tensor_device_data::<T>(&self.device, ctx.get_output(0)?)?;
+            common::init_tensor_device_data::<T>(&self.stream, ctx.get_output(0)?)?;
         }
 
         let input_tensor = ctx.get_input(0)?;
@@ -175,8 +171,7 @@ impl SliceBackend {
         let input_view = input_ptr.data::<T>();
 
         let input_data = scratch_alloc.allocate::<T>(input_view.len())?;
-        self.device
-            .dtoh_sync_copy_into(input_view.as_ref(), input_data)?;
+        self.stream.memcpy_dtoh(input_view.as_ref(), input_data)?;
 
         let output_data =
             scratch_alloc.allocate(ctx.get_output(0)?.shape().iter().product::<usize>())?;
@@ -199,8 +194,7 @@ impl SliceBackend {
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
 
-        self.device
-            .htod_sync_copy_into(output_data, output_view.as_mut())?;
+        self.stream.memcpy_htod(output_data, output_view.as_mut())?;
 
         Ok(())
     }
@@ -714,7 +708,6 @@ mod tests {
 
     #[test]
     fn rank3_slice_last_axis() {
-        // shape (2,2,3) keep axis-2 1..3
         let shape = [2, 2, 3];
         let input = range_tensor(shape.iter().product());
         let strides = strides_for(&shape);

@@ -19,27 +19,28 @@ pub const PTX_SRC: &str = ADD;
 mod test {
     use crate::kernels::binary::{compute, create_info_buffer};
     use crate::utils;
-    use cudarc::driver::CudaDevice;
+    use cudarc::driver::CudaContext;
     use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_f32() {
-        let device = CudaDevice::new(0).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
         let x_shape = vec![2, 2];
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let x_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let y_shape = vec![2, 2];
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
-        let y_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel(&device.clone(), Op::Add, DataType::Float).unwrap();
+        let f = utils::load_kernel(&ctx, Op::Add, DataType::Float).unwrap();
 
         let output_shape = vec![2, 2];
-        let mut out_data = device
+        let mut out_data = stream
             .alloc_zeros(output_shape.iter().map(|d| *d).product())
             .unwrap();
 
@@ -47,18 +48,18 @@ mod test {
 
         unsafe {
             compute::<f32>(
-                device.clone(),
+                stream.clone(),
                 f,
                 output_shape.len(),
                 &mut info,
-                &x_data,
-                &y_data,
+                &x_on_dev,
+                &y_on_dev,
                 &mut out_data,
             )
             .unwrap();
         }
 
-        let result = device.dtoh_sync_copy(&out_data).unwrap();
+        let result = stream.memcpy_dtov(&out_data).unwrap();
 
         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
     }

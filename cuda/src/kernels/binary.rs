@@ -1,8 +1,7 @@
 use crate::error::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
-    ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
 use std::sync::Arc;
 
@@ -26,7 +25,7 @@ use std::sync::Arc;
 /// - Panics if info buffer does not equal to 3 * `ndims`.
 /// - Panics if output slice does not have the expected size based on the output shape.
 pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
     info_buffer: &[usize],
@@ -40,7 +39,8 @@ where
     assert_eq!(3 * ndims, info_buffer.len());
 
     // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
+    let mut info_ptr = stream.alloc(info_buffer.len())?;
+    stream.memcpy_htod(info_buffer, &mut info_ptr)?;
 
     let elem_count: usize = info_buffer[..ndims].iter().product();
 
@@ -55,9 +55,17 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (elem_count, ndims, &info, a, b, c);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(&ndims)
+            .arg(&info_ptr)
+            .arg(a)
+            .arg(b)
+            .arg(c)
+            .launch(config)?;
+    }
 
     Ok(())
 }
@@ -83,7 +91,7 @@ where
 /// - Panics if info buffer does not equal to 3 * `ndims`.
 /// - Panics if output slice does not have the expected size based on the output shape.
 pub unsafe fn compute_alpha_beta_inplace<T>(
-    device: Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     func: CudaFunction,
     alpha: T,
     beta: T,
@@ -98,7 +106,7 @@ where
     assert_eq!(3 * ndims, info_buffer.len());
 
     // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
+    let info = stream.memcpy_stod(info_buffer)?;
 
     let elem_count: usize = info_buffer[..ndims].iter().product();
 
@@ -113,9 +121,18 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (alpha, beta, elem_count, ndims, &info, a, b);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&alpha)
+            .arg(&beta)
+            .arg(&elem_count)
+            .arg(&ndims)
+            .arg(&info)
+            .arg(a)
+            .arg(b)
+            .launch(config)?;
+    }
 
     Ok(())
 }

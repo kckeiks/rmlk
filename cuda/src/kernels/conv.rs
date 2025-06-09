@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::error::Result;
 use cudarc::cudnn;
 use cudarc::cudnn::{sys, ConvBiasActivationForward, ConvForward, CudnnDataType};
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::{FromPrimitive, Num};
 use std::fmt::Debug;
 use std::ops::AddAssign;
@@ -75,7 +75,7 @@ pub struct BiasInput<'a, T> {
 }
 
 pub fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
@@ -94,7 +94,7 @@ pub fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let cudnn = cudnn::Cudnn::new(device.clone())?;
+    let cudnn = cudnn::Cudnn::new(stream.clone())?;
 
     // Todo: the input may not have a shape.
     // When the shape is missing, it means the input can have any shape.
@@ -145,7 +145,7 @@ where
 
                 // Get workspace size.
                 let workspace_size = op.get_workspace_size(algo.clone())?;
-                let mut workspace = device.alloc_zeros::<u8>(workspace_size)?;
+                let mut workspace = stream.alloc_zeros::<u8>(workspace_size)?;
 
                 // Launch the operation.
                 unsafe {
@@ -180,7 +180,7 @@ where
 
             let z_desc = cudnn.create_nd_tensor::<T>(&y_shape, &y_stride)?;
             // Todo: Do we have to actually allocate anything if we are not going to use it?
-            let z_slice = device.alloc_zeros::<T>(y_shape.iter().map(|d| *d as usize).product())?;
+            let z_slice = stream.alloc_zeros::<T>(y_shape.iter().map(|d| *d as usize).product())?;
             {
                 let activation_desc = cudnn.create_activation::<T>(
                     cudarc::cudnn::sys::cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
@@ -206,7 +206,7 @@ where
 
                 // Get workspace size.
                 let workspace_size = op.get_workspace_size(algo.clone())?;
-                let mut workspace = device.alloc_zeros::<u8>(workspace_size)?;
+                let mut workspace = stream.alloc_zeros::<u8>(workspace_size)?;
 
                 unsafe {
                     op.launch(
@@ -226,196 +226,3 @@ where
 
     Ok(())
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::kernels::conv::{calculate_output_shape, compute, BiasInput};
-//     use crate::utils;
-//     use cudarc::driver::CudaDevice;
-//
-//     #[test]
-//     fn test_conv_f32_2d() {
-//         let device = CudaDevice::new(0).unwrap();
-//
-//         let x_shape = vec![1, 1, 5, 5];
-//         let mut x_stride = vec![0; x_shape.len()];
-//         utils::calculate_stride(&x_shape, &mut x_stride);
-//         let x_data = device
-//             .htod_copy(vec![
-//                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
-//                 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
-//             ])
-//             .unwrap();
-//
-//         let w_shape = vec![1, 1, 3, 3];
-//         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
-//
-//         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-//         calculate_output_shape(&x_shape, &w_shape, &[1, 1], &[1, 1], &[1, 1], &mut y_shape)
-//             .unwrap();
-//         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-//         utils::calculate_stride(&y_shape, &mut y_stride);
-//
-//         let mut y_data = device
-//             .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-//             .unwrap();
-//
-//         compute::<f32>(
-//             device.clone(),
-//             (1.0, 0.0),
-//             &x_data,
-//             &x_shape,
-//             &x_stride,
-//             &w_data,
-//             &w_shape,
-//             &[1, 1],
-//             &[1, 1],
-//             &[1, 1],
-//             1,
-//             None,
-//             &mut y_data,
-//             &y_shape,
-//             &y_stride,
-//         )
-//         .unwrap();
-//         let result = device.dtoh_sync_copy(&y_data).unwrap();
-//
-//         assert_eq!(
-//             result,
-//             vec![
-//                 12.0, 21.0, 27.0, 33.0, 24.0, 33.0, 54.0, 63.0, 72.0, 51.0, 63.0, 99.0, 108.0,
-//                 117.0, 81.0, 93.0, 144.0, 153.0, 162.0, 111.0, 72.0, 111.0, 117.0, 123.0, 84.0,
-//             ]
-//         )
-//     }
-//
-//     #[test]
-//     fn test_conv_f32_2d_bias() {
-//         let device = CudaDevice::new(0).unwrap();
-//
-//         let x_shape = vec![1, 1, 5, 5];
-//         let mut x_stride = vec![0; x_shape.len()];
-//         utils::calculate_stride(&x_shape, &mut x_stride);
-//         let x_data = device
-//             .htod_copy(vec![
-//                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
-//                 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
-//             ])
-//             .unwrap();
-//
-//         let w_shape = vec![1, 1, 3, 3];
-//         let w_data = device.htod_copy(vec![1.0f32; 9]).unwrap();
-//
-//         let bias_shape = vec![1, 1, 1, 1];
-//         let mut bias_stride = vec![0; x_shape.len()];
-//         utils::calculate_stride(&bias_shape, &mut bias_stride);
-//         let bias_data = device.htod_copy(vec![1.0f32; 1]).unwrap();
-//
-//         let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-//         calculate_output_shape(&x_shape, &w_shape, &[1, 1], &[1, 1], &[1, 1], &mut y_shape)
-//             .unwrap();
-//         let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-//         utils::calculate_stride(&y_shape, &mut y_stride);
-//
-//         let mut y_data = device
-//             .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-//             .unwrap();
-//
-//         compute::<f32>(
-//             device.clone(),
-//             (1.0, 0.0),
-//             &x_data,
-//             &x_shape,
-//             &x_stride,
-//             &w_data,
-//             &w_shape,
-//             &[1, 1],
-//             &[1, 1],
-//             &[1, 1],
-//             1,
-//             Some(BiasInput {
-//                 data: &bias_data,
-//                 shape: &bias_shape,
-//                 stride: &bias_stride,
-//             }),
-//             &mut y_data,
-//             &y_shape,
-//             &y_stride,
-//         )
-//         .unwrap();
-//         let result = device.dtoh_sync_copy(&y_data).unwrap();
-//
-//         assert_eq!(
-//             result,
-//             vec![
-//                 13.0, 22.0, 28.0, 34.0, 25.0, 34.0, 55.0, 64.0, 73.0, 52.0, 64.0, 100.0, 109.0,
-//                 118.0, 82.0, 94.0, 145.0, 154.0, 163.0, 112.0, 73.0, 112.0, 118.0, 124.0, 85.0,
-//             ]
-//         )
-//     }
-//
-//     // Todo: Fix.
-//     // #[test]
-//     // fn test_conv_f32_2d_bias_2() {
-//     //     let device = CudaDevice::new(0).unwrap();
-//     //
-//     //     let x_shape = vec![1, 3, 224, 224];
-//     //     let mut x_stride = vec![0; x_shape.len()];
-//     //     utils::calculate_stride(&x_shape, &mut x_stride);
-//     //     let x_data = device
-//     //         .htod_copy(vec![1.0; x_shape.iter().map(|d| *d as usize).product()])
-//     //         .unwrap();
-//     //
-//     //     let w_shape = vec![64, 3, 7, 7];
-//     //     let w_data = device
-//     //         .htod_copy(vec![1.0; w_shape.iter().map(|d| *d as usize).product()])
-//     //         .unwrap();
-//     //
-//     //     let bias_shape = vec![1, 64, 1, 1];
-//     //     let mut bias_stride = vec![0; bias_shape.len()];
-//     //     utils::calculate_stride(&bias_shape, &mut bias_stride);
-//     //     let bias_data = device.htod_copy(vec![1.0f32; 64]).unwrap();
-//     //
-//     //     let mut y_shape = vec![0; x_shape.len()].into_boxed_slice();
-//     //     calculate_output_shape(&x_shape, &w_shape, &[3, 3], &[2, 2], &[1, 1], &mut y_shape)
-//     //         .unwrap();
-//     //     let mut y_stride = vec![0; x_shape.len()].into_boxed_slice();
-//     //     utils::calculate_stride(&y_shape, &mut y_stride);
-//     //
-//     //     let mut y_data = device
-//     //         .alloc_zeros(y_shape.iter().map(|d| *d as usize).product())
-//     //         .unwrap();
-//     //
-//     //     compute::<f32>(
-//     //         device.clone(),
-//     //         (1.0, 0.0),
-//     //         &x_data,
-//     //         &x_shape,
-//     //         &x_stride,
-//     //         &w_data,
-//     //         &w_shape,
-//     //         &[3, 3],
-//     //         &[2, 2],
-//     //         &[1, 1],
-//     //         1,
-//     //         Some(BiasInput {
-//     //             data: &bias_data,
-//     //             shape: &bias_shape,
-//     //             stride: &bias_stride,
-//     //         }),
-//     //         &mut y_data,
-//     //         &y_shape,
-//     //         &y_stride,
-//     //     )
-//     //     .unwrap();
-//     //     let result = device.dtoh_sync_copy(&y_data).unwrap();
-//     //     todo!()
-//     //     // assert_eq!(
-//     //     //     result,
-//     //     //     vec![
-//     //     //         13.0, 22.0, 28.0, 34.0, 25.0, 34.0, 55.0, 64.0, 73.0, 52.0, 64.0, 100.0, 109.0,
-//     //     //         118.0, 82.0, 94.0, 145.0, 154.0, 163.0, 112.0, 73.0, 112.0, 118.0, 124.0, 85.0,
-//     //     //     ]
-//     //     // )
-//     // }
-// }

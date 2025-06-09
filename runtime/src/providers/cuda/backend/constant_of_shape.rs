@@ -4,19 +4,19 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ConstantOfShapeBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl ConstantOfShapeBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -34,8 +34,7 @@ impl ConstantOfShapeBackend {
             let data_ptr = input.try_dev_data_ptr()?;
             let dev_view = data_ptr.data::<i64>();
 
-            self.device
-                .dtoh_sync_copy_into(dev_view.as_ref(), on_host_data)?;
+            self.stream.memcpy_dtoh(dev_view.as_ref(), on_host_data)?;
 
             on_host_data
         };
@@ -47,7 +46,7 @@ impl ConstantOfShapeBackend {
             .copy_shape_from_slice(output_shape, dst_id)?;
 
         let output = ctx.get_output(0)?;
-        common::init_tensor_device_data::<O>(&self.device, output)?;
+        common::init_tensor_device_data::<O>(&self.stream, output)?;
 
         if value == O::zero() {
             let output = ctx.get_output(0)?;
@@ -58,8 +57,8 @@ impl ConstantOfShapeBackend {
             let mut output_data_ptr = output.try_dev_data_ptr_mut()?;
             let mut output_data_view = output_data_ptr.data_mut::<O>();
 
-            self.device
-                .htod_sync_copy_into(on_host_data, output_data_view.as_mut())?;
+            self.stream
+                .memcpy_htod(on_host_data, output_data_view.as_mut())?;
         }
 
         Ok(())

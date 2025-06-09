@@ -4,19 +4,19 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ConcatBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl ConcatBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -114,7 +114,7 @@ impl ConcatBackend {
         self.log_input_and_output(ctx);
 
         let output_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<I>(&self.device, output_tensor)?;
+        common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
 
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
@@ -138,7 +138,7 @@ impl ConcatBackend {
                             let output_offset =
                                 (outer_i * output_outer_block_size) + (axis_offset + j) * step;
 
-                            self.device.dtod_copy(
+                            self.stream.memcpy_dtod(
                                 &input_data.slice(
                                     (outer_i * outer_block_size) + (j * step)
                                         ..(outer_i * outer_block_size) + (j * step) + step,

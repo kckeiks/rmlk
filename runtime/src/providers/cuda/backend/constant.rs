@@ -6,19 +6,19 @@ use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ConstantBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl ConstantBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -34,13 +34,12 @@ impl ConstantBackend {
         }
 
         let output_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<T>(&self.device, output_tensor)?;
+        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
-        self.device
-            .htod_sync_copy_into(values, output_view.as_mut())?;
+        self.stream.memcpy_htod(values, output_view.as_mut())?;
 
         Ok(())
     }
@@ -62,13 +61,13 @@ impl ConstantBackend {
         }
 
         let output_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<T>(&self.device, output_tensor)?;
+        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let data = T::from_bytes(bytes)?;
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
-        self.device.htod_copy_into(data, output_view.as_mut())?;
+        self.stream.memcpy_htod(&data, output_view.as_mut())?;
 
         Ok(())
     }

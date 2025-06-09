@@ -22,37 +22,37 @@ use crate::providers::cuda::transpose::TransposeBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
-use cudarc::driver::{CudaDevice, CudaFunction, DeviceRepr, DriverError};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct Cuda {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl Cuda {
-    pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 
     fn load_kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
-        Ok(rmlk_cuda::load_kernel(&self.device, op, dtype)?)
+        Ok(rmlk_cuda::load_kernel(self.stream.context(), op, dtype)?)
     }
 
     pub fn htod<T>(&self, data: Vec<T>) -> Result<CudaData>
     where
         T: Unpin + DeviceRepr + DataTypeMap,
     {
-        let ptr = self.device.htod_copy::<T>(data)?;
+        let ptr = self.stream.memcpy_stod::<T, _>(&data)?;
         Ok(CudaData::new(ptr))
     }
 
     pub fn dtoh<T>(&self, data: &CudaData) -> Result<Vec<T>>
     where
-        T: Unpin + DeviceRepr + DataTypeMap,
+        T: Clone + Default + Unpin + DeviceRepr + DataTypeMap,
     {
         let ptr = data.data::<T>();
-        Ok(self.device.dtoh_sync_copy::<T, _>(ptr.as_ref())?)
+        Ok(self.stream.memcpy_dtov::<T, _>(ptr.as_ref())?)
     }
 }
 
@@ -65,43 +65,44 @@ impl DeviceService for Cuda {
             Op::Add => {
                 // Todo: At what point should we load the kernel on device?
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Add(AdditionBackend::new(self.device.clone(), f))
+                CudaKernel::Add(AdditionBackend::new(self.stream.clone(), f))
             }
-            Op::Cast => CudaKernel::Cast(CastBackend::new(&self.device)),
-            Op::Concat => CudaKernel::Concat(ConcatBackend::new(&self.device)),
-            Op::Constant => CudaKernel::Constant(ConstantBackend::new(&self.device)),
+            Op::Cast => CudaKernel::Cast(CastBackend::new(&self.stream)),
+            Op::Concat => CudaKernel::Concat(ConcatBackend::new(&self.stream)),
+            Op::Constant => CudaKernel::Constant(ConstantBackend::new(&self.stream)),
             Op::ConstantOfShape => {
-                CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.device))
+                CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.stream))
             }
-            Op::Gather => CudaKernel::Gather(GatherBackend::new(self.device.clone())),
+            Op::Gather => CudaKernel::Gather(GatherBackend::new(self.stream.clone())),
             Op::Gemm => {
-                let f = rmlk_cuda::load_add_kernel_alpha_beta_inplace(&self.device, dtype)?;
-                CudaKernel::Gemm(GemmBackend::new(self.device.clone(), f))
+                let f =
+                    rmlk_cuda::load_add_kernel_alpha_beta_inplace(self.stream.context(), dtype)?;
+                CudaKernel::Gemm(GemmBackend::new(self.stream.clone(), f))
             }
-            Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.device.clone())),
-            Op::Conv => CudaKernel::Conv(ConvolutionBackend::new(self.device.clone())),
+            Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.stream.clone())),
+            Op::Conv => CudaKernel::Conv(ConvolutionBackend::new(self.stream.clone())),
             Op::GlobalAveragePool => {
-                CudaKernel::GlobalAveragePool(GlobalAverageBackend::new(self.device.clone()))
+                CudaKernel::GlobalAveragePool(GlobalAverageBackend::new(self.stream.clone()))
             }
-            Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.device.clone())),
+            Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.stream.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
             Op::ReduceMean => {
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::ReduceMean(ReduceMeanBackend::new(self.device.clone(), f))
+                CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone(), f))
             }
-            Op::Range => CudaKernel::Range(RangeBackend::new(&self.device)),
-            Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.device)),
-            Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.device.clone())),
-            Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.device)),
+            Op::Range => CudaKernel::Range(RangeBackend::new(&self.stream)),
+            Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.stream)),
+            Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.stream.clone())),
+            Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.stream)),
             Op::Sqrt => {
                 let kernel = self.load_kernel(op, dtype)?;
-                CudaKernel::Sqrt(SqrtBackend::new(&self.device, kernel))
+                CudaKernel::Sqrt(SqrtBackend::new(&self.stream, kernel))
             }
-            Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.device.clone())),
-            Op::Unsqueeze => CudaKernel::Unsqueeze(UnsqueezeBackend::new(&self.device)),
+            Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.stream.clone())),
+            Op::Unsqueeze => CudaKernel::Unsqueeze(UnsqueezeBackend::new(&self.stream)),
             Op::Where => {
                 let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Where(WhereBackend::new(self.device.clone(), f))
+                CudaKernel::Where(WhereBackend::new(self.stream.clone(), f))
             }
             op => {
                 return Err(InternalError::UnsupportedOp { op });
@@ -136,7 +137,7 @@ impl DeviceService for Cuda {
     }
 
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
-        self.device
+        self.stream
             .alloc_zeros::<f32>(len)
             .map_err(Into::into)
             .map(CudaData::new)

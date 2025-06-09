@@ -3,18 +3,18 @@ use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::Cuda;
 use crate::utils;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::CudaStream;
 use rmlk_schema::{DataType, Op};
 use std::sync::Arc;
 
 pub struct UnsqueezeBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl UnsqueezeBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -40,8 +40,7 @@ impl UnsqueezeBackend {
         let axes_ptr = axes.try_dev_data_ptr()?;
         let axes_view = axes_ptr.data::<i64>();
 
-        self.device
-            .dtoh_sync_copy_into(axes_view.as_ref(), axes_data)?;
+        self.stream.memcpy_dtoh(axes_view.as_ref(), axes_data)?;
 
         // Todo: validate the range of axes values.
         if duplicates_exist(&axes_data) {

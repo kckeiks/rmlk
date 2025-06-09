@@ -1,11 +1,11 @@
 use crate::error::Result;
 use crate::kernels::activation;
 use cudarc::cudnn::{sys, CudnnDataType};
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
 pub fn compute<T: CudnnDataType>(
-    device: Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
@@ -16,7 +16,7 @@ where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
     activation::compute(
-        device,
+        &stream,
         (alpha, beta),
         x_data,
         x_shape,
@@ -32,20 +32,22 @@ where
 mod tests {
     use super::compute;
     use approx::assert_abs_diff_eq;
-    use cudarc::driver::{CudaDevice, CudaSlice};
+    use cudarc::driver::{CudaContext, CudaSlice};
 
     fn sigmoid(x: f32) -> f32 {
         1.0 / (1.0 + (-x).exp())
     }
 
     fn run_sigmoid_test(input: &[f32], shape: &[i32], stride: &[i32], expected: &[f32]) {
-        let dev = CudaDevice::new(0).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
-        let input_dev: CudaSlice<f32> = dev.htod_copy(input.to_vec()).unwrap();
-        let mut output_dev: CudaSlice<f32> = unsafe { dev.alloc(input.len()).unwrap() };
+        let input_dev: CudaSlice<f32> = stream.memcpy_stod(input).unwrap();
+
+        let mut output_dev: CudaSlice<f32> = unsafe { stream.alloc(input.len()).unwrap() };
 
         compute::<f32>(
-            dev.clone(),
+            &stream,
             (1.0, 0.0),
             &input_dev,
             shape,
@@ -54,7 +56,7 @@ mod tests {
         )
         .unwrap();
 
-        let output = dev.sync_reclaim(output_dev).unwrap();
+        let output = stream.memcpy_dtov(&output_dev).unwrap();
 
         for (o, e) in output.iter().zip(expected.iter()) {
             assert_abs_diff_eq!(*o, *e, epsilon = 1e-6);

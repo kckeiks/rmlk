@@ -149,8 +149,7 @@ where
                 self.graph.get_node(node_id).map(|n| n.value().op()),
                 // Todo: Fix this when we resolve the issue with Constants.
                 Some(Op::Const) | Some(Op::NoOp)
-                )
-            );
+            ));
 
             let on_host_data = match ir_tensor.float_data.is_empty() {
                 true => utils::to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {

@@ -98,7 +98,7 @@ impl FromStr for Op {
             "Add" | "add" => Self::Add, // Done.
             "Cast" | "cast" => Self::Cast,
             "Concat" | "concat" => Self::Concat,
-            "Conv" | "conv" => Self::Conv,          // Done.
+            "Conv" | "conv" => Self::Conv,             // Done.
             "Constant" | "constant" => Self::Constant, // Done.
             "ConstantOfShape" | "constantofshape" => Self::ConstantOfShape,
             "Div" | "div" => Self::Div,

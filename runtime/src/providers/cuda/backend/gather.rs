@@ -5,7 +5,7 @@ use crate::providers::cuda::Cuda;
 use crate::utils::DataIterator;
 use crate::{attributes, utils};
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::trace;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
@@ -13,12 +13,12 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub struct GatherBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl GatherBackend {
-    pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 }
 
@@ -73,14 +73,14 @@ impl GatherBackend {
 
         let view = indices_ptr.data::<I>();
         let indices_on_host = alloc.allocate_fill::<I>(view.len(), I::zero())?;
-        self.device
-            .dtoh_sync_copy_into(view.as_ref(), indices_on_host)
+        self.stream
+            .memcpy_dtoh(view.as_ref(), indices_on_host)
             .map_err(rmlk_cuda::Error::from)?;
 
         let dev_data = data_ptr.data::<D>();
         let mut dev_output = output_ptr.data_mut::<D>();
         K::compute::<I, D>(
-            self.device.clone(),
+            self.stream.clone(),
             axis,
             data.shape(),
             data.stride(),
@@ -135,7 +135,7 @@ impl GatherBackend {
         self.compute_output_shape(norm_axis, ctx)?;
 
         let output = ctx.get_output(0)?;
-        common::init_tensor_device_data::<D>(&self.device, output)?;
+        common::init_tensor_device_data::<D>(&self.stream, output)?;
 
         self.compute_gather::<D, K>(norm_axis, ctx)?;
 
@@ -160,7 +160,7 @@ impl GatherBackend {
 
 pub trait GatherDeviceProcessor {
     fn compute<I, D>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         axis: usize,
         shape: &[usize],
         stride: &[usize],
@@ -178,7 +178,7 @@ pub struct DefaultGatherProcessor(());
 
 impl GatherDeviceProcessor for DefaultGatherProcessor {
     fn compute<I, D>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         axis: usize,
         shape: &[usize],
         stride: &[usize],
@@ -228,7 +228,7 @@ impl GatherDeviceProcessor for DefaultGatherProcessor {
                     .slice_mut(slice_count * batch_size..slice_count * batch_size + batch_size);
 
                 // Write to the output slice.
-                device.dtod_copy(&subslice, &mut out_slice)?;
+                stream.memcpy_dtod(&subslice, &mut out_slice)?;
 
                 slice_count += 1;
             }
@@ -242,7 +242,7 @@ pub struct NoOpGatherProcessor(());
 
 impl GatherDeviceProcessor for NoOpGatherProcessor {
     fn compute<I, D>(
-        _: Arc<CudaDevice>,
+        _: Arc<CudaStream>,
         _: usize,
         _: &[usize],
         _: &[usize],

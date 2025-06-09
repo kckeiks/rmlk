@@ -4,19 +4,19 @@ use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::{Num, ToPrimitive};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ShapeBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl ShapeBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -65,7 +65,7 @@ impl ShapeBackend {
         self.compute_output_shape(start, end, ctx)?;
 
         let output = ctx.get_output(0)?;
-        common::init_tensor_device_data::<i64>(&self.device, output)?;
+        common::init_tensor_device_data::<i64>(&self.stream, output)?;
 
         let shape = ctx.get_output(0)?;
         let mut shape_ptr = shape.try_dev_data_ptr_mut()?;
@@ -78,7 +78,7 @@ impl ShapeBackend {
             .allocate_and_convert_from_slice::<_, i64>(data.shape())?;
 
         T::compute::<i64>(
-            &self.device,
+            &self.stream,
             &shape_host_buf[start..end],
             &mut shape_dev_data,
         )
@@ -103,7 +103,7 @@ impl ShapeBackend {
 
 pub trait ShapeProcessor {
     fn compute<D>(
-        device: &Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         shape: &[D],
         output_dev_data: &mut CudaSlice<D>,
     ) -> Result<()>
@@ -115,15 +115,15 @@ pub struct DefaultShapeProcessor(());
 
 impl ShapeProcessor for DefaultShapeProcessor {
     fn compute<D>(
-        device: &Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         shape: &[D],
         output_dev_data: &mut CudaSlice<D>,
     ) -> Result<()>
     where
         D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        device
-            .htod_sync_copy_into(shape, output_dev_data)
+        stream
+            .memcpy_htod(shape, output_dev_data)
             .map_err(Into::into)
     }
 }
@@ -131,7 +131,7 @@ impl ShapeProcessor for DefaultShapeProcessor {
 pub struct NoOpShapeProcessor(());
 
 impl ShapeProcessor for NoOpShapeProcessor {
-    fn compute<D>(_: &Arc<CudaDevice>, _: &[D], _: &mut CudaSlice<D>) -> Result<()>
+    fn compute<D>(_: &Arc<CudaStream>, _: &[D], _: &mut CudaSlice<D>) -> Result<()>
     where
         D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {

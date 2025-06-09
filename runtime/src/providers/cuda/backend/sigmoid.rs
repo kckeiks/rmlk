@@ -1,13 +1,13 @@
 use crate::providers::cuda::activation::ActivationKernel;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
 pub struct SigmoidKernel(());
 
 impl ActivationKernel for SigmoidKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         alpha: T,
         beta: T,
         x_data: &CudaSlice<T>,
@@ -19,7 +19,7 @@ impl ActivationKernel for SigmoidKernel {
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         rmlk_cuda::kernels::sigmoid::compute(
-            device,
+            stream,
             (alpha, beta),
             x_data,
             x_shape,

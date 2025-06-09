@@ -6,21 +6,19 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
-};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ReduceMeanBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     kernel: CudaFunction,
 }
 
 impl ReduceMeanBackend {
-    pub fn new(device: Arc<CudaDevice>, kernel: CudaFunction) -> Self {
-        Self { device, kernel }
+    pub fn new(stream: Arc<CudaStream>, kernel: CudaFunction) -> Self {
+        Self { stream, kernel }
     }
 
     fn compute_output_shape(&mut self, axes: &[usize], ctx: &mut Context<Cuda>) -> Result<()> {
@@ -137,8 +135,8 @@ impl ReduceMeanBackend {
 
                     if axes_dev_data.len() > 0 {
                         let raw_axes = alloc.allocate::<i64>(axes_dev_data.len())?;
-                        self.device
-                            .dtoh_sync_copy_into(axes_dev_data.as_ref(), raw_axes)
+                        self.stream
+                            .memcpy_dtoh(axes_dev_data.as_ref(), raw_axes)
                             .map_err(rmlk_cuda::Error::from)?;
                         let axes = alloc.allocate::<usize>(axes_dev_data.len())?;
                         utils::normalize_indices(raw_axes, axes, rank)?;
@@ -181,14 +179,14 @@ impl ReduceMeanBackend {
             let input_dev_ptr = input.try_dev_data_ptr()?;
             let input_dev_data = input_dev_ptr.data::<I>();
 
-            common::init_tensor_device_data::<I>(&self.device, ctx.get_output(0)?)?;
+            common::init_tensor_device_data::<I>(&self.stream, ctx.get_output(0)?)?;
 
             let output = ctx.get_output(0)?;
             let mut output_dev_ptr = output.try_dev_data_ptr_mut()?;
             let mut output_dev_data = output_dev_ptr.data_mut::<I>();
 
             K::execute(
-                self.device.clone(),
+                self.stream.clone(),
                 self.kernel,
                 reduced_dim_prod,
                 axes,
@@ -222,7 +220,7 @@ impl ReduceMeanBackend {
 
 pub trait ReduceMeanKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         reduced_dim_prod: usize,
         axes: &[usize],
@@ -239,7 +237,7 @@ pub struct ActiveKernel(());
 
 impl ReduceMeanKernel for ActiveKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         reduced_dim_prod: usize,
         axes: &[usize],
@@ -253,7 +251,7 @@ impl ReduceMeanKernel for ActiveKernel {
     {
         unsafe {
             rmlk_cuda::kernels::reduce_mean::compute(
-                device,
+                stream,
                 func,
                 reduced_dim_prod,
                 axes,

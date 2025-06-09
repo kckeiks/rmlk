@@ -4,17 +4,17 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct TransposeBackend {
-    _device: Arc<CudaDevice>,
+    _stream: Arc<CudaStream>,
 }
 
 impl TransposeBackend {
-    pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { _device: device }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { _stream: stream }
     }
 
     fn compute_transpose<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>

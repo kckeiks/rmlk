@@ -3,19 +3,19 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct GlobalAverageBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl GlobalAverageBackend {
-    pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 }
 
@@ -98,7 +98,7 @@ impl GlobalAverageBackend {
 
             if need_to_alloc_dev_data {
                 let y_dev_data = self
-                    .device
+                    .stream
                     .alloc_zeros::<D>(elem_count)
                     .map_err(rmlk_cuda::Error::from)?;
                 y.set_dev_data(CudaData::new(y_dev_data));
@@ -115,7 +115,7 @@ impl GlobalAverageBackend {
             .data_mut();
 
         T::execute::<D>(
-            self.device.clone(),
+            self.stream.clone(),
             D::one(),
             D::zero(),
             pads,
@@ -150,7 +150,7 @@ impl GlobalAverageBackend {
 
 pub trait GlobalAveragePoolKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         alpha: T,
         beta: T,
         pads: &[i32],
@@ -171,7 +171,7 @@ pub struct ActiveKernel(());
 
 impl GlobalAveragePoolKernel for ActiveKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         alpha: T,
         beta: T,
         pads: &[i32],
@@ -188,7 +188,7 @@ impl GlobalAveragePoolKernel for ActiveKernel {
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         rmlk_cuda::kernels::global_average_pool::compute::<T>(
-            device,
+            stream,
             (alpha, beta),
             pads,
             strides,
@@ -208,7 +208,7 @@ pub struct NoOpKernel(());
 
 impl GlobalAveragePoolKernel for NoOpKernel {
     fn execute<T>(
-        _: Arc<CudaDevice>,
+        _: Arc<CudaStream>,
         _: T,
         _: T,
         _: &[i32],
@@ -233,12 +233,12 @@ impl GlobalAveragePoolKernel for NoOpKernel {
 //     use crate::providers::cuda::Cuda;
 //     use crate::test_utils;
 //     use crate::test_utils::{TestNode, TestParams};
-//     use cudarc::driver::CudaDevice;
+//     use cudarc::driver::CudaStream;
 //     use rmlk_schema::{DataType, Op};
 //
 //     #[test]
 //     fn test_global_average_pool_f32_2d() {
-//         let device = CudaDevice::new(0).unwrap();
+//         let device = CudaStream::new(0).unwrap();
 //         let shape = vec![1, 1, 3, 3];
 //         let dtype = DataType::Float;
 //

@@ -2,8 +2,7 @@ use crate::error::Result;
 use crate::ptx::TRILU;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
-    ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
 use std::sync::Arc;
 pub const MODULE_NAME: &str = "trilu";
@@ -16,7 +15,7 @@ pub const FWD_FN_NAMES: &[&'static str] = &[
 pub const PTX_SRC: &str = TRILU;
 
 pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     upper: bool,
     k: i64,
@@ -31,8 +30,7 @@ where
     assert_eq!(rank * 2, info_buffer.len());
     assert_eq!(input.len(), output.len());
 
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
+    let info = stream.memcpy_stod(info_buffer)?;
 
     let elem_count: usize = info_buffer[..rank].iter().product();
 
@@ -45,9 +43,18 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (elem_count, rank, upper, k, &info, input, output);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(&rank)
+            .arg(&upper)
+            .arg(&k)
+            .arg(&info)
+            .arg(input)
+            .arg(output)
+            .launch(config)?;
+    }
 
     Ok(())
 }
@@ -56,6 +63,7 @@ where
 mod tests {
     use super::*;
     use crate::utils;
+    use cudarc::driver::CudaContext;
     use rmlk_schema::{DataTypeMap, Op};
 
     fn launch_trilu_test<T>(input: &[T], shape: &[usize], upper: bool, k: i64) -> Vec<T>
@@ -64,8 +72,10 @@ mod tests {
     {
         assert_eq!(shape.len(), 3);
 
-        let device = CudaDevice::new(0).unwrap();
-        let func = utils::load_kernel(&device.clone(), Op::Trilu, T::data_type()).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
+
+        let func = utils::load_kernel(&ctx, Op::Trilu, T::data_type()).unwrap();
 
         let mut strides = vec![0; 3];
         utils::calculate_stride(shape, &mut strides);
@@ -74,12 +84,13 @@ mod tests {
         info_buffer.extend_from_slice(shape);
         info_buffer.extend_from_slice(strides.as_ref());
 
-        let input = device.htod_copy(input.to_vec()).unwrap();
-        let mut output = device.alloc_zeros::<T>(input.len()).unwrap();
+        let input = stream.memcpy_stod(input).unwrap();
+
+        let mut output = stream.alloc_zeros::<T>(input.len()).unwrap();
 
         unsafe {
             compute(
-                device.clone(),
+                stream.clone(),
                 func,
                 upper,
                 k,
@@ -91,7 +102,7 @@ mod tests {
             .unwrap();
         }
 
-        device.dtoh_sync_copy(&output).unwrap()
+        stream.memcpy_dtov(&output).unwrap()
     }
 
     #[test]

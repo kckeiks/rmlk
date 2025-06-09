@@ -1,8 +1,7 @@
 use crate::ptx::WHERE;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
-    ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
 use std::sync::Arc;
 
@@ -30,7 +29,7 @@ pub const PTX_SRC: &str = WHERE;
 /// - Panics if info buffer does not equal to 4 * `ndims`.
 /// - Panics if output slice does not have the expected size based on the output shape.
 pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
     info_buffer: &[usize],
@@ -45,7 +44,7 @@ where
     assert_eq!(4 * ndims, info_buffer.len());
 
     // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
+    let info = stream.memcpy_stod(info_buffer)?;
 
     let elem_count: usize = info_buffer[..ndims].iter().product();
 
@@ -60,17 +59,18 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (
-        elem_count,
-        ndims,
-        &info,
-        x_data,
-        y_data,
-        z_data,
-        output_data,
-    );
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(&ndims)
+            .arg(&info)
+            .arg(x_data)
+            .arg(y_data)
+            .arg(z_data)
+            .arg(output_data)
+            .launch(config)?;
+    }
 
     Ok(())
 }
@@ -79,7 +79,7 @@ where
 mod test {
     use crate::kernels::whereop::compute;
     use crate::utils;
-    use cudarc::driver::CudaDevice;
+    use cudarc::driver::CudaContext;
     use rmlk_schema::{DataType, Op};
 
     fn create_info_buffer(
@@ -101,27 +101,28 @@ mod test {
 
     #[test]
     fn test_f32() {
-        let device = CudaDevice::new(0).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
         let x_shape = vec![2, 2];
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_data = device.htod_copy(vec![10.0, 20.0, 30.0, 40.0]).unwrap();
+        let x_data = stream.memcpy_stod(&vec![10.0, 20.0, 30.0, 40.0]).unwrap();
 
         let y_shape = vec![2, 2];
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
-        let y_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y_data = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let z_shape = vec![2, 2];
         let mut z_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&z_shape, &mut z_stride);
-        let z_data = device.htod_copy(vec![1.0, 0.0, 0.0, 1.0]).unwrap();
+        let z_data = stream.memcpy_stod(&vec![1.0, 0.0, 0.0, 1.0]).unwrap();
 
-        let f = utils::load_kernel(&device.clone(), Op::Where, DataType::Float).unwrap();
+        let f = utils::load_kernel(&ctx, Op::Where, DataType::Float).unwrap();
 
         let output_shape = vec![2, 2];
-        let mut out_data = device
+        let mut out_data = stream
             .alloc_zeros(output_shape.iter().map(|d| *d).product())
             .unwrap();
 
@@ -129,7 +130,7 @@ mod test {
 
         unsafe {
             compute::<f32>(
-                device.clone(),
+                stream.clone(),
                 f,
                 output_shape.len(),
                 &mut info,
@@ -139,9 +140,10 @@ mod test {
                 &mut out_data,
             )
             .unwrap();
-            let result = device.dtoh_sync_copy(&out_data).unwrap();
-
-            assert_eq!(result, vec![10.0, 2.0, 3.0, 40.0])
         }
+
+        let result = stream.memcpy_dtov(&out_data).unwrap();
+
+        assert_eq!(result, vec![10.0, 2.0, 3.0, 40.0])
     }
 }

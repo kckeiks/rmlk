@@ -3,19 +3,19 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct ActivationBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl ActivationBackend {
-    pub fn new(device: Arc<CudaDevice>) -> Self {
-        Self { device }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 }
 
@@ -69,7 +69,7 @@ impl ActivationBackend {
 
             if need_to_alloc_dev_data {
                 let y_dev_data = self
-                    .device
+                    .stream
                     .alloc_zeros::<D>(x.shape().iter().copied().product::<usize>())
                     .map_err(rmlk_cuda::Error::from)?;
                 y.set_dev_data(CudaData::new(y_dev_data));
@@ -84,7 +84,7 @@ impl ActivationBackend {
             .data_mut();
 
         T::execute::<D>(
-            self.device.clone(),
+            &self.stream,
             D::one(),
             D::zero(),
             &x_dev_data,
@@ -116,7 +116,7 @@ impl ActivationBackend {
 
 pub trait ActivationKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         alpha: T,
         beta: T,
         x_dev_data: &CudaSlice<T>,
@@ -136,12 +136,12 @@ pub trait ActivationKernel {
 //     use crate::providers::cuda::Cuda;
 //     use crate::test_utils;
 //     use crate::test_utils::{TestNode, TestParams};
-//     use cudarc::driver::CudaDevice;
+//     use cudarc::driver::CudaStream;
 //     use rmlk_schema::{DataType, Op};
 //
 //     #[test]
 //     fn test_relu_f32() {
-//         let device = CudaDevice::new(0).unwrap();
+//         let device = CudaStream::new(0).unwrap();
 //         let shape = vec![1, 1, 2, 2];
 //         let dtype = DataType::Float;
 //

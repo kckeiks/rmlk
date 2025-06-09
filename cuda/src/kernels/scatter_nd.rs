@@ -1,8 +1,7 @@
 use crate::ptx::SCATTER_ND;
-use crate::Error;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
     ValidAsZeroBits,
 };
 use std::sync::Arc;
@@ -120,7 +119,7 @@ impl From<ScatterNdKernel> for &'static str {
 ///
 /// Note that this function assumes that the output slice equals to the data in the `data` input.
 pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     num_idx_tuples: usize,
     data_rank: usize,
@@ -176,7 +175,7 @@ where
     );
 
     // The CUDA kernel does not need the data's shape.
-    let info = device.htod_copy(info[data_rank..].to_vec())?;
+    let info = stream.memcpy_stod(&info[data_rank..])?;
 
     let num_threads = 128;
     let num_blocks = (num_idx_tuples + num_threads - 1) / num_threads;
@@ -187,44 +186,38 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (
-        num_idx_tuples,
-        output.len(),
-        data_rank,
-        indices_rank,
-        updates_rank,
-        &info,
-        indices,
-        updates,
-        output,
-        error,
-    );
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&num_idx_tuples)
+            .arg(&output.len())
+            .arg(&data_rank)
+            .arg(&indices_rank)
+            .arg(&updates_rank)
+            .arg(&info)
+            .arg(indices)
+            .arg(updates)
+            .arg(output)
+            .arg(error)
+            .launch(config)?;
+    }
 
     Ok(())
 }
 
 pub fn load_kernel(
-    device: &Arc<CudaDevice>,
+    ctx: &Arc<CudaContext>,
     kernel_name: ScatterNdKernel,
 ) -> crate::error::Result<CudaFunction> {
-    if !device.has_func(MODULE_NAME, kernel_name.into()) {
-        device
-            .load_ptx(PTX_SRC.into(), MODULE_NAME, FWD_FN_NAMES)
-            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
-    }
-
-    Ok(device
-        .get_func(MODULE_NAME, kernel_name.into())
-        .expect("To have been loaded"))
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
 }
 
 #[cfg(test)]
 mod test {
     use crate::kernels::scatter_nd::{compute, load_kernel, ScatterNdKernel};
     use crate::utils;
-    use cudarc::driver::CudaDevice;
+    use cudarc::driver::CudaContext;
 
     #[cfg(test)]
     pub fn create_info_buffer(
@@ -254,31 +247,34 @@ mod test {
         info_buffer
     }
 
-    #[test]
-    fn test_update_elements_2d_data() {
-        let device = CudaDevice::new(0).unwrap();
+    fn run_scatter_nd_test(
+        data_shape: Vec<usize>,
+        indices_shape: Vec<usize>,
+        indices_data: Vec<usize>,
+        updates_shape: Vec<usize>,
+        updates_data: Vec<f32>,
+        expected_output: Vec<f32>,
+    ) {
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
-        let data_shape = vec![3, 3];
         let mut data_stride = vec![0; data_shape.len()];
         utils::calculate_stride(&data_shape, &mut data_stride);
-        let data = vec![0.0; 3 * 3];
+        let data = vec![0.0; data_shape.iter().product()];
 
-        let indices_shape = vec![2, 2];
         let mut indices_stride = vec![0; indices_shape.len()];
         utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = device.htod_copy(vec![0, 1, 2, 2]).unwrap();
+        let indices = stream.memcpy_stod(&indices_data).unwrap();
 
-        let updates_shape = vec![2];
         let mut updates_stride = vec![0; updates_shape.len()];
         utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = device.htod_copy(vec![5.0, 8.0]).unwrap();
+        let updates = stream.memcpy_stod(&updates_data).unwrap();
 
-        let output_shape = data_shape.clone();
-        let mut output_stride = vec![0; output_shape.len()];
-        utils::calculate_stride(&output_shape, &mut output_stride);
-        let mut output = device.htod_copy(data).unwrap();
+        let mut output_stride = vec![0; data_shape.len()];
+        utils::calculate_stride(&data_shape, &mut output_stride);
+        let mut output = stream.memcpy_stod(&data).unwrap();
 
-        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
+        let f = load_kernel(&ctx, ScatterNdKernel::FwdF32).unwrap();
 
         let info = create_info_buffer(
             &data_shape,
@@ -289,17 +285,21 @@ mod test {
             &updates_stride,
         );
 
-        let mut error = device.alloc_zeros(1).unwrap();
+        let mut error = stream.alloc_zeros(1).unwrap();
 
         let data_rank = data_shape.len();
         let indices_rank = indices_shape.len();
         let updates_rank = updates_shape.len();
 
-        let num_idx_tuples = indices_shape[0..indices_rank - 1].iter().product();
+        let num_idx_tuples = if indices_rank == 1 {
+            indices_shape.iter().product()
+        } else {
+            indices_shape[0..indices_rank - 1].iter().product()
+        };
 
         unsafe {
             compute::<f32>(
-                device.clone(),
+                stream.clone(),
                 f,
                 num_idx_tuples,
                 data_rank,
@@ -314,293 +314,109 @@ mod test {
             .unwrap();
         }
 
-        let result = device.dtoh_sync_copy(&output).unwrap();
+        let error_data = stream.memcpy_dtov(&error).unwrap();
+        assert_eq!(error_data[0], 0);
 
-        assert_eq!(result, vec![0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0])
+        let result = stream.memcpy_dtov(&output).unwrap();
+        assert_eq!(result, expected_output);
+    }
+
+    #[test]
+    fn test_update_elements_2d_data() {
+        let data_shape = vec![3, 3];
+        let indices_shape = vec![2, 2];
+        let indices_data = vec![0, 1, 2, 2];
+        let updates_shape = vec![2];
+        let updates_data = vec![5.0, 8.0];
+        let expected_output = vec![0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0];
+
+        run_scatter_nd_test(
+            data_shape,
+            indices_shape,
+            indices_data,
+            updates_shape,
+            updates_data,
+            expected_output,
+        );
     }
 
     #[test]
     fn test_update_elements_3d_data() {
-        let device = CudaDevice::new(0).unwrap();
-
         let data_shape = vec![2, 2, 2];
-        let mut data_stride = vec![0; data_shape.len()];
-        utils::calculate_stride(&data_shape, &mut data_stride);
-        let data = vec![0.0; data_shape.iter().product()];
-
         let indices_shape = vec![2, 3];
-        let mut indices_stride = vec![0; indices_shape.len()];
-        utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = device.htod_copy(vec![1, 0, 1, 0, 1, 0]).unwrap();
-
+        let indices_data = vec![1, 0, 1, 0, 1, 0];
         let updates_shape = vec![2];
-        let mut updates_stride = vec![0; updates_shape.len()];
-        utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = device.htod_copy(vec![9.0, 7.0]).unwrap();
+        let updates_data = vec![9.0, 7.0];
+        let expected_output = vec![0.0, 0.0, 7.0, 0.0, 0.0, 9.0, 0.0, 0.0];
 
-        let output_shape = data_shape.clone();
-        let mut output_stride = vec![0; output_shape.len()];
-        utils::calculate_stride(&output_shape, &mut output_stride);
-        let mut output = device.htod_copy(data).unwrap();
-
-        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
-
-        let info = create_info_buffer(
-            &data_shape,
-            &data_stride,
-            &indices_shape,
-            &indices_stride,
-            &updates_shape,
-            &updates_stride,
+        run_scatter_nd_test(
+            data_shape,
+            indices_shape,
+            indices_data,
+            updates_shape,
+            updates_data,
+            expected_output,
         );
-
-        let mut error = device.alloc_zeros(1).unwrap();
-
-        let data_rank = data_shape.len();
-        let indices_rank = indices_shape.len();
-        let updates_rank = updates_shape.len();
-
-        let num_idx_tuples = indices_shape[0..indices_rank - 1].iter().product();
-
-        unsafe {
-            compute::<f32>(
-                device.clone(),
-                f,
-                num_idx_tuples,
-                data_rank,
-                indices_rank,
-                updates_rank,
-                &info,
-                &indices,
-                &updates,
-                &mut output,
-                &mut error,
-            )
-            .unwrap();
-        }
-
-        let result = device.dtoh_sync_copy(&output).unwrap();
-
-        assert_eq!(result, vec![0.0, 0.0, 7.0, 0.0, 0.0, 9.0, 0.0, 0.0])
     }
 
     #[test]
     fn test_update_slices_3d_data() {
-        let device = CudaDevice::new(0).unwrap();
-
         let data_shape = vec![4, 4, 3];
-        let mut data_stride = vec![0; data_shape.len()];
-        utils::calculate_stride(&data_shape, &mut data_stride);
-        let data = vec![0.0; data_shape.iter().product()];
-
         let indices_shape = vec![2, 2];
-        let mut indices_stride = vec![0; indices_shape.len()];
-        utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = device.htod_copy(vec![0, 1, 2, 2]).unwrap();
-
+        let indices_data = vec![0, 1, 2, 2];
         let updates_shape = vec![2, 3];
-        let mut updates_stride = vec![0; updates_shape.len()];
-        utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = device
-            .htod_copy(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-            .unwrap();
+        let updates_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let expected_output = vec![
+            0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
 
-        let output_shape = data_shape.clone();
-        let mut output_stride = vec![0; output_shape.len()];
-        utils::calculate_stride(&output_shape, &mut output_stride);
-        let mut output = device.htod_copy(data).unwrap();
-
-        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
-
-        let info = create_info_buffer(
-            &data_shape,
-            &data_stride,
-            &indices_shape,
-            &indices_stride,
-            &updates_shape,
-            &updates_stride,
+        run_scatter_nd_test(
+            data_shape,
+            indices_shape,
+            indices_data,
+            updates_shape,
+            updates_data,
+            expected_output,
         );
-
-        let mut error = device.alloc_zeros(1).unwrap();
-
-        let data_rank = data_shape.len();
-        let indices_rank = indices_shape.len();
-        let updates_rank = updates_shape.len();
-
-        let num_idx_tuples = indices_shape[0..indices_rank - 1].iter().product();
-
-        unsafe {
-            compute::<f32>(
-                device.clone(),
-                f,
-                num_idx_tuples,
-                data_rank,
-                indices_rank,
-                updates_rank,
-                &info,
-                &indices,
-                &updates,
-                &mut output,
-                &mut error,
-            )
-            .unwrap();
-        }
-
-        let error = device.dtoh_sync_copy(&error).unwrap();
-        assert_eq!(error[0], 0);
-
-        let result = device.dtoh_sync_copy(&output).unwrap();
-
-        assert_eq!(
-            result,
-            vec![
-                0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0,
-                6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            ]
-        )
     }
 
     #[test]
     fn test_update_elements_1d_indices() {
-        let device = CudaDevice::new(0).unwrap();
-
         let data_shape = vec![5];
-        let mut data_stride = vec![0; data_shape.len()];
-        utils::calculate_stride(&data_shape, &mut data_stride);
-        let data = vec![0.0; data_shape.iter().product()];
-
         let indices_shape = vec![2];
-        let mut indices_stride = vec![0; indices_shape.len()];
-        utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = device.htod_copy(vec![1, 3]).unwrap();
-
+        let indices_data = vec![1, 3];
         let updates_shape = vec![2];
-        let mut updates_stride = vec![0; updates_shape.len()];
-        utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = device.htod_copy(vec![10.0, 20.0]).unwrap();
+        let updates_data = vec![10.0, 20.0];
+        let expected_output = vec![0.0, 10.0, 0.0, 20.0, 0.0];
 
-        let output_shape = data_shape.clone();
-        let mut output_stride = vec![0; output_shape.len()];
-        utils::calculate_stride(&output_shape, &mut output_stride);
-        let mut output = device.htod_copy(data).unwrap();
-
-        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
-
-        let info = create_info_buffer(
-            &data_shape,
-            &data_stride,
-            &indices_shape,
-            &indices_stride,
-            &updates_shape,
-            &updates_stride,
+        run_scatter_nd_test(
+            data_shape,
+            indices_shape,
+            indices_data,
+            updates_shape,
+            updates_data,
+            expected_output,
         );
-
-        let mut error = device.alloc_zeros(1).unwrap();
-
-        let data_rank = data_shape.len();
-        let indices_rank = indices_shape.len();
-        let updates_rank = updates_shape.len();
-
-        // Because its rank=1, it's implied K=1;
-        let num_idx_tuples = indices_shape.iter().product();
-
-        unsafe {
-            compute::<f32>(
-                device.clone(),
-                f,
-                num_idx_tuples,
-                data_rank,
-                indices_rank,
-                updates_rank,
-                &info,
-                &indices,
-                &updates,
-                &mut output,
-                &mut error,
-            )
-            .unwrap();
-        }
-
-        let error = device.dtoh_sync_copy(&error).unwrap();
-        assert_eq!(error[0], 0);
-
-        let result = device.dtoh_sync_copy(&output).unwrap();
-
-        assert_eq!(result, vec![0.0, 10.0, 0.0, 20.0, 0.0])
     }
 
     #[test]
     fn test_update_slices_1d_indices() {
-        let device = CudaDevice::new(0).unwrap();
-
         let data_shape = vec![4, 3];
-        let mut data_stride = vec![0; data_shape.len()];
-        utils::calculate_stride(&data_shape, &mut data_stride);
-        let data = vec![0.0; data_shape.iter().product()];
-
         let indices_shape = vec![2];
-        let mut indices_stride = vec![0; indices_shape.len()];
-        utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = device.htod_copy(vec![1, 3]).unwrap();
-
+        let indices_data = vec![1, 3];
         let updates_shape = vec![2, 3];
-        let mut updates_stride = vec![0; updates_shape.len()];
-        utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = device
-            .htod_copy(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-            .unwrap();
+        let updates_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let expected_output = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0];
 
-        let output_shape = data_shape.clone();
-        let mut output_stride = vec![0; output_shape.len()];
-        utils::calculate_stride(&output_shape, &mut output_stride);
-        let mut output = device.htod_copy(data).unwrap();
-
-        let f = load_kernel(&device.clone(), ScatterNdKernel::FwdF32).unwrap();
-
-        let info = create_info_buffer(
-            &data_shape,
-            &data_stride,
-            &indices_shape,
-            &indices_stride,
-            &updates_shape,
-            &updates_stride,
+        run_scatter_nd_test(
+            data_shape,
+            indices_shape,
+            indices_data,
+            updates_shape,
+            updates_data,
+            expected_output,
         );
-
-        let mut error = device.alloc_zeros(1).unwrap();
-
-        let data_rank = data_shape.len();
-        let indices_rank = indices_shape.len();
-        let updates_rank = updates_shape.len();
-
-        // Because its rank=1, it's implied K=1;
-        let num_idx_tuples = indices_shape.iter().product();
-
-        unsafe {
-            compute::<f32>(
-                device.clone(),
-                f,
-                num_idx_tuples,
-                data_rank,
-                indices_rank,
-                updates_rank,
-                &info,
-                &indices,
-                &updates,
-                &mut output,
-                &mut error,
-            )
-            .unwrap();
-        }
-
-        let error = device.dtoh_sync_copy(&error).unwrap();
-        assert_eq!(error[0], 0);
-
-        let result = device.dtoh_sync_copy(&output).unwrap();
-
-        assert_eq!(
-            result,
-            vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0]
-        )
     }
 }

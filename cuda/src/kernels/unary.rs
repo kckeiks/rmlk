@@ -1,12 +1,14 @@
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, LaunchAsync, LaunchConfig, ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
+use std::sync::Arc;
 
 /// Launches a CUDA kernel that performs an element-wise unary operation.
 ///
 /// Panics if the input and output slice are not equal in size.
 pub unsafe fn compute<T>(
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     input_data: &CudaSlice<T>,
     output_data: &mut CudaSlice<T>,
@@ -27,9 +29,14 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (elem_count, input_data, output_data);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(input_data)
+            .arg(output_data)
+            .launch(config)?;
+    };
 
     Ok(())
 }
@@ -38,6 +45,7 @@ where
 ///
 /// Panics if the input and output slice are not equal in size.
 pub unsafe fn explicit_io_types_compute<Src, Dst>(
+    stream: &Arc<CudaStream>,
     func: CudaFunction,
     input_data: &CudaSlice<Src>,
     output_data: &mut CudaSlice<Dst>,
@@ -59,9 +67,14 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (elem_count, input_data, output_data);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(input_data)
+            .arg(output_data)
+            .launch(config)?;
+    };
 
     Ok(())
 }

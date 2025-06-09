@@ -4,20 +4,20 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct CastBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl CastBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -47,7 +47,7 @@ impl CastBackend {
             );
         }
 
-        common::init_tensor_device_data::<I>(&self.device, input)?;
+        common::init_tensor_device_data::<I>(&self.stream, input)?;
 
         let input = ctx.get_input(0)?;
 
@@ -69,7 +69,7 @@ impl CastBackend {
         info_buffer[..rank].copy_from_slice(output.shape());
         info_buffer[rank..2 * rank].copy_from_slice(input.stride());
 
-        K::execute::<I, O>(kernel, &input_dev_data, &mut output_dev_data)?;
+        K::execute::<I, O>(&self.stream, kernel, &input_dev_data, &mut output_dev_data)?;
 
         Ok(())
     }
@@ -92,7 +92,7 @@ impl CastBackend {
             (DataType::Float, DataType::Int32) => {
                 // Todo: it would be better to load this before running inference.
                 let kernel = rmlk_cuda::load_cast_kernel(
-                    &self.device,
+                    self.stream.context(),
                     rmlk_cuda::kernels::cast::CastKernel::F32ToI32,
                 )?;
                 self.compute_cast::<f32, i32, K>(kernel, ctx)
@@ -108,6 +108,7 @@ impl CastBackend {
 
 pub trait CastKernel {
     fn execute<I, O>(
+        context: &Arc<CudaStream>,
         kernel: CudaFunction,
         input_dev_data: &CudaSlice<I>,
         output_dev_data: &mut CudaSlice<O>,
@@ -121,6 +122,7 @@ pub struct ActiveKernel(());
 
 impl CastKernel for ActiveKernel {
     fn execute<I, O>(
+        context: &Arc<CudaStream>,
         kernel: CudaFunction,
         input_dev_data: &CudaSlice<I>,
         output_dev_data: &mut CudaSlice<O>,
@@ -131,6 +133,7 @@ impl CastKernel for ActiveKernel {
     {
         unsafe {
             rmlk_cuda::kernels::unary::explicit_io_types_compute(
+                &context,
                 kernel,
                 input_dev_data,
                 output_dev_data,

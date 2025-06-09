@@ -3,19 +3,19 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::{Num, NumCast};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct RangeBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
 }
 
 impl RangeBackend {
-    pub fn new(device: &Arc<CudaDevice>) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            device: device.clone(),
+            stream: stream.clone(),
         }
     }
 
@@ -41,20 +41,17 @@ impl RangeBackend {
             let start_tensor = ctx.get_input(0)?;
             let start_ptr = start_tensor.try_dev_data_ptr()?;
             let start_view = start_ptr.data::<I>();
-            self.device
-                .dtoh_sync_copy_into(start_view.as_ref(), start_value)?;
+            self.stream.memcpy_dtoh(start_view.as_ref(), start_value)?;
 
             let limit_tensor = ctx.get_input(1)?;
             let limit_ptr = limit_tensor.try_dev_data_ptr()?;
             let limit_view = limit_ptr.data::<I>();
-            self.device
-                .dtoh_sync_copy_into(limit_view.as_ref(), limit_value)?;
+            self.stream.memcpy_dtoh(limit_view.as_ref(), limit_value)?;
 
             let delta_tensor = ctx.get_input(2)?;
             let delta_ptr = delta_tensor.try_dev_data_ptr()?;
             let delta_view = delta_ptr.data::<I>();
-            self.device
-                .dtoh_sync_copy_into(delta_view.as_ref(), delta_value)?;
+            self.stream.memcpy_dtoh(delta_view.as_ref(), delta_value)?;
         }
 
         let start = start_value[0];
@@ -74,7 +71,7 @@ impl RangeBackend {
 
         // Try to init the tensor.
         let output_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<I>(&self.device, output_tensor)?;
+        common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
 
         let output = scratch_alloc.allocate_fill::<I>(elem_count, I::zero())?;
 
@@ -85,8 +82,7 @@ impl RangeBackend {
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<I>();
-        self.device
-            .htod_sync_copy_into(&output, output_view.as_mut())?;
+        self.stream.memcpy_htod(output, output_view.as_mut())?;
 
         #[cfg(debug_assertions)]
         {

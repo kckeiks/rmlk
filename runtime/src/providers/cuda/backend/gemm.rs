@@ -5,9 +5,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
-};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmParams;
@@ -18,13 +16,13 @@ use std::cmp;
 use std::sync::Arc;
 
 pub struct GemmBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
 }
 
 impl GemmBackend {
-    pub fn new(device: Arc<CudaDevice>, func: CudaFunction) -> Self {
-        Self { device, func }
+    pub fn new(stream: Arc<CudaStream>, func: CudaFunction) -> Self {
+        Self { stream, func }
     }
 }
 
@@ -130,7 +128,7 @@ impl GemmBackend {
 
         T::execute_bias_addition::<D>(
             self.func,
-            self.device.clone(),
+            &self.stream,
             rank,
             info_buffer,
             beta,
@@ -196,7 +194,7 @@ impl GemmBackend {
 
             if need_to_alloc_dev_data {
                 let c_dev_data = self
-                    .device
+                    .stream
                     .alloc_zeros::<D>(output_size)
                     .map_err(rmlk_cuda::Error::from)?;
                 c.set_dev_data(CudaData::new(c_dev_data));
@@ -213,7 +211,7 @@ impl GemmBackend {
             .data_mut();
 
         T::execute_multiplication::<D>(
-            self.device.clone(),
+            &self.stream,
             &a_dev_data,
             &b_dev_data,
             &mut y_dev_data,
@@ -270,7 +268,7 @@ pub trait GemmKernel {
     /// This should compute `AB = 1 * AB + beta * C`.
     fn execute_bias_addition<T>(
         func: CudaFunction,
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         rank: usize,
         info: &[usize],
         beta: T,
@@ -281,7 +279,7 @@ pub trait GemmKernel {
         T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num;
 
     fn execute_multiplication<T>(
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         a_dev_data: &CudaSlice<T>,
         b_dev_data: &CudaSlice<T>,
         y_dev_data: &mut CudaSlice<T>,
@@ -296,7 +294,7 @@ pub struct ActiveKernel(());
 impl GemmKernel for ActiveKernel {
     fn execute_bias_addition<T>(
         func: CudaFunction,
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         rank: usize,
         info: &[usize],
         beta: T,
@@ -308,7 +306,7 @@ impl GemmKernel for ActiveKernel {
     {
         unsafe {
             binary::compute_alpha_beta_inplace(
-                device,
+                stream,
                 func,
                 beta,
                 T::one(),
@@ -322,7 +320,7 @@ impl GemmKernel for ActiveKernel {
     }
 
     fn execute_multiplication<T>(
-        device: Arc<CudaDevice>,
+        stream: &Arc<CudaStream>,
         a_dev_data: &CudaSlice<T>,
         b_dev_data: &CudaSlice<T>,
         y_dev_data: &mut CudaSlice<T>,
@@ -331,7 +329,7 @@ impl GemmKernel for ActiveKernel {
     where
         T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        gemm::compute::<T>(device, a_dev_data, b_dev_data, y_dev_data, config).map_err(Into::into)
+        gemm::compute::<T>(stream, a_dev_data, b_dev_data, y_dev_data, config).map_err(Into::into)
     }
 }
 
@@ -340,7 +338,7 @@ pub struct NoOpKernel(());
 impl GemmKernel for NoOpKernel {
     fn execute_bias_addition<T>(
         _: CudaFunction,
-        _: Arc<CudaDevice>,
+        _: &Arc<CudaStream>,
         _: usize,
         _: &[usize],
         _: T,
@@ -354,7 +352,7 @@ impl GemmKernel for NoOpKernel {
     }
 
     fn execute_multiplication<T>(
-        _: Arc<CudaDevice>,
+        _: &Arc<CudaStream>,
         _: &CudaSlice<T>,
         _: &CudaSlice<T>,
         _: &mut CudaSlice<T>,
@@ -386,62 +384,3 @@ fn compute_bias_shape(shape: &[usize], params: &GemmParams) -> Result<([usize; 2
         }),
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::core::Context;
-//     use crate::providers::cuda::data::CudaData;
-//     use crate::providers::cuda::kernel::gemm::BackendHandler;
-//     use crate::providers::cuda::Cuda;
-//     use crate::test_utils;
-//     use crate::test_utils::{TestNode, TestParams};
-//     use cudarc::driver::CudaDevice;
-//     use rmlk_schema::{DataType, Op};
-//
-//     #[test]
-//     fn test_gemm_f32() {
-//         let device = CudaDevice::new(0).unwrap();
-//
-//         let shape = vec![1, 2, 2];
-//         let dtype = DataType::Float;
-//         let op = Op::Gemm;
-//
-//         let node_a = TestNode {
-//             shape: shape.clone(),
-//             dtype,
-//             data: Some(CudaData::F32(
-//                 device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-//             )),
-//         };
-//         let node_b = TestNode {
-//             shape: shape.clone(),
-//             dtype,
-//             data: Some(CudaData::F32(
-//                 device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap(),
-//             )),
-//         };
-//
-//         let params = TestParams {
-//             inputs: vec![node_a, node_b],
-//             attributes: vec![],
-//             op,
-//         };
-//
-//         let mut state = test_utils::build_graph_and_state(Cuda::new(device.clone()), params);
-//         let mut context = Context::new(&mut state, 3).unwrap();
-//
-//         let cuda_kernel = BackendHandler::new(device.clone());
-//         cuda_kernel.compute(&mut context).unwrap();
-//
-//         let out_data = context
-//             .get_output(0)
-//             .unwrap()
-//             .dev_data_ptr()
-//             .unwrap()
-//             .f32()
-//             .unwrap();
-//         let result = device.dtoh_sync_copy(out_data).unwrap();
-//
-//         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
-//     }
-// }

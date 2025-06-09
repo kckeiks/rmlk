@@ -1,7 +1,7 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::kernels::cast::CastKernel;
 use crate::kernels::{add, cast, div, expand, mul, reduce_mean, sqrt, trilu, whereop};
-use cudarc::driver::{CudaDevice, CudaFunction};
+use cudarc::driver::{CudaContext, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
 use rmlk_schema::{DataType, Op};
@@ -22,30 +22,23 @@ pub fn calculate_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]
 }
 
 pub fn load_add_kernel_alpha_beta_inplace(
-    device: &Arc<CudaDevice>,
+    ctx: &Arc<CudaContext>,
     dtype: DataType,
 ) -> Result<CudaFunction> {
-    let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = (
+    let (fwd_fn_name, _, _, ptx_src) = (
         add::FWD_FN_NAMES_ALPHA_BETA_INPLACE[dtype as usize],
         add::FWD_FN_NAMES_ALPHA_BETA_INPLACE.as_slice(),
         add::MODULE_NAME,
         add::PTX_SRC,
     );
 
-    if !device.has_func(module_name, fwd_fn_name) {
-        device
-            .load_ptx(ptx_src.into(), module_name, fwd_fn_all)
-            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
-    }
-
-    // Todo: circle back and assess if it's safe to unwrap.
-    Ok(device
-        .get_func(module_name, fwd_fn_name)
-        .expect("To have been loaded"))
+    let module = ctx.load_module(ptx_src.into())?;
+    module.load_function(fwd_fn_name).map_err(Into::into)
 }
 
-pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<CudaFunction> {
-    let (fwd_fn_name, fwd_fn_all, module_name, ptx_src) = match op {
+// Todo: Clean up.
+pub fn load_kernel(ctx: &Arc<CudaContext>, op: Op, dtype: DataType) -> Result<CudaFunction> {
+    let (fwd_fn_name, _, _, ptx_src) = match op {
         Op::Add => (
             add::FWD_FN_NAMES[dtype as usize],
             add::FWD_FN_NAMES.as_slice(),
@@ -97,27 +90,13 @@ pub fn load_kernel(device: &Arc<CudaDevice>, op: Op, dtype: DataType) -> Result<
         _ => unimplemented!(),
     };
 
-    if !device.has_func(module_name, fwd_fn_name) {
-        device
-            .load_ptx(ptx_src.into(), module_name, fwd_fn_all)
-            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
-    }
-
-    // Todo: circle back and assess if it's safe to unwrap.
-    Ok(device
-        .get_func(module_name, fwd_fn_name)
-        .expect("To have been loaded"))
+    let module = ctx.load_module(ptx_src.into())?;
+    module.load_function(fwd_fn_name).map_err(Into::into)
 }
 
-pub fn load_cast_kernel(device: &Arc<CudaDevice>, kernel_name: CastKernel) -> Result<CudaFunction> {
-    if !device.has_func(cast::MODULE_NAME, kernel_name.as_str()) {
-        device
-            .load_ptx(cast::PTX_SRC.into(), cast::MODULE_NAME, cast::FWD_FN_NAMES)
-            .map_err(|e| Error::Internal(format!("failed to load kernel: {e:?}")))?
-    }
-
-    // Todo: circle back and assess if it's safe to unwrap.
-    Ok(device
-        .get_func(cast::MODULE_NAME, kernel_name.as_str())
-        .expect("To have been loaded"))
+pub fn load_cast_kernel(ctx: &Arc<CudaContext>, kernel_name: CastKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(cast::PTX_SRC.into())?;
+    module
+        .load_function(kernel_name.as_str())
+        .map_err(Into::into)
 }

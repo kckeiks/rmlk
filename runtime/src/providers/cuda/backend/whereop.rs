@@ -4,22 +4,20 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
-};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
 pub struct WhereBackend {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     f: CudaFunction,
 }
 
 impl WhereBackend {
-    pub fn new(device: Arc<CudaDevice>, f: CudaFunction) -> Self {
-        Self { device, f }
+    pub fn new(stream: Arc<CudaStream>, f: CudaFunction) -> Self {
+        Self { stream, f }
     }
 }
 
@@ -147,7 +145,7 @@ impl WhereBackend {
 
             if need_to_alloc_dev_data {
                 let output_dev_data = self
-                    .device
+                    .stream
                     .alloc_zeros::<f32>(output.shape().iter().copied().product::<usize>())
                     .map_err(rmlk_cuda::Error::from)?;
                 output.set_dev_data(CudaData::new(output_dev_data));
@@ -206,7 +204,7 @@ impl WhereBackend {
         info_buffer[3 * rank..].copy_from_slice(condition_stride);
 
         T::execute::<D>(
-            self.device,
+            self.stream,
             self.f,
             rank,
             info_buffer,
@@ -236,7 +234,7 @@ impl WhereBackend {
 
 pub trait WhereKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
@@ -253,7 +251,7 @@ pub struct ActiveKernel(());
 
 impl WhereKernel for ActiveKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
@@ -267,7 +265,7 @@ impl WhereKernel for ActiveKernel {
     {
         unsafe {
             rmlk_cuda::kernels::whereop::compute(
-                device,
+                stream,
                 func,
                 rank,
                 info,
@@ -285,7 +283,7 @@ pub struct NoOpKernel(());
 
 impl WhereKernel for NoOpKernel {
     fn execute<T>(
-        _: Arc<CudaDevice>,
+        _: Arc<CudaStream>,
         _: CudaFunction,
         _: usize,
         _: &[usize],

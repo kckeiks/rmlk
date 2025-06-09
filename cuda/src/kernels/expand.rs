@@ -1,7 +1,7 @@
 use crate::ptx::EXPAND;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig, ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ pub const FWD_FN_NAMES: &[&'static str] = &[
 pub const PTX_SRC: &str = EXPAND;
 
 pub unsafe fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     func: CudaFunction,
     rank: usize,
     info_buffer: &[usize],
@@ -27,8 +27,8 @@ where
 {
     assert_eq!(rank * 4, info_buffer.len());
 
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = device.htod_copy(info_buffer.to_vec())?;
+    let mut info_dev_ptr = unsafe { stream.alloc(info_buffer.len())? };
+    stream.memcpy_htod(info_buffer, &mut info_dev_ptr)?;
 
     let elem_count: usize = info_buffer[2 * rank..3 * rank].iter().product();
 
@@ -45,9 +45,16 @@ where
         shared_mem_bytes: 0,
     };
 
-    let params = (elem_count, rank, &info, input, output);
-
-    unsafe { func.launch(config, params)? };
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(&rank)
+            .arg(&info_dev_ptr)
+            .arg(input)
+            .arg(output)
+            .launch(config)?
+    };
 
     Ok(())
 }
@@ -57,18 +64,27 @@ mod test {
     use crate::kernels::expand::compute;
     use crate::utils;
     use cudarc::cudnn::CudnnDataType;
-    use cudarc::driver::{CudaDevice, DeviceRepr, ValidAsZeroBits};
+    use cudarc::driver::{CudaContext, DeviceRepr, ValidAsZeroBits};
     use rmlk_schema::{DataTypeMap, Op};
 
     fn launch_expand_test<T>(input: &[T], input_shape: &[usize], output_shape: &[usize]) -> Vec<T>
     where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr + DataTypeMap + Clone + Unpin + PartialEq,
+        T: CudnnDataType
+            + ValidAsZeroBits
+            + DeviceRepr
+            + DataTypeMap
+            + Clone
+            + Unpin
+            + PartialEq
+            + Default,
     {
         assert_eq!(input_shape.len(), output_shape.len());
         let rank = input_shape.len();
 
-        let device = CudaDevice::new(0).unwrap();
-        let func = utils::load_kernel(&device, Op::Expand, T::data_type()).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
+
+        let func = utils::load_kernel(&ctx, Op::Expand, T::data_type()).unwrap();
 
         let mut input_strides = vec![0; rank];
         utils::calculate_stride(input_shape, &mut input_strides);
@@ -82,24 +98,24 @@ mod test {
         info_buffer.extend_from_slice(output_shape);
         info_buffer.extend_from_slice(&output_strides);
 
-        let input = device.htod_copy(input.to_vec()).unwrap();
-        let mut output = device
-            .alloc_zeros::<T>(output_shape.iter().product())
-            .unwrap();
+        let input_dev_ptr = stream.memcpy_stod(input).unwrap();
+
+        let output_len = output_shape.iter().product();
+        let mut output_dev_ptr = stream.alloc_zeros::<T>(output_len).unwrap();
 
         unsafe {
             compute(
-                device.clone(),
+                stream.clone(),
                 func,
                 rank,
                 &info_buffer,
-                &input,
-                &mut output,
+                &input_dev_ptr,
+                &mut output_dev_ptr,
             )
             .unwrap();
         }
 
-        device.dtoh_sync_copy(&output).unwrap()
+        stream.memcpy_dtov(&output_dev_ptr).unwrap()
     }
 
     #[test]

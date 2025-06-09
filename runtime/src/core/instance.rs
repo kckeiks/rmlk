@@ -8,7 +8,7 @@ use crate::core::plan::Plan;
 use crate::core::store::TensorStore;
 use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
-use cudarc::driver::CudaDevice;
+use cudarc::driver::CudaContext;
 use log::{debug, trace};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
@@ -88,11 +88,11 @@ impl Builder {
     }
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
-        let provider = Cuda::new(
-            CudaDevice::new(0)
-                .map_err(rmlk_cuda::Error::from)
-                .map_err(InternalError::from)?,
-        );
+        let ctx = CudaContext::new(0)
+            .map_err(rmlk_cuda::Error::from)
+            .map_err(InternalError::from)?;
+        // Todo: We don't always want to use the default stream.
+        let provider = Cuda::new(ctx.default_stream());
         let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(

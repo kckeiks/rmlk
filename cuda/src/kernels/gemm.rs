@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::error::Result;
 use crate::params::CudaParamMap;
 use cudarc::cublas::{sys, CudaBlas, GemmConfig, StridedBatchedConfig};
-use cudarc::driver::{CudaDevice, CudaSlice, CudaView, DevicePtr, DevicePtrMut};
+use cudarc::driver::{CudaSlice, CudaStream, CudaView, DevicePtr, DevicePtrMut};
 use log::trace;
 use std::sync::Arc;
 
@@ -110,19 +110,20 @@ pub fn strided_batch_config<T>(
 }
 
 pub fn compute<T: CudaParamMap>(
-    device: Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     a_data: &CudaSlice<T>,
     b_data: &CudaSlice<T>,
     y_data: &mut CudaSlice<T>,
     config: StridedBatchedConfig<T>,
 ) -> Result<()> {
-    let cublas = CudaBlas::new(device)?;
+    let cublas = CudaBlas::new(stream.clone())?;
 
     // NOTE: We pass b_data as the `A` pointer for cuBLAS, and a_data as the `B` pointer.
     // This is because the shape/stride logic in gemm_config is reversed for
     // handling cuBLAS's column-major assumption.
     unsafe {
         gemm_stride_batched::<T>(
+            &stream,
             &cublas,
             config,
             &b_data.slice(..),
@@ -188,6 +189,7 @@ fn gemm_config<T>(
 }
 
 pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
+    stream: &Arc<CudaStream>,
     cublas: &CudaBlas,
     config: StridedBatchedConfig<T>,
     a: &CudaView<T>,
@@ -197,6 +199,10 @@ pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
     let alpha = &config.gemm.alpha as *const T as *const _;
     let beta = &config.gemm.beta as *const T as *const _;
 
+    let (a_ptr, _a_record_src) = a.device_ptr(&stream);
+    let (b_ptr, _b_record_src) = b.device_ptr(&stream);
+    let (y_ptr, _y_record_src) = y.device_ptr_mut(&stream);
+
     cudarc::cublas::result::gemm_strided_batched_ex(
         *cublas.handle(),
         config.gemm.transa,
@@ -205,16 +211,16 @@ pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
         config.gemm.n,
         config.gemm.k,
         alpha,
-        *a.device_ptr() as *const _,
+        a_ptr as *const _,
         T::data_type(),
         config.gemm.lda,
         config.stride_a,
-        *b.device_ptr() as *const _,
+        b_ptr as *const _,
         T::data_type(),
         config.gemm.ldb,
         config.stride_b,
         beta,
-        *y.device_ptr_mut() as *mut _,
+        y_ptr as *mut _,
         T::data_type(),
         config.gemm.ldc,
         config.stride_c,
@@ -226,6 +232,7 @@ pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
 }
 
 pub unsafe fn gemm_stride_batched_f32(
+    stream: &Arc<CudaStream>,
     cublas: &CudaBlas,
     config: StridedBatchedConfig<f32>,
     a: &CudaView<f32>,
@@ -235,6 +242,10 @@ pub unsafe fn gemm_stride_batched_f32(
     let alpha = &config.gemm.alpha as *const f32 as *const _;
     let beta = &config.gemm.beta as *const f32 as *const _;
 
+    let (a_ptr, _a_record_src) = a.device_ptr(&stream);
+    let (b_ptr, _b_record_src) = b.device_ptr(&stream);
+    let (c_ptr, _c_record_src) = c.device_ptr_mut(&stream);
+
     cudarc::cublas::result::gemm_strided_batched_ex(
         *cublas.handle(),
         config.gemm.transa,
@@ -243,16 +254,16 @@ pub unsafe fn gemm_stride_batched_f32(
         config.gemm.n,
         config.gemm.k,
         alpha,
-        *a.device_ptr() as *const _,
+        a_ptr as *const _,
         sys::cudaDataType_t::CUDA_R_32F,
         config.gemm.lda,
         config.stride_a,
-        *b.device_ptr() as *const _,
+        b_ptr as *const _,
         sys::cudaDataType_t::CUDA_R_32F,
         config.gemm.ldb,
         config.stride_b,
         beta,
-        *c.device_ptr_mut() as *mut _,
+        c_ptr as *mut _,
         sys::cudaDataType_t::CUDA_R_32F,
         config.gemm.ldc,
         config.stride_c,
@@ -287,21 +298,22 @@ fn infer_matrix_layout(shape: &[usize], stride: &[usize]) -> Result<MatrixLayout
 mod test {
     use crate::kernels::gemm::{compute, gemm_params, strided_batch_config};
     use crate::utils;
-    use cudarc::driver::CudaDevice;
+    use cudarc::driver::CudaContext;
 
     #[test]
     fn test_gemm_f32() {
-        let device = CudaDevice::new(0).unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
 
         let lhs_shape = vec![1, 2, 2];
         let mut lhs_stride = vec![0; lhs_shape.len()];
         utils::calculate_stride(&lhs_shape, &mut lhs_stride);
-        let lhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let lhs_dev_ptr = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let rhs_shape = vec![1, 2, 2];
         let mut rhs_stride = vec![0; rhs_shape.len()];
         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
-        let rhs_data = device.htod_copy(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let rhs_dev_ptr = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let output_shape = vec![1, 2, 2];
 
@@ -318,45 +330,12 @@ mod test {
         let config = strided_batch_config((1.0, 0.0), &params).unwrap();
 
         let output_size = output_shape.iter().product();
-        let mut out = device.alloc_zeros(output_size).unwrap();
+        let mut out = stream.alloc_zeros(output_size).unwrap();
 
-        compute::<f32>(device.clone(), &lhs_data, &rhs_data, &mut out, config).unwrap();
+        compute::<f32>(&stream, &lhs_dev_ptr, &rhs_dev_ptr, &mut out, config).unwrap();
 
-        let result = device.dtoh_sync_copy(&out).unwrap();
+        let result = stream.memcpy_dtov(&out).unwrap();
 
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }
 }
-
-/*
-
-       x = [
-           [ a, b, c],
-           [ d, e, f],
-           ];
-
-
-
-
-   shape = [ 2, 3 ]
-   stride = [ 3, 1 ]
-   mem = [a, b, c, d, e, f]
-
-   0*3 + 2*1 = 2
-   1*3 + 1*1 = 4
-
-
-   x' = [
-           [ a, d],
-           [ b, e],
-           [ c, f],
-       ]
-
-      shape = [3, 2]
-      stride = [1, 3]
-      mem = [a, b, c, d, e, f]
-
-       0*1 + 1*3 = 3
-       1*1 + 0*3 = 1
-       1*1 + 1*3 = 4
-*/

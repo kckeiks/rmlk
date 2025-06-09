@@ -2,13 +2,13 @@ use crate::core::error::Result;
 use crate::core::Tensor;
 use crate::providers::cuda::data::CudaData;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaDevice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::DataTypeMap;
 use std::sync::Arc;
 
 pub fn init_tensor_device_data<T>(
-    device: &Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     mut tensor: Tensor<CudaData>,
 ) -> Result<()>
 where
@@ -29,7 +29,7 @@ where
     drop(dev_data_ref);
 
     if need_to_alloc_dev_data {
-        let dev_data = device
+        let dev_data = stream
             .alloc_zeros::<T>(size)
             .map_err(rmlk_cuda::Error::from)?;
         tensor.set_dev_data(CudaData::new(dev_data));
@@ -39,13 +39,13 @@ where
 }
 
 pub fn init_tensor_device_data_with_empty_slice<T>(
-    device: &Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     mut tensor: Tensor<CudaData>,
 ) -> Result<()>
 where
     T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
 {
-    let dev_data = device.alloc_zeros::<T>(0).map_err(rmlk_cuda::Error::from)?;
+    let dev_data = stream.alloc_zeros::<T>(0).map_err(rmlk_cuda::Error::from)?;
     tensor.set_dev_data(CudaData::new(dev_data));
 
     Ok(())

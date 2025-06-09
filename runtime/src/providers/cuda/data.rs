@@ -1,14 +1,14 @@
 use crate::core::device_service::DeviceData;
 use crate::core::error::{InternalError, Result};
 use cudarc::driver::sys::CUdeviceptr;
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 pub struct CudaData {
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     ptr: CUdeviceptr,
     len: usize,
     dtype: DataType,
@@ -19,10 +19,11 @@ impl CudaData {
     where
         T: DataTypeMap,
     {
-        let device = dev_data.device();
+        // Todo: For now we assume everything is in the default stream.
+        let device = dev_data.context().default_stream();
         let len = dev_data.len();
         Self {
-            device,
+            stream: device,
             ptr: dev_data.leak(),
             len,
             dtype: T::data_type(),
@@ -40,7 +41,7 @@ impl CudaData {
                 self.dtype
             );
         }
-        let slice = unsafe { self.device.upgrade_device_ptr::<T>(self.ptr, self.len) };
+        let slice = unsafe { self.stream.upgrade_device_ptr::<T>(self.ptr, self.len) };
 
         DataView {
             slice: Some(slice),
@@ -59,7 +60,7 @@ impl CudaData {
                 self.dtype
             );
         }
-        let slice = unsafe { self.device.upgrade_device_ptr::<T>(self.ptr, self.len) };
+        let slice = unsafe { self.stream.upgrade_device_ptr::<T>(self.ptr, self.len) };
 
         DataViewMut {
             slice: Some(slice),
@@ -80,8 +81,9 @@ impl CudaData {
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     {
-        let dev = self.device.clone();
-        dev.memset_zeros(self.data_mut::<T>().as_mut())
+        let stream = self.stream.clone();
+        stream
+            .memset_zeros(self.data_mut::<T>().as_mut())
             .map_err(|e| InternalError::Device { error: e.into() })?;
         Ok(())
     }
@@ -92,13 +94,13 @@ impl Drop for CudaData {
         unsafe {
             match self.dtype {
                 DataType::Float => {
-                    let _dev_data = self.device.upgrade_device_ptr::<f32>(self.ptr, self.len);
+                    let _dev_data = self.stream.upgrade_device_ptr::<f32>(self.ptr, self.len);
                 }
                 DataType::Int32 => {
-                    let _dev_data = self.device.upgrade_device_ptr::<i32>(self.ptr, self.len);
+                    let _dev_data = self.stream.upgrade_device_ptr::<i32>(self.ptr, self.len);
                 }
                 DataType::Int64 => {
-                    let _dev_data = self.device.upgrade_device_ptr::<i64>(self.ptr, self.len);
+                    let _dev_data = self.stream.upgrade_device_ptr::<i64>(self.ptr, self.len);
                 }
                 dtype => unimplemented!("CudaDevData::drop unimplemented for `{dtype:?}`!"),
             }

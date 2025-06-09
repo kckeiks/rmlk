@@ -1,10 +1,10 @@
 use crate::error::Result;
 use cudarc::cudnn::{sys, ActivationForward, Cudnn, CudnnDataType};
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
 pub(crate) fn compute<T>(
-    device: Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,
     x_shape: &[i32],
@@ -17,7 +17,7 @@ pub(crate) fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    let cudnn = Cudnn::new(device.clone())?;
+    let cudnn = Cudnn::new(stream.clone())?;
 
     let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 

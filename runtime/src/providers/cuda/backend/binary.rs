@@ -5,9 +5,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{
-    CudaDevice, CudaFunction, CudaSlice, DeviceRepr, DeviceSlice, ValidAsZeroBits,
-};
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::{DataTypeMap, Op};
@@ -16,7 +14,7 @@ use std::sync::Arc;
 
 pub unsafe fn compute<D, T>(
     op: &'static str,
-    device: Arc<CudaDevice>,
+    stream: Arc<CudaStream>,
     f: CudaFunction,
     ctx: &mut Context<Cuda>,
 ) -> Result<()>
@@ -61,7 +59,7 @@ where
         drop(c_dev_data_ref);
 
         if need_to_alloc_dev_data {
-            let c_dev_data = device
+            let c_dev_data = stream
                 .alloc_zeros::<D>(c.shape().iter().copied().product::<usize>())
                 .map_err(rmlk_cuda::Error::from)?;
             c.set_dev_data(CudaData::new(c_dev_data));
@@ -96,7 +94,7 @@ where
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
     T::execute::<D>(
-        device,
+        stream,
         f,
         rank,
         info_buffer,
@@ -151,7 +149,7 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
 
 pub trait BinaryKernel {
     fn execute<T>(
-        device: Arc<CudaDevice>,
+        stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
