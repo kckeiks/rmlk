@@ -1,7 +1,6 @@
 use crate::attributes::gemm::GemmAttributes;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
-use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
 use cudarc::cudnn::CudnnDataType;
@@ -14,6 +13,7 @@ use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
+use crate::providers::cuda::backend::common;
 
 pub struct GemmBackend {
     stream: Arc<CudaStream>,
@@ -166,40 +166,14 @@ impl GemmBackend {
         debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
         debug!("[c][gemm][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
-        let output_size = y.shape().iter().product();
-
         let a_dev_data_ref = a.try_dev_data_ptr()?;
         let a_dev_data = a_dev_data_ref.data::<D>();
 
         let b_dev_data_ref = b.try_dev_data_ptr()?;
         let b_dev_data = b_dev_data_ref.data::<D>();
 
-        // Allocate device data for the tensor if we haven't done it yet
-        // or if the existing allocated data has a different size.
-        {
-            let mut c = ctx.get_output(0)?;
-            let mut c_dev_data_ref = c.dev_data_ptr_mut();
-            let need_to_alloc_dev_data = c_dev_data_ref.is_none()
-                || c_dev_data_ref
-                    .as_ref()
-                    .map(|data| data.data::<D>().len() != output_size)
-                    .unwrap_or(true);
-
-            if !need_to_alloc_dev_data {
-                c_dev_data_ref.as_mut().expect("").zero::<D>()?
-            }
-
-            // We need to remove this immutable reference so we can mutate `y`.
-            drop(c_dev_data_ref);
-
-            if need_to_alloc_dev_data {
-                let c_dev_data = self
-                    .stream
-                    .alloc_zeros::<D>(output_size)
-                    .map_err(rmlk_cuda::Error::from)?;
-                c.set_dev_data(CudaData::new(c_dev_data));
-            };
-        }
+        let output_tensor = ctx.get_output(0)?;
+        common::init_tensor_device_data::<D>(&self.stream, output_tensor)?;
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
