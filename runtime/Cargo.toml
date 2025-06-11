@@ -20,6 +20,7 @@ rmlk-cuda = { path = "../cuda" }
 serde = { version = "1.0.203", features = ["derive"] }
 
 [dev-dependencies]
+approx = "0.5"
 image = "0.24"
 serde_json = "1.0"
 

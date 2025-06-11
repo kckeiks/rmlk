@@ -111,6 +111,10 @@ pub enum InternalError {
     UnsupportedOp {
         op: Op,
     },
+    UnsupportedInputs {
+        op: Op,
+        message: String,
+    },
     UnsupportedOpForDataType {
         op: Op,
         dtype: DataType,
@@ -218,6 +222,9 @@ impl Display for InternalError {
                     f,
                     "expected buffer of size `{expected}` instead of `{actual}`"
                 )
+            }
+            InternalError::UnsupportedInputs { op, message } => {
+                write!(f, "unsupported inputs for `{op:?}`: {message}")
             }
             InternalError::UnknownShapeBuffer { index } => {
                 write!(f, "unknown buffer given index `{:?}`", index)

@@ -8,4 +8,5 @@ pub mod gemm;
 pub mod pooling;
 pub mod reduce_mean;
 pub mod shape;
+pub mod softmax;
 pub mod transpose;

@@ -34,6 +34,13 @@ mod cuda {
     mod slice_basic_3d;
     mod slice_basic_3d_neg;
     mod slice_basic_empty_output;
+    mod softmax_chan_axis_4d;
+    mod softmax_large;
+    mod softmax_last_axis_2d;
+    mod softmax_last_axis_3d;
+    mod softmax_mask_with_large_negs;
+    mod softmax_small;
+    mod softmax_two_head_uneq_logits;
     mod transpose_validate_data;
     mod transpose_validate_shape;
     mod unsqueeze_any_order;

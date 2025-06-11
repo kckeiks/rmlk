@@ -17,6 +17,7 @@ use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::slice::SliceBackend;
+use crate::providers::cuda::softmax::SoftmaxBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
 use crate::providers::cuda::transpose::TransposeBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
@@ -94,6 +95,7 @@ impl DeviceService for Cuda {
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.stream)),
             Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.stream.clone())),
             Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.stream)),
+            Op::Softmax => CudaKernel::Softmax(SoftmaxBackend::new(&self.stream)),
             Op::Sqrt => {
                 let kernel = self.load_kernel(op, dtype)?;
                 CudaKernel::Sqrt(SqrtBackend::new(&self.stream, kernel))

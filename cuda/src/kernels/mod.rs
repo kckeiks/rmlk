@@ -13,6 +13,7 @@ pub mod reduce_mean;
 pub mod relu;
 pub mod scatter_nd;
 pub mod sigmoid;
+pub mod softmax;
 pub mod sqrt;
 pub mod trilu;
 pub mod unary;
