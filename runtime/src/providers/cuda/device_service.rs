@@ -26,6 +26,7 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
+use crate::providers::cuda::matmul::MatMulBackend;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,
@@ -87,6 +88,7 @@ impl DeviceService for Cuda {
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.stream.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
+            Op::MatMul => CudaKernel::MatMul(MatMulBackend::new(&self.stream)),
             Op::ReduceMean => {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone(), f))

@@ -1,6 +1,7 @@
 use crate::attributes::gemm::GemmAttributes;
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cublas::StridedBatchedConfig;
 use cudarc::cudnn::CudnnDataType;
@@ -13,7 +14,6 @@ use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
-use crate::providers::cuda::backend::common;
 
 pub struct GemmBackend {
     stream: Arc<CudaStream>,

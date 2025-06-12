@@ -24,6 +24,7 @@ mod cuda {
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;
+    mod matmul_basic;
     mod range_basic;
     mod reduce_mean_simple;
     mod relu_basic;
