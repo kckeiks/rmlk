@@ -6,13 +6,14 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
+use rmlk_cuda::kernels::gemm;
 use rmlk_cuda::kernels::gemm::GemmParams;
-use rmlk_cuda::kernels::{gemm};
 use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
 
+#[derive(Debug)]
 enum Promoted {
     Left,
     Right,
@@ -30,7 +31,9 @@ pub struct MatMulBackend {
 
 impl MatMulBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
-        Self { stream: stream.clone() }
+        Self {
+            stream: stream.clone(),
+        }
     }
 }
 
@@ -67,7 +70,7 @@ impl MatMulBackend {
 
         let (promoted_b, batch_b, b_2d_shape, b_2d_stride) = if b_rank == 1 {
             (true, 1, [b_shape[0], 1], [1, 1])
-        } else if a_rank == 2 {
+        } else if b_rank == 2 {
             (false, 1, [b_shape[0], b_shape[1]], [b_shape[1], 1])
         } else {
             let batch = b_shape[..b_rank - 2].iter().product::<usize>();
@@ -91,16 +94,20 @@ impl MatMulBackend {
             return Err(InternalError::InvalidInput {
                 input: 0,
                 op: Op::MatMul,
-                message: "matrices are not compatible for the op".to_string(),
+                message: format!(
+                    "matrices are not compatible for the op: A={a_2d_shape:?}, B={b_2d_shape:?}"
+                ),
             });
         }
 
-        if batch_a != batch_b || (batch_a != 1 && batch_b != 1) {
+        if batch_a != batch_b && batch_a != 1 && batch_b != 1 {
             // Todo: we need a better error.
             return Err(InternalError::InvalidInput {
                 input: 0,
                 op: Op::MatMul,
-                message: "cannot broadcast batch dimension".to_string(),
+                message: format!(
+                    "cannot broadcast batch dimensions batch A `{batch_a}` and batch B `{batch_b}`"
+                ),
             });
         }
 
@@ -128,7 +135,7 @@ impl MatMulBackend {
             let a = ctx.get_input(0)?;
             let b = ctx.get_input(1)?;
 
-            if params.gemm.b == 1 && (a.shape().len() >= 3 || b.shape().len() >= 3) {
+            if a.shape().len() >= 3 || b.shape().len() >= 3 {
                 true
             } else {
                 false
@@ -195,20 +202,33 @@ impl MatMulBackend {
         let b = ctx.get_input(1)?;
         let y = ctx.get_output(0)?;
 
-        debug!("[a][gemm][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-        debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-        debug!("[c][gemm][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!(
+            "[a][matmul][shape={:?}][stride=[{:?}]",
+            a.shape(),
+            a.stride()
+        );
+        debug!(
+            "[b][matmul][shape={:?}][stride=[{:?}]",
+            b.shape(),
+            b.stride()
+        );
+        debug!(
+            "[y][matmul][shape={:?}][stride=[{:?}]",
+            y.shape(),
+            y.stride()
+        );
 
-        let a_broadcast_slice = if params.gemm.b > 1 && a.shape().len() < 3 {
-            let size = a.shape().iter().product::<usize>();
-            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * size)?;
+        let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
+        let a_size = a.shape().iter().product::<usize>();
+        let a_broadcast_slice = if params.gemm.b > 1 && a_expected_size != a_size {
+            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * a_size)?;
             for batch_i in 0..params.gemm.b {
                 let a_dev_data_ref = a.try_dev_data_ptr()?;
                 let a_dev_data = a_dev_data_ref.data::<D>();
-                debug_assert_eq!(size, a_dev_data.len());
+                debug_assert_eq!(a_size, a_dev_data.len());
                 self.stream.memcpy_dtod(
                     a_dev_data.as_ref(),
-                    &mut slice.slice_mut(batch_i * size..batch_i * size + size),
+                    &mut slice.slice_mut(batch_i * a_size..batch_i * a_size + a_size),
                 )?;
             }
 
@@ -217,16 +237,17 @@ impl MatMulBackend {
             None
         };
 
-        let b_broadcast_slice = if params.gemm.b > 1 && b.shape().len() < 3 {
-            let size = b.shape().iter().product::<usize>();
-            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * size)?;
+        let b_expected_size = params.gemm.b * params.gemm.matrix_b_shape.iter().product::<usize>();
+        let b_size = b.shape().iter().product::<usize>();
+        let b_broadcast_slice = if params.gemm.b > 1 && b_expected_size != b_size {
+            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * b_size)?;
             for batch_i in 0..params.gemm.b {
                 let b_dev_data_ref = b.try_dev_data_ptr()?;
                 let b_dev_data = b_dev_data_ref.data::<D>();
-                debug_assert_eq!(size, b_dev_data.len());
+                debug_assert_eq!(b_size, b_dev_data.len());
                 self.stream.memcpy_dtod(
                     b_dev_data.as_ref(),
-                    &mut slice.slice_mut(batch_i * size..batch_i * size + size),
+                    &mut slice.slice_mut(batch_i * b_size..batch_i * b_size + b_size),
                 )?;
             }
 
@@ -322,7 +343,7 @@ impl MatMulBackend {
         match dtype {
             DataType::Float => self.compute_matmul::<f32>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Conv,
+                op: Op::MatMul,
                 dtype,
             }),
         }

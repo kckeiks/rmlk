@@ -7,6 +7,10 @@ use std::ops::AddAssign;
 pub fn compute_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let ndims = shape.len();
 
+    if ndims == 0 {
+        return;
+    }
+
     debug_assert_eq!(ndims, stride.len());
 
     stride[ndims - 1] = T::one();

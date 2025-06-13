@@ -12,6 +12,7 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
+use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
@@ -26,7 +27,6 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::matmul::MatMulBackend;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,

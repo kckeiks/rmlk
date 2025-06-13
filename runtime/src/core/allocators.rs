@@ -191,11 +191,11 @@ impl BufferArena {
     }
 
     pub fn alloc(&mut self, size: usize) -> Result<usize> {
-        if size == 0 {
-            return Err(InternalError::InvalidMemoryAllocation {
-                message: "cannot allocate a buffer of size `0`".to_string(),
-            });
-        }
+        // if size == 0 {
+        //     return Err(InternalError::InvalidMemoryAllocation {
+        //         message: "cannot allocate a buffer of size `0`".to_string(),
+        //     });
+        // }
 
         let new_len = self.current + size + Self::LEN_HEADER_SIZE;
 

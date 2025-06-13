@@ -18,7 +18,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "b",
         "dtype": "float",
-        "shape": [3, 4]
+        "shape": [2, 3, 2]
       }
     },
     {
@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "matmul(a,b)",
         "dtype": "float",
-        "shape": [2, 4]
+        "shape": [2, 2, 2]
       }
     },
     {
@@ -50,19 +50,12 @@ fn test_run() {
     let input: HashMap<String, Value> = [
         (
             "a".to_string(),
-            vec![
-                1.0, 2.0, 3.0, // row 0
-                4.0, 5.0, 6.0, // row 1
-            ]
-            .try_into()
-            .unwrap(),
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0].try_into().unwrap(),
         ),
         (
             "b".to_string(),
             vec![
-                7.0, 8.0, 9.0, 10.0, // row 0
-                11.0, 12.0, 13.0, 14.0, // row 1
-                15.0, 16.0, 17.0, 18.0, // row 2
+                7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
             ]
             .try_into()
             .unwrap(),
@@ -73,6 +66,6 @@ fn test_run() {
     let data: Vec<f32> = output.remove("matmul(a,b)").unwrap().try_into().unwrap();
     assert_eq!(
         data,
-        vec![74.0, 80.0, 86.0, 92.0, 173.0, 188.0, 203.0, 218.0]
+        vec![58.0, 64.0, 139.0, 154.0, 94.0, 100.0, 229.0, 244.0]
     );
 }
