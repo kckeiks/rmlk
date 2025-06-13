@@ -16,6 +16,7 @@ fn main() {
         "src/ptx/mul.cu",
         "src/ptx/neg.cu",
         "src/ptx/reduce_mean.cu",
+        "src/ptx/pow.cu",
         "src/ptx/trilu.cu",
         "src/ptx/scatter_nd.cu",
         "src/ptx/sin.cu",

@@ -8,6 +8,7 @@ pub const GREATER: &str = include_str!(concat!(env!("OUT_DIR"), "/greater.ptx"))
 pub const MUL: &str = include_str!(concat!(env!("OUT_DIR"), "/mul.ptx"));
 pub const NEG: &str = include_str!(concat!(env!("OUT_DIR"), "/neg.ptx"));
 pub const REDUCE_MEAN: &str = include_str!(concat!(env!("OUT_DIR"), "/reduce_mean.ptx"));
+pub const POW: &str = include_str!(concat!(env!("OUT_DIR"), "/pow.ptx"));
 pub const TRILU: &str = include_str!(concat!(env!("OUT_DIR"), "/trilu.ptx"));
 pub const SCATTER_ND: &str = include_str!(concat!(env!("OUT_DIR"), "/scatter_nd.ptx"));
 pub const SIN: &str = include_str!(concat!(env!("OUT_DIR"), "/sin.ptx"));
