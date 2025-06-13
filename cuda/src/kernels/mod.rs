@@ -15,6 +15,7 @@ pub mod scatter_nd;
 pub mod sigmoid;
 pub mod softmax;
 pub mod sqrt;
+mod sub;
 pub mod trilu;
 pub mod unary;
 pub mod whereop;
