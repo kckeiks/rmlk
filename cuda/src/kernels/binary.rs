@@ -36,38 +36,7 @@ pub unsafe fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    assert_eq!(3 * ndims, info_buffer.len());
-
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let mut info_ptr = stream.alloc(info_buffer.len())?;
-    stream.memcpy_htod(info_buffer, &mut info_ptr)?;
-
-    let elem_count: usize = info_buffer[..ndims].iter().product();
-
-    assert_eq!(elem_count, c.len());
-
-    let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
-
-    let config = LaunchConfig {
-        grid_dim: (num_blocks as u32, 1, 1),
-        block_dim: (num_threads as u32, 1, 1),
-        shared_mem_bytes: 0,
-    };
-
-    unsafe {
-        stream
-            .launch_builder(&func)
-            .arg(&elem_count)
-            .arg(&ndims)
-            .arg(&info_ptr)
-            .arg(a)
-            .arg(b)
-            .arg(c)
-            .launch(config)?;
-    }
-
-    Ok(())
+    compute_with_types::<T, T, T>(stream, func, ndims, info_buffer, a, b, c)
 }
 
 pub unsafe fn compute_with_diff_output<I, O>(
