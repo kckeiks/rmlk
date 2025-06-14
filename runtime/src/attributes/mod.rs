@@ -7,6 +7,7 @@ pub mod gather;
 pub mod gemm;
 pub mod pooling;
 pub mod reduce_mean;
+pub mod scatter_nd;
 pub mod shape;
 pub mod softmax;
 pub mod transpose;

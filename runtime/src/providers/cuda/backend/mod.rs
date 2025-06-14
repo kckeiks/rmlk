@@ -15,6 +15,7 @@ pub mod max_pool;
 pub mod range;
 pub mod reduce_mean;
 mod relu;
+mod scatter_nd;
 pub mod shape;
 pub mod sigmoid;
 pub mod slice;

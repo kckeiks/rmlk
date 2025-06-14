@@ -9,7 +9,8 @@
     - The update.shape = indices.shape[0: indices.rank - 1] ++ data.shape[indices.shape[-1] : data.rank].
     - If indices.rank >= 2, the parameter num_idx_tuples must be the product of the dimensions in
       indices.shape[0:indices.rank - 1]. Otherwise, it must be 1.
-    - No negative indices.
+    - Negative indices are allowed; a value -s is interpreted as dim + (-s).
+      After adjustment every index satisfies 0 ≤ idx < dim.
     - The output = data.
 
     Note: if multiple entries in indices refer to the same slice in data,
@@ -23,18 +24,19 @@ extern "C" __global__ void FORWARD( \
     const size_t indices_rank,   /* The rank of indices (must be > 0).                                                */\
     const size_t updates_rank,   /* The rank of updates (must be = indices.rank + data.rank - indices.shape[-1] - 1). */\
     const size_t *info,          /* The shape and stride of a and b.                                                  */\
-    const size_t *indices,       /* The indices tensor data.                                                          */\
+    const int64_t *indices,      /* The indices tensor data.                                                          */\
     const TYPENAME *updates,     /* The updates tensor data.                                                          */\
     TYPENAME *output,            /* The output data tensor.                                                           */\
     int *error                   /* Flag to indicate an error.                                                        */\
 ) { \
     if (*error) return;\
     \
-    const size_t *data_stride = info;\
-    const size_t *indices_shape = info + data_rank;\
-    const size_t *indices_stride = info + data_rank + indices_rank;\
-    const size_t *updates_shape = info + data_rank + 2 * indices_rank;\
-    const size_t *updates_stride = info + data_rank + 2 * indices_rank + updates_rank;\
+    const size_t *data_shape = info;\
+    const size_t *data_stride = info + data_rank;\
+    const size_t *indices_shape = info + 2 * data_rank;\
+    const size_t *indices_stride = info + 2 * data_rank + indices_rank;\
+    const size_t *updates_shape = info + 2 *data_rank + 2 * indices_rank;\
+    const size_t *updates_stride = info + 2 * data_rank + 2 * indices_rank + updates_rank;\
     const size_t index_tuple_size = indices_rank > 1 ? indices_shape[indices_rank - 1] : 1;\
     const size_t num_prefix_dims = indices_rank > 1 ? indices_rank - 1 : 1;\
     for (unsigned int thread_idx = blockIdx.x * blockDim.x + threadIdx.x; thread_idx < num_idx_tuples; thread_idx += blockDim.x * gridDim.x) {\
@@ -48,7 +50,19 @@ extern "C" __global__ void FORWARD( \
         \
         size_t data_offset = 0;\
         for(int i = 0; i < index_tuple_size; i++) {\
-            data_offset += indices[indices_offset + i] * data_stride[i];\
+            int64_t data_idx = indices[indices_offset + i]; \
+            int64_t dim = static_cast<int64_t>(data_shape[i]); \
+            \
+            if (data_idx < 0) { \
+                data_idx = data_idx + dim; \
+            } \
+            \
+            if (data_idx < 0 || data_idx >= dim) { \
+                *error = 1; \
+                return; \
+            } \
+            \
+            data_offset += static_cast<size_t>(data_idx) * data_stride[i];\
         }\
         \
         linear_idx = thread_idx;\

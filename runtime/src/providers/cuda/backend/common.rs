@@ -1,6 +1,7 @@
 use crate::core::error::Result;
-use crate::core::Tensor;
+use crate::core::{Context, Tensor};
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
@@ -49,4 +50,34 @@ where
     tensor.set_dev_data(CudaData::new(dev_data));
 
     Ok(())
+}
+
+pub fn copy_tensor_dev_data<T>(
+    stream: &Arc<CudaStream>,
+    src: &Tensor<CudaData>,
+    dst: &Tensor<CudaData>,
+) -> Result<()>
+where
+    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+{
+    let src_dev_ptr = src.try_dev_data_ptr()?;
+    let src = src_dev_ptr.data::<T>();
+
+    let mut dst_dev_ptr = dst.try_dev_data_ptr_mut()?;
+    let mut dst = dst_dev_ptr.data_mut::<T>();
+
+    stream.memcpy_dtod(src.as_ref(), dst.as_mut())?;
+
+    Ok(())
+}
+
+pub fn copy_tensor_shape(
+    ctx: &mut Context<Cuda>,
+    src: Tensor<CudaData>,
+    dst: Tensor<CudaData>,
+) -> Result<()> {
+    let src_id = src.src_id();
+    let dst_id = dst.dst_id();
+    ctx.execution_state_mut()
+        .copy_shape_from_within(src_id, dst_id)
 }

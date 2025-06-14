@@ -66,6 +66,13 @@ impl Attribute {
             _ => None,
         }
     }
+
+    pub fn string(&self) -> Option<&Vec<u8>> {
+        match &self.ty {
+            AttributeType::String(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 impl TryFrom<AttributeProto<'_>> for Attribute {

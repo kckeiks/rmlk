@@ -5,35 +5,6 @@ use cudarc::driver::{
     ValidAsZeroBits,
 };
 use std::sync::Arc;
-
-pub const MODULE_NAME: &str = "scatter_nd";
-pub const FWD_FN_NAMES: &[&str] = &[
-    "scatter_nd_fwd_f16",
-    "scatter_nd_add_fwd_f16",
-    "scatter_nd_mul_fwd_f16",
-    "scatter_nd_max_fwd_f16",
-    "scatter_nd_min_fwd_f16",
-    "scatter_nd_fwd_f32",
-    "scatter_nd_add_fwd_f32",
-    "scatter_nd_mul_fwd_f32",
-    "scatter_nd_max_fwd_f32",
-    "scatter_nd_min_fwd_f32",
-    "scatter_nd_fwd_f64",
-    "scatter_nd_add_fwd_f64",
-    "scatter_nd_mul_fwd_f64",
-    "scatter_nd_max_fwd_f64",
-    "scatter_nd_min_fwd_f64",
-    "scatter_nd_fwd_i32",
-    "scatter_nd_add_fwd_i32",
-    "scatter_nd_mul_fwd_i32",
-    "scatter_nd_max_fwd_i32",
-    "scatter_nd_min_fwd_i32",
-    "scatter_nd_fwd_i64",
-    "scatter_nd_add_fwd_i64",
-    "scatter_nd_mul_fwd_i64",
-    "scatter_nd_max_fwd_i64",
-    "scatter_nd_min_fwd_i64",
-];
 pub const PTX_SRC: &str = SCATTER_ND;
 
 #[derive(Debug, Clone, Copy)]
@@ -126,7 +97,7 @@ pub unsafe fn compute<T>(
     indices_rank: usize,
     updates_rank: usize,
     info: &[usize],
-    indices: &CudaSlice<usize>,
+    indices: &CudaSlice<i64>,
     updates: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
     error: &mut CudaSlice<i32>,
@@ -175,7 +146,7 @@ where
     );
 
     // The CUDA kernel does not need the data's shape.
-    let info = stream.memcpy_stod(&info[data_rank..])?;
+    let info = stream.memcpy_stod(info)?;
 
     let num_threads = 128;
     let num_blocks = (num_idx_tuples + num_threads - 1) / num_threads;
@@ -213,6 +184,34 @@ pub fn load_kernel(
     module.load_function(kernel_name.into()).map_err(Into::into)
 }
 
+pub fn create_info_buffer(
+    data_shape: &[usize],
+    data_stride: &[usize],
+    indices_shape: &[usize],
+    indices_stride: &[usize],
+    updates_shape: &[usize],
+    updates_stride: &[usize],
+    info_buffer: &mut [usize],
+) {
+    let data_rank = data_shape.len();
+    let indices_rank = indices_shape.len();
+    let updates_rank = updates_shape.len();
+
+    debug_assert_eq!(
+        info_buffer.len(),
+        2 * data_rank + 2 * indices_rank + 2 * updates_rank
+    );
+
+    info_buffer[..data_rank].copy_from_slice(data_shape);
+    info_buffer[data_rank..2 * data_rank].copy_from_slice(data_stride);
+    info_buffer[2 * data_rank..2 * data_rank + indices_rank].copy_from_slice(indices_shape);
+    info_buffer[2 * data_rank + indices_rank..2 * data_rank + 2 * indices_rank]
+        .copy_from_slice(indices_stride);
+    info_buffer[2 * data_rank + 2 * indices_rank..2 * data_rank + 2 * indices_rank + updates_rank]
+        .copy_from_slice(updates_shape);
+    info_buffer[2 * data_rank + 2 * indices_rank + updates_rank..].copy_from_slice(updates_stride);
+}
+
 #[cfg(test)]
 mod test {
     use crate::kernels::scatter_nd::{compute, load_kernel, ScatterNdKernel};
@@ -233,16 +232,15 @@ mod test {
         let updates_rank = updates_shape.len();
         let mut info_buffer = vec![0usize; 2 * data_rank + 2 * indices_rank + 2 * updates_rank];
 
-        info_buffer[..data_rank].copy_from_slice(data_shape);
-        info_buffer[data_rank..2 * data_rank].copy_from_slice(data_stride);
-        info_buffer[2 * data_rank..2 * data_rank + indices_rank].copy_from_slice(indices_shape);
-        info_buffer[2 * data_rank + indices_rank..2 * data_rank + 2 * indices_rank]
-            .copy_from_slice(indices_stride);
-        info_buffer
-            [2 * data_rank + 2 * indices_rank..2 * data_rank + 2 * indices_rank + updates_rank]
-            .copy_from_slice(updates_shape);
-        info_buffer[2 * data_rank + 2 * indices_rank + updates_rank..]
-            .copy_from_slice(updates_stride);
+        super::create_info_buffer(
+            data_shape,
+            data_stride,
+            indices_shape,
+            indices_stride,
+            updates_shape,
+            updates_stride,
+            &mut info_buffer,
+        );
 
         info_buffer
     }
@@ -250,7 +248,7 @@ mod test {
     fn run_scatter_nd_test(
         data_shape: Vec<usize>,
         indices_shape: Vec<usize>,
-        indices_data: Vec<usize>,
+        indices_data: Vec<i64>,
         updates_shape: Vec<usize>,
         updates_data: Vec<f32>,
         expected_output: Vec<f32>,
