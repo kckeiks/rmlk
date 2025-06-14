@@ -70,6 +70,68 @@ where
     Ok(())
 }
 
+pub unsafe fn compute_with_diff_output<I, O>(
+    stream: Arc<CudaStream>,
+    func: CudaFunction,
+    ndims: usize,
+    info_buffer: &[usize],
+    a: &CudaSlice<I>,
+    b: &CudaSlice<I>,
+    c: &mut CudaSlice<O>,
+) -> Result<()>
+where
+    I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    O: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+{
+    compute_with_types::<I, I, O>(stream, func, ndims, info_buffer, a, b, c)
+}
+
+pub unsafe fn compute_with_types<X, Y, O>(
+    stream: Arc<CudaStream>,
+    func: CudaFunction,
+    ndims: usize,
+    info_buffer: &[usize],
+    a: &CudaSlice<X>,
+    b: &CudaSlice<Y>,
+    c: &mut CudaSlice<O>,
+) -> Result<()>
+where
+    X: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    Y: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+{
+    assert_eq!(3 * ndims, info_buffer.len());
+
+    let mut info_ptr = stream.alloc(info_buffer.len())?;
+    stream.memcpy_htod(info_buffer, &mut info_ptr)?;
+
+    let elem_count: usize = info_buffer[..ndims].iter().product();
+
+    assert_eq!(elem_count, c.len());
+
+    let num_threads = 128;
+    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+
+    let config = LaunchConfig {
+        grid_dim: (num_blocks as u32, 1, 1),
+        block_dim: (num_threads as u32, 1, 1),
+        shared_mem_bytes: 0,
+    };
+
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&elem_count)
+            .arg(&ndims)
+            .arg(&info_ptr)
+            .arg(a)
+            .arg(b)
+            .arg(c)
+            .launch(config)?;
+    }
+
+    Ok(())
+}
+
 // Todo: update docs.
 /// Launches a CUDA kernel that performs an element-wise operation with broadcasting support.
 ///
