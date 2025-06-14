@@ -9,6 +9,7 @@ pub mod gemm;
 pub mod global_average_pool;
 pub mod max_pool;
 pub mod mul;
+pub mod pow;
 pub mod reduce_mean;
 pub mod relu;
 pub mod scatter_nd;
