@@ -15,19 +15,19 @@ impl EqualKernel {
         match self {
             EqualKernel::EqualFwdF16 => "equal_fwd_f16",
             EqualKernel::EqualFwdF32 => "equal_fwd_f32",
-            EqualKernel::EqualFwdF64  => "equal_fwd_f64",
-            EqualKernel::EqualFwdI32  => "equal_fwd_i32",
-            EqualKernel::EqualFwdI64  => "equal_fwd_i64",
+            EqualKernel::EqualFwdF64 => "equal_fwd_f64",
+            EqualKernel::EqualFwdI32 => "equal_fwd_i32",
+            EqualKernel::EqualFwdI64 => "equal_fwd_i64",
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use cudarc::driver::CudaContext;
     use crate::kernels::binary::{compute_with_diff_output, create_info_buffer};
     use crate::kernels::equal::{EqualKernel, PTX_SRC};
     use crate::utils;
+    use cudarc::driver::CudaContext;
 
     #[test]
     fn test_f32() {
@@ -63,7 +63,7 @@ mod test {
                 &y_on_dev,
                 &mut out_data,
             )
-                .unwrap();
+            .unwrap();
         }
 
         let result = stream.memcpy_dtov(&out_data).unwrap();

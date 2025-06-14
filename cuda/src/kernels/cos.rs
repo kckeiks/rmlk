@@ -3,17 +3,17 @@ use crate::ptx::COS;
 pub const PTX_SRC: &str = COS;
 
 pub enum CosKernel {
-    PowFwdF16,
-    PowFwdF32,
-    PowFwdF64,
+    CosFwdF16,
+    CosFwdF32,
+    CosFwdF64,
 }
 
 impl CosKernel {
     pub fn as_str(&self) -> &'static str {
         match self {
-            CosKernel::PowFwdF16 => "cos_fwd_f16",
-            CosKernel::PowFwdF32 => "cos_fwd_f32",
-            CosKernel::PowFwdF64 => "cos_fwd_f64",
+            CosKernel::CosFwdF16 => "cos_fwd_f16",
+            CosKernel::CosFwdF32 => "cos_fwd_f32",
+            CosKernel::CosFwdF64 => "cos_fwd_f64",
         }
     }
 }
@@ -41,7 +41,7 @@ mod test {
             ])
             .unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, CosKernel::PowFwdF32.as_str()).unwrap();
+        let f = utils::load_kernel_v2(&ctx, PTX_SRC, CosKernel::CosFwdF32.as_str()).unwrap();
 
         let output_shape = vec![2, 3];
         let mut out_data = stream
