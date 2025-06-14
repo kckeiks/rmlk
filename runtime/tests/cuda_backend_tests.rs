@@ -37,6 +37,7 @@ mod cuda {
     mod range_basic;
     mod reduce_mean_simple;
     mod relu_basic;
+    mod scatter_nd_basic;
     mod shape_axis;
     mod shape_simple;
     mod sigmoid_basic;

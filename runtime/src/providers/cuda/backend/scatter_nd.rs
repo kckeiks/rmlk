@@ -92,8 +92,8 @@ impl ScatterNdBackend {
 
             // We copy `data` into the output tensor.
             let data_tensor = ctx.get_input(0)?;
-            let output_tensor = ctx.get_output(0)?;
-            common::copy_tensor_dev_data::<T>(&self.stream, &data_tensor, &output_tensor)?;
+            let mut output_tensor = ctx.get_output(0)?;
+            common::copy_tensor_dev_data::<T>(&self.stream, &data_tensor, &mut output_tensor)?;
         }
 
         let data_tensor = ctx.get_input(0)?;
@@ -154,10 +154,21 @@ impl ScatterNdBackend {
             )?;
         }
 
+        let error_buf = scratch_alloc.allocate::<i32>(1)?;
+        self.stream.memcpy_dtoh(&error, error_buf)?;
+
+        if error_buf[0] != 0 {
+            return Err(InternalError::InvalidInput {
+                input: 0,
+                op: Op::ScatterND,
+                message: format!("Scatter ND error: {}", error_buf[0]),
+            })
+        }
+
         Ok(())
     }
 
-    pub fn compute<K>(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
+    pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {

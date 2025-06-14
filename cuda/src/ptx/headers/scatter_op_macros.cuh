@@ -80,7 +80,7 @@ extern "C" __global__ void FORWARD( \
         \
         for(int i = 0; i < slice_len; i++) {\
             if (data_offset + i >= data_len || *error) {\
-                *error = 1;\
+                *error = 2;\
                 return;\
             }\
             TYPENAME in = updates[updates_offset + i];\

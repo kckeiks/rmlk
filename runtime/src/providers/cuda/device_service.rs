@@ -16,6 +16,7 @@ use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
+use crate::providers::cuda::scatter_nd::ScatterNdBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::slice::SliceBackend;
 use crate::providers::cuda::softmax::SoftmaxBackend;
@@ -94,6 +95,7 @@ impl DeviceService for Cuda {
                 CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone(), f))
             }
             Op::Range => CudaKernel::Range(RangeBackend::new(&self.stream)),
+            Op::ScatterND => CudaKernel::ScatterNd(ScatterNdBackend::new(&self.stream)),
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.stream)),
             Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.stream.clone())),
             Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.stream)),

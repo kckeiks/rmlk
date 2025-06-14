@@ -15,7 +15,7 @@ pub mod max_pool;
 pub mod range;
 pub mod reduce_mean;
 mod relu;
-mod scatter_nd;
+pub mod scatter_nd;
 pub mod shape;
 pub mod sigmoid;
 pub mod slice;
@@ -37,6 +37,7 @@ use crate::providers::cuda::backend::cast::CastBackend;
 use crate::providers::cuda::backend::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::matmul::MatMulBackend;
+use crate::providers::cuda::backend::scatter_nd::ScatterNdBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
 use crate::providers::cuda::backend::sqrt::SqrtBackend;
 use crate::providers::cuda::backend::transpose::TransposeBackend;
@@ -71,6 +72,7 @@ pub enum CudaKernel {
     MatMul(MatMulBackend),
     Range(RangeBackend),
     ReduceMean(ReduceMeanBackend),
+    ScatterNd(ScatterNdBackend),
     Shape(ShapeBackend),
     Sigmoid(ActivationBackend),
     Slice(SliceBackend),
@@ -101,6 +103,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
             CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
+            CudaKernel::ScatterNd(kernel) => kernel.compute(ctx),
             CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
             CudaKernel::Sigmoid(kernel) => kernel.compute::<SigmoidKernel>(ctx),
             CudaKernel::Softmax(kernel) => kernel.compute(ctx),
