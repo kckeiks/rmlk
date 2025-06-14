@@ -24,3 +24,4 @@ mod sub;
 pub mod trilu;
 pub mod unary;
 pub mod whereop;
+pub mod sin;
