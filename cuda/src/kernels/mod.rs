@@ -3,6 +3,7 @@ pub mod add;
 pub mod binary;
 pub mod cast;
 pub mod conv;
+mod cos;
 pub mod div;
 pub mod expand;
 pub mod gemm;

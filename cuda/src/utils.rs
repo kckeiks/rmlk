@@ -95,6 +95,15 @@ pub fn load_kernel(ctx: &Arc<CudaContext>, op: Op, dtype: DataType) -> Result<Cu
     module.load_function(fwd_fn_name).map_err(Into::into)
 }
 
+pub fn load_kernel_v2(
+    ctx: &Arc<CudaContext>,
+    ptx_src: &str,
+    fn_name: &str,
+) -> Result<CudaFunction> {
+    let module = ctx.load_module(ptx_src.into())?;
+    module.load_function(fn_name).map_err(Into::into)
+}
+
 pub fn load_cast_kernel(ctx: &Arc<CudaContext>, kernel_name: CastKernel) -> Result<CudaFunction> {
     let module = ctx.load_module(cast::PTX_SRC.into())?;
     module
