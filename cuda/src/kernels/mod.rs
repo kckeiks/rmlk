@@ -22,3 +22,4 @@ pub mod trilu;
 pub mod unary;
 pub mod whereop;
 pub mod equal;
+pub mod greater;
