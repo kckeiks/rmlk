@@ -62,7 +62,11 @@ where
     let src_dev_ptr = src.try_dev_data_ptr()?;
     let src = src_dev_ptr.data::<T>();
 
-    let mut dev_data = unsafe { stream.alloc::<T>(src.len()).map_err(rmlk_cuda::Error::from)? };
+    let mut dev_data = unsafe {
+        stream
+            .alloc::<T>(src.len())
+            .map_err(rmlk_cuda::Error::from)?
+    };
     stream.memcpy_dtod(src.as_ref(), &mut dev_data)?;
     dst.set_dev_data(CudaData::new(dev_data));
 

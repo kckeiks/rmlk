@@ -7,6 +7,7 @@ pub mod concat;
 pub mod constant;
 pub mod constant_of_shape;
 pub mod conv;
+pub mod expand;
 pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
@@ -55,6 +56,7 @@ use crate::providers::cuda::softmax::SoftmaxBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
+use crate::providers::cuda::expand::ExpandBackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
@@ -64,6 +66,7 @@ pub enum CudaKernel {
     Constant(ConstantBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
+    Expand(ExpandBackend),
     Gather(GatherBackend),
     Gemm(GemmBackend),
     GlobalAveragePool(GlobalAverageBackend),
@@ -93,6 +96,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Constant(kernel) => kernel.compute(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
+            CudaKernel::Expand(kernel) => kernel.compute(ctx),
             CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),
             CudaKernel::Gemm(kernel) => kernel.compute::<gemm::ActiveKernel>(ctx),
             CudaKernel::GlobalAveragePool(kernel) => {

@@ -1,7 +1,8 @@
 use crate::ptx::EXPAND;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use std::sync::Arc;
 
@@ -13,6 +14,24 @@ pub const FWD_FN_NAMES: &[&'static str] = &[
     "expand_fwd_i32",
 ];
 pub const PTX_SRC: &str = EXPAND;
+
+pub enum ExpandKernel {
+    FwdF16,
+    FwdF32,
+    FwdF64,
+    FwdI32,
+}
+
+impl From<ExpandKernel> for &'static str {
+    fn from(kernel: ExpandKernel) -> Self {
+        match kernel {
+            ExpandKernel::FwdF16 => "expand_fwd_f16",
+            ExpandKernel::FwdF32 => "expand_fwd_f32",
+            ExpandKernel::FwdF64 => "expand_fwd_f64",
+            ExpandKernel::FwdI32 => "expand_fwd_i32",
+        }
+    }
+}
 
 pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
@@ -57,6 +76,14 @@ where
     };
 
     Ok(())
+}
+
+pub fn load_kernel(
+    ctx: &Arc<CudaContext>,
+    kernel_name: ExpandKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
 }
 
 #[cfg(test)]

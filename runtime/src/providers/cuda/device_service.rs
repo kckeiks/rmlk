@@ -28,6 +28,7 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
+use crate::providers::cuda::expand::ExpandBackend;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,
@@ -76,6 +77,7 @@ impl DeviceService for Cuda {
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.stream))
             }
+            Op::Expand => CudaKernel::Expand(ExpandBackend::new(&self.stream)),
             Op::Gather => CudaKernel::Gather(GatherBackend::new(self.stream.clone())),
             Op::Gemm => {
                 let f =
