@@ -12,6 +12,7 @@ use rmlk_cuda::kernels::scatter_nd;
 use rmlk_cuda::kernels::scatter_nd::ScatterNdKernel;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
+use log::debug;
 
 pub struct ScatterNdBackend {
     stream: Arc<CudaStream>,
@@ -137,6 +138,18 @@ impl ScatterNdBackend {
 
         // Todo: maybe we should preallocate this value since its size never changes.
         let mut error = self.stream.alloc_zeros::<i32>(1)?;
+        
+        #[cfg(debug_assertions)]
+        {
+            debug!("num_idx_tuple=num_idx_tuples={num_idx_tuples}");
+            debug!("data_rank={num_idx_tuples}");
+            debug!("indices_rank={indices_rank}");
+            debug!("updates_rank={updates_rank}");
+            debug!("info={info:?}");
+            debug!("indices size={}", indices_view.len());
+            debug!("updates size={}", updates_view.len());
+            debug!("output size={}", output_view.len());  
+        }
 
         unsafe {
             scatter_nd::compute(

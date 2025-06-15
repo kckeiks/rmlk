@@ -58,6 +58,7 @@ fn test_run() {
     let data: Vec<f32> = (0..48).map(|x| x as f32).collect();
     let indices: Vec<i64> = vec![
         0, 1,
+        2, 0,
         3, 2,
     ];
     let updates: Vec<f32> = vec![
