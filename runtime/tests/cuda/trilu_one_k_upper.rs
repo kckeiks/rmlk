@@ -10,36 +10,42 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "input",
         "dtype": "float",
-        "shape": [2, 1, 3]
+        "shape": [1, 3, 4]
       }
     },
     {
       "info": {
         "type": "value",
-        "name": "shape",
+        "name": "k",
         "dtype": "float",
-        "shape": [2, 4, 3]
+        "shape": []
       }
     },
     {
       "info": {
         "type": "value",
-        "name": "expand(input)",
+        "name": "trilu(input)",
         "dtype": "float",
-        "shape": [2, 4, 3]
+        "shape": [1, 3, 4]
       }
     },
     {
       "info": {
         "type": "op",
-        "name": "expand"
+        "name": "trilu",
+        "attributes": {
+            "upper": {
+                "type": "int",
+                "data": 1
+            }
+        }
       },
-      "input": ["input", "shape"],
-      "output": ["expand(input)"]
+      "input": ["input", "k"],
+      "output": ["trilu(input)"]
     }
   ],
-  "inputs": ["input", "shape"],
-  "outputs": ["expand(input)"],
+  "inputs": ["input", "k"],
+  "outputs": ["trilu(input)"],
   "tensors": []
 }
 "#;
@@ -50,16 +56,17 @@ fn test_run() {
     let input: HashMap<String, Value> = [
         (
             "input".to_string(),
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0].try_into().unwrap(),
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ]
+            .try_into()
+            .unwrap(),
         ),
-        ("shape".to_string(), vec![2i64, 4, 3].try_into().unwrap()),
+        ("k".to_string(), vec![1i64].try_into().unwrap()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("expand(input)").unwrap().try_into().unwrap();
-    let expected: Vec<f32> = vec![
-        1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 4.0, 5.0, 6.0,
-        4.0, 5.0, 6.0, 4.0, 5.0, 6.0,
-    ];
+    let data: Vec<f32> = output.remove("trilu(input)").unwrap().try_into().unwrap();
+    let expected = vec![0.0, 2.0, 3.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0, 0.0, 0.0, 12.0];
     assert_eq!(data, expected);
 }

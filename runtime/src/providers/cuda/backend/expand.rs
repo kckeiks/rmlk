@@ -1,6 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::error::Result;
 use crate::core::Context;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
@@ -11,7 +12,6 @@ use rmlk_cuda::kernels::expand::ExpandKernel;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
-use crate::providers::cuda::backend::common;
 
 pub struct ExpandBackend {
     stream: Arc<CudaStream>,
@@ -61,7 +61,8 @@ impl ExpandBackend {
             let shape_on_host = scratch_alloc.allocate::<i64>(shape_view.len())?;
             self.stream
                 .memcpy_dtoh(shape_view.as_ref(), shape_on_host)?;
-            let shape = scratch_alloc.allocate_and_convert_from_slice::<i64, usize>(shape_on_host)?;
+            let shape =
+                scratch_alloc.allocate_and_convert_from_slice::<i64, usize>(shape_on_host)?;
 
             let output_shape = scratch_alloc.allocate(rank)?;
 
@@ -73,15 +74,14 @@ impl ExpandBackend {
                         (a_id.into(), input_tensor.shape().to_vec()),
                         (b_id.into(), shape_tensor.shape().to_vec()),
                     ]
-                        .try_into()
-                        .expect("Small map so should succeed"),
+                    .try_into()
+                    .expect("Small map so should succeed"),
                     op: Op::Expand,
                 });
             }
-            
+
             output_shape
         };
-
 
         let output_tensor = ctx.get_output(0)?;
         let dst_id = output_tensor.dst_id();
@@ -98,16 +98,15 @@ impl ExpandBackend {
 
         let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
         let input_view = input_dev_ptr.data::<T>();
-        
+
         let output_tensor = ctx.get_output(0)?;
 
-        let input_rank =  input_tensor.shape().len();
-        let output_rank =  output_tensor.shape().len();
-        let info =
-            scratch_alloc.allocate(2 * input_rank + 2 * output_rank)?;
+        let input_rank = input_tensor.shape().len();
+        let output_rank = output_tensor.shape().len();
+        let info = scratch_alloc.allocate(2 * input_rank + 2 * output_rank)?;
         info[..input_rank].copy_from_slice(input_tensor.shape());
-        info[input_rank..2 *input_rank].copy_from_slice(input_tensor.stride());
-        info[2 * input_rank ..2 * input_rank + output_rank].copy_from_slice(output_tensor.shape());
+        info[input_rank..2 * input_rank].copy_from_slice(input_tensor.stride());
+        info[2 * input_rank..2 * input_rank + output_rank].copy_from_slice(output_tensor.shape());
         info[2 * input_rank + output_rank..].copy_from_slice(output_tensor.stride());
 
         let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;

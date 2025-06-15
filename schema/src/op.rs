@@ -124,6 +124,7 @@ impl FromStr for Op {
             "Sqrt" | "sqrt" => Self::Sqrt,
             "Sub" | "sub" => Self::Sub,
             "Transpose" | "transpose" => Self::Transpose,
+            "Trilu" | "trilu" => Self::Trilu,
             "Unsqueeze" | "unsqueeze" => Self::Unsqueeze,
             "Where" | "where" => Self::Where,
             op => panic!("We do not support operation {op}"),

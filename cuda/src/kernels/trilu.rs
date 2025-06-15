@@ -2,17 +2,30 @@ use crate::error::Result;
 use crate::ptx::TRILU;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use std::sync::Arc;
-pub const MODULE_NAME: &str = "trilu";
-pub const FWD_FN_NAMES: &[&'static str] = &[
-    "trilu_fwd_f16",
-    "trilu_fwd_f32",
-    "trilu_fwd_f64",
-    "trilu_fwd_i32",
-];
+
 pub const PTX_SRC: &str = TRILU;
+
+pub enum TriluKernel {
+    FwdF16,
+    FwdF32,
+    FwdF64,
+    FwdI32,
+}
+
+impl From<TriluKernel> for &'static str {
+    fn from(value: TriluKernel) -> Self {
+        match value {
+            TriluKernel::FwdF16 => "trilu_fwd_f16",
+            TriluKernel::FwdF32 => "trilu_fwd_f32",
+            TriluKernel::FwdF64 => "trilu_fwd_f64",
+            TriluKernel::FwdI32 => "trilu_fwd_i32",
+        }
+    }
+}
 
 pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
@@ -59,12 +72,17 @@ where
     Ok(())
 }
 
+pub fn load_kernel(ctx: &Arc<CudaContext>, kernel_name: TriluKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataTypeMap, Op};
+    use rmlk_schema::DataTypeMap;
 
     fn launch_trilu_test<T>(input: &[T], shape: &[usize], upper: bool, k: i64) -> Vec<T>
     where
@@ -75,7 +93,7 @@ mod tests {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
 
-        let func = utils::load_kernel(&ctx, Op::Trilu, T::data_type()).unwrap();
+        let func = load_kernel(&ctx, TriluKernel::FwdF32).unwrap();
 
         let mut strides = vec![0; 3];
         utils::calculate_stride(shape, &mut strides);

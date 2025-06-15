@@ -23,7 +23,7 @@ pub mod slice;
 pub mod softmax;
 pub mod sqrt;
 pub mod transpose;
-mod trilu;
+pub mod trilu;
 mod unary;
 pub mod unsqueeze;
 pub mod whereop;
@@ -45,6 +45,7 @@ use crate::providers::cuda::backend::transpose::TransposeBackend;
 use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
+use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
@@ -53,10 +54,10 @@ use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::sigmoid::SigmoidKernel;
 use crate::providers::cuda::slice::SliceBackend;
 use crate::providers::cuda::softmax::SoftmaxBackend;
+use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
-use crate::providers::cuda::expand::ExpandBackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
@@ -82,6 +83,7 @@ pub enum CudaKernel {
     Softmax(SoftmaxBackend),
     Sqrt(SqrtBackend),
     Transpose(TransposeBackend),
+    Trilu(TriluBackend),
     Unsqueeze(UnsqueezeBackend),
     Where(WhereBackend),
 }
@@ -114,6 +116,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Slice(kernel) => kernel.compute(ctx),
             CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),
             CudaKernel::Transpose(backend) => backend.compute(ctx),
+            CudaKernel::Trilu(backend) => backend.compute(ctx),
             CudaKernel::Unsqueeze(backend) => backend.compute(ctx),
             CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
         }

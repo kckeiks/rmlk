@@ -11,3 +11,4 @@ pub mod scatter_nd;
 pub mod shape;
 pub mod softmax;
 pub mod transpose;
+pub mod trilu;

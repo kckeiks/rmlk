@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::kernels::cast::CastKernel;
 use crate::kernels::pow::PowKernel;
-use crate::kernels::{add, cast, div, expand, mul, pow, reduce_mean, sqrt, trilu, whereop};
+use crate::kernels::{add, cast, div, expand, mul, pow, reduce_mean, sqrt, whereop};
 use cudarc::driver::{CudaContext, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
@@ -69,12 +69,6 @@ pub fn load_kernel(ctx: &Arc<CudaContext>, op: Op, dtype: DataType) -> Result<Cu
             reduce_mean::FWD_FN_NAMES,
             reduce_mean::MODULE_NAME,
             reduce_mean::PTX_SRC,
-        ),
-        Op::Trilu => (
-            trilu::FWD_FN_NAMES[dtype as usize],
-            trilu::FWD_FN_NAMES,
-            trilu::MODULE_NAME,
-            trilu::PTX_SRC,
         ),
         Op::Sqrt => (
             sqrt::FWD_FN_NAMES[dtype as usize],

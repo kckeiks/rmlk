@@ -1,59 +1,125 @@
-/*
-    for batch in 0..input.shape[0]:
-       batch_offset = batch * input.strides[0]
-       for row in 0..input.shape[1]:
-           row_offset = batch_offset +  row * input.strides[1]
+use crate::attributes;
+use crate::core::error::{InternalError, Result};
+use crate::core::Context;
+use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::Cuda;
+use crate::utils::FromBytes;
+use cudarc::cudnn::CudnnDataType;
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use num_traits::Num;
+use rmlk_cuda::kernels::trilu;
+use rmlk_cuda::kernels::trilu::TriluKernel;
+use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::sync::Arc;
 
-            if upper:
-               start = max(k + row, 0)
-               end = input.shape[2]
-            else:
-               start = 0
-               end = min(k + row + 1, input.shape[2])
+pub struct TriluBackend {
+    stream: Arc<CudaStream>,
+}
 
-           for col in start..end:
-               offset = row_offset +  col
-               output.data[offset] = input.data[offset]
+impl TriluBackend {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
+        Self {
+            stream: stream.clone(),
+        }
+    }
 
-   [ 1   2  3  4
-     5   6  7  8
-     9  10 11 12
-     13 14 15 16]
+    fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
+        let kernel_name = match dtype {
+            DataType::Float16 => TriluKernel::FwdF16,
+            DataType::Float => TriluKernel::FwdF32,
+            DataType::Double => TriluKernel::FwdF64,
+            DataType::Int32 => TriluKernel::FwdI32,
+            _ => {
+                return Err(InternalError::UnsupportedOpForDataType {
+                    op: Op::Trilu,
+                    dtype,
+                })
+            }
+        };
 
-     (1, 4, 4)
-     (16, 4, 1)
+        trilu::load_kernel(self.stream.context(), kernel_name).map_err(Into::into)
+    }
 
-     // Given thread_idx
+    fn get_k(&self, ctx: &Context<Cuda>) -> Result<i64> {
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+        match ctx.get_input(1) {
+            Ok(k_tensor) => {
+                let k_dev_ptr = k_tensor.try_dev_data_ptr()?;
+                let k_view = k_dev_ptr.data::<i64>();
+                let k = scratch_alloc.allocate(1)?;
+                self.stream.memcpy_dtoh(k_view.as_ref(), k)?;
+                Ok(k[0])
+            }
+            Err(_) => Ok(0),
+        }
+    }
 
-   offset = 0
-   tmp_i = thread_idx
-   for dim in 0..input.rank.rev():
-       i_dim = tmp_i % input.shape[dim]
-       offset += i_dim * input.strides[dim]
-       tmp_i /= input.shape[dim]
+    fn compute_trilu<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
+    {
+        let func = self.load_cuda_function(T::data_type())?;
 
-   offset = 0
-   tmp_i = thread_idx
+        let upper = match ctx.get_attributes() {
+            None => true,
+            Some(attr) => attributes::trilu::get_upper(&attr),
+        };
 
-   col = (tmp_i % input.shape[2])
-   offset += col * input.strides[2]
-   tmp_i /= input.shape[2]
+        let input_tensor = ctx.get_input(0)?;
+        let output_tensor = ctx.get_output(0)?;
+        let src_id = input_tensor.src_id();
+        let dst_id = output_tensor.dst_id();
+        ctx.execution_state_mut()
+            .copy_shape_from_within(src_id, dst_id)?;
 
-   row = (tmp_i % input.shape[1])
-   offset += row * input.strides[1]
-   tmp_i /= input.shape[1]
+        let input_tensor = ctx.get_input(0)?;
+        let rank = input_tensor.shape().len();
+        let input_data_size = input_tensor.shape().iter().product::<usize>();
 
-   batch = (tmp_i % input.shape[0])
-   offset += batch * input.strides[0]
-   tmp_i /= input.shape[0]
+        let output_data = self.stream.alloc_zeros::<T>(input_data_size)?;
 
-    if upper:
-       start = max(k + row, 0)
-       end = input.shape[2]
-    else:
-       start = 0
-       end = min(k + row + 1, input.shape[2])
+        let mut output_tensor = ctx.get_output(0)?;
+        output_tensor.set_dev_data(CudaData::new(output_data));
 
-    if col >= start && col < end:
-       output[offset] = input[offset]
-*/
+        let k = self.get_k(ctx)?;
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+        let info = scratch_alloc.allocate(2 * rank)?;
+        info[..rank].copy_from_slice(input_tensor.shape());
+        info[rank..].copy_from_slice(input_tensor.stride());
+
+        let input_ptr = input_tensor.try_dev_data_ptr()?;
+        let input_view = input_ptr.data::<T>();
+
+        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
+        let mut output_view = output_ptr.data_mut::<T>();
+
+        unsafe {
+            trilu::compute(
+                self.stream.clone(),
+                func,
+                upper,
+                k,
+                rank,
+                info,
+                input_view.as_ref(),
+                output_view.as_mut(),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float => self.compute_trilu::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedOpForDataType {
+                op: Op::Trilu,
+                dtype,
+            }),
+        }
+    }
+}

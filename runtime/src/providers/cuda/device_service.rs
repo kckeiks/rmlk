@@ -9,6 +9,7 @@ use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
@@ -22,13 +23,13 @@ use crate::providers::cuda::slice::SliceBackend;
 use crate::providers::cuda::softmax::SoftmaxBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
 use crate::providers::cuda::transpose::TransposeBackend;
+use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::expand::ExpandBackend;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,
@@ -107,6 +108,7 @@ impl DeviceService for Cuda {
                 CudaKernel::Sqrt(SqrtBackend::new(&self.stream, kernel))
             }
             Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.stream.clone())),
+            Op::Trilu => CudaKernel::Trilu(TriluBackend::new(&self.stream)),
             Op::Unsqueeze => CudaKernel::Unsqueeze(UnsqueezeBackend::new(&self.stream)),
             Op::Where => {
                 let f = self.load_kernel(op, dtype)?;

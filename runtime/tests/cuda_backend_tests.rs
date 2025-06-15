@@ -55,6 +55,10 @@ mod cuda {
     mod softmax_two_head_uneq_logits;
     mod transpose_validate_data;
     mod transpose_validate_shape;
+    mod trilu_k_zero_lower;
+    mod trilu_no_attribute;
+    mod trilu_no_k;
+    mod trilu_one_k_upper;
     mod unsqueeze_any_order;
     mod unsqueeze_end;
     mod unsqueeze_mid;
