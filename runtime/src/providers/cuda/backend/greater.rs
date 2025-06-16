@@ -1,10 +1,9 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
-use crate::providers::cuda::backend::binary::BinaryKernel;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_cuda::kernels::greater;
 use rmlk_cuda::kernels::greater::GreaterKernel;
@@ -45,7 +44,7 @@ impl GreaterBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { binary::compute::<D, bool, GreaterFunc>("greater", self.stream, func, ctx) }
+        unsafe { binary::compute::<D, D, bool>("greater", self.stream, func, ctx) }
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
@@ -55,31 +54,6 @@ impl GreaterBackend {
             DataType::Float => self.compute_greater::<f32>(ctx),
             DataType::Int64 => self.compute_greater::<i64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
-        }
-    }
-}
-
-pub struct GreaterFunc(());
-
-impl BinaryKernel for GreaterFunc {
-    fn execute<I, O>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        rank: usize,
-        info: &[usize],
-        a_dev_data: &CudaSlice<I>,
-        b_dev_data: &CudaSlice<I>,
-        c_dev_data: &mut CudaSlice<O>,
-    ) -> Result<()>
-    where
-        I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-        O: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        unsafe {
-            rmlk_cuda::kernels::binary::compute_with_types::<I, I, O>(
-                stream, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
-            )
-            .map_err(Into::into)
         }
     }
 }

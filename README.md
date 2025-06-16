@@ -11,7 +11,7 @@ Based on ONNX version: 1.13.1
 | `Expand`          | ✅ Done                       | Needs backend and more tes       |
 | `Trilu`           | ✅ Done                       | Needs backend and more tests     |
 | `ScatterND`       | ✅ Done                       | Needs backend and more tests     |
-| `Greater`         | 🛠️ In Progress              | Needs kernel, backend, and tests |
+| `Greater`         | ✅ Done                               | Needs kernel, backend, and tests |
 | `Equal`           | 🛠️ In Progress              | Needs kernel, backend, and tests |
 | `Sin`             | 🛠️ In Progress              | Needs kernel, backend, and tests |
 | `Cast`            | 🛠️ In Progress              | Needs backend and tests          |

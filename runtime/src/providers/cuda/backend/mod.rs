@@ -94,7 +94,7 @@ pub enum CudaKernel {
 impl OperationBackend<Cuda> for CudaKernel {
     fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
-            CudaKernel::Add(kernel) => kernel.compute::<add::ActiveKernel>(ctx),
+            CudaKernel::Add(kernel) => kernel.compute(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<relu::ReluKernel>(ctx),
             CudaKernel::Cast(kernel) => kernel.compute::<cast::ActiveKernel>(ctx),
             CudaKernel::Concat(kernel) => kernel.compute(ctx),

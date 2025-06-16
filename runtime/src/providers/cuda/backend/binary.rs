@@ -5,22 +5,23 @@ use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use rmlk_schema::{DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
+use rmlk_cuda::kernels::binary;
 
-pub unsafe fn compute<I, O, T>(
+pub unsafe fn compute<X, Y, O>(
     op: &'static str,
     stream: Arc<CudaStream>,
     f: CudaFunction,
     ctx: &mut Context<Cuda>,
 ) -> Result<()>
 where
-    I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    X: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    Y: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
     O: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    T: BinaryKernel,
 {
     // The output should have the same dimensions.
     // We do it now to avoid lifetime errors.
@@ -37,10 +38,10 @@ where
     }
 
     let a_dev_data_ref = a.try_dev_data_ptr()?;
-    let a_dev_data = a_dev_data_ref.data::<I>();
+    let a_dev_data = a_dev_data_ref.data::<X>();
 
     let b_dev_data_ref = b.try_dev_data_ptr()?;
-    let b_dev_data = b_dev_data_ref.data::<I>();
+    let b_dev_data = b_dev_data_ref.data::<Y>();
 
     let elem_count: usize = a.shape().iter().product();
 
@@ -93,7 +94,7 @@ where
     info_buffer[rank..2 * rank].copy_from_slice(a_stride);
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
-    T::execute::<I, O>(
+    binary::compute_with_types::<X, Y, O>(
         stream,
         f,
         rank,
@@ -145,19 +146,4 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub trait BinaryKernel {
-    fn execute<I, O>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        rank: usize,
-        info: &[usize],
-        a_dev_data: &CudaSlice<I>,
-        b_dev_data: &CudaSlice<I>,
-        c_dev_data: &mut CudaSlice<O>,
-    ) -> Result<()>
-    where
-        I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-        O: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }
