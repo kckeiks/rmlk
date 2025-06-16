@@ -46,6 +46,8 @@ pub enum Op {
     Constant = 33,
     Greater = 34,
     Neg = 35,
+    Sin = 36,
+    Cos = 37,
 }
 
 impl TryFrom<u32> for Op {
@@ -103,6 +105,7 @@ impl FromStr for Op {
             "Conv" | "conv" => Self::Conv,             // Done.
             "Constant" | "constant" => Self::Constant, // Done.
             "ConstantOfShape" | "constantofshape" => Self::ConstantOfShape,
+            "Cos" | "cos" => Self::Cos,
             "Div" | "div" => Self::Div,
             "Equal" | "equal" => Self::Equal,
             "Expand" | "expand" => Self::Expand,
@@ -123,6 +126,7 @@ impl FromStr for Op {
             "ScatterND" | "scatternd" => Self::ScatterND,
             "Shape" | "shape" => Self::Shape,
             "Sigmoid" | "sigmoid" => Self::Sigmoid,
+            "Sin" | "sin" => Self::Sin,
             "Slice" | "slice" => Self::Slice,
             "Softmax" | "softmax" => Self::Softmax,
             "Sqrt" | "sqrt" => Self::Sqrt,
