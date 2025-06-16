@@ -41,7 +41,6 @@ Based on ONNX version: 1.13.1
 | `Constant`        | ✅ Done   |                        |
 
 ## Notes
-
-- The `ConstantOfShape` definition change (in terms of attributes) should be considered in the converter.
-- `ReduceMean` axes input should use `usize` type.
-- Check how we handle inputs for `ScatterND`.
+- During model loading, the inputs should be loaded in the order expected by each backend component. This order should be formalized in a future internal specification.
+- Let's make a better interface for managing tensor shapes and strides that doesn't require a mutable execution state object.
+- When should we load cuda kernel functions? Sometimes we need attribute information to decide which kernel type to load.

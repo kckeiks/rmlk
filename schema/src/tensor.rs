@@ -424,9 +424,21 @@ impl DataTypeMap for i32 {
     }
 }
 
+impl DataTypeMap for u32 {
+    fn data_type() -> DataType {
+        DataType::Uint32
+    }
+}
+
 impl DataTypeMap for i64 {
     fn data_type() -> DataType {
         DataType::Int64
+    }
+}
+
+impl DataTypeMap for u64 {
+    fn data_type() -> DataType {
+        DataType::Uint64
     }
 }
 

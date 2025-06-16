@@ -4,8 +4,8 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
 use rmlk_cuda::kernels::expand;
 use rmlk_cuda::kernels::expand::ExpandKernel;
@@ -30,6 +30,9 @@ impl ExpandBackend {
             DataType::Float => ExpandKernel::FwdF32,
             DataType::Double => ExpandKernel::FwdF64,
             DataType::Int32 => ExpandKernel::FwdI32,
+            DataType::Uint32 => ExpandKernel::FwdU32,
+            DataType::Int64 => ExpandKernel::FwdI64,
+            DataType::Uint64 => ExpandKernel::FwdU64,
             _ => {
                 return Err(InternalError::UnsupportedOpForDataType {
                     op: Op::Expand,
@@ -43,7 +46,7 @@ impl ExpandBackend {
 
     fn compute_expand<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(T::data_type())?;
 
@@ -130,7 +133,13 @@ impl ExpandBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_expand::<f16>(ctx),
             DataType::Float => self.compute_expand::<f32>(ctx),
+            DataType::Double => self.compute_expand::<f64>(ctx),
+            DataType::Int32 => self.compute_expand::<i32>(ctx),
+            DataType::Uint32 => self.compute_expand::<u32>(ctx),
+            DataType::Int64 => self.compute_expand::<i64>(ctx),
+            DataType::Uint64 => self.compute_expand::<u64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::ReduceMean,
                 dtype,

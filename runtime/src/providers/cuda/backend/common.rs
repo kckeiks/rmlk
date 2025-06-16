@@ -12,7 +12,7 @@ pub fn init_tensor_device_data<T>(
     mut tensor: Tensor<CudaData>,
 ) -> Result<()>
 where
-    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
 {
     let size = tensor.shape().iter().copied().product::<usize>();
 

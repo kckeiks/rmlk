@@ -1,5 +1,4 @@
 use crate::ptx::EXPAND;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
     ValidAsZeroBits,
@@ -20,6 +19,9 @@ pub enum ExpandKernel {
     FwdF32,
     FwdF64,
     FwdI32,
+    FwdU32,
+    FwdI64,
+    FwdU64,
 }
 
 impl From<ExpandKernel> for &'static str {
@@ -29,6 +31,9 @@ impl From<ExpandKernel> for &'static str {
             ExpandKernel::FwdF32 => "expand_fwd_f32",
             ExpandKernel::FwdF64 => "expand_fwd_f64",
             ExpandKernel::FwdI32 => "expand_fwd_i32",
+            ExpandKernel::FwdU32 => "expand_fwd_u32",
+            ExpandKernel::FwdI64 => "expand_fwd_i64",
+            ExpandKernel::FwdU64 => "expand_fwd_u64",
         }
     }
 }
@@ -42,7 +47,7 @@ pub unsafe fn compute<T>(
     output: &mut CudaSlice<T>,
 ) -> crate::error::Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     assert_eq!(rank * 4, info_buffer.len());
 
