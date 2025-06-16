@@ -59,6 +59,7 @@ mod cuda {
     mod softmax_small;
     mod softmax_two_head_uneq_logits;
     mod sqrt_basic;
+    mod sub_basic;
     mod transpose_validate_data;
     mod transpose_validate_shape;
     mod trilu_k_zero_lower;

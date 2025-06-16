@@ -26,6 +26,7 @@ use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::slice::SliceBackend;
 use crate::providers::cuda::softmax::SoftmaxBackend;
 use crate::providers::cuda::sqrt::SqrtBackend;
+use crate::providers::cuda::sub::SubBackend;
 use crate::providers::cuda::transpose::TransposeBackend;
 use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
@@ -115,6 +116,7 @@ impl DeviceService for Cuda {
                 let kernel = self.load_kernel(op, dtype)?;
                 CudaKernel::Sqrt(SqrtBackend::new(&self.stream, kernel))
             }
+            Op::Sub => CudaKernel::Sub(SubBackend::new(self.stream.clone())),
             Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.stream.clone())),
             Op::Trilu => CudaKernel::Trilu(TriluBackend::new(&self.stream)),
             Op::Unsqueeze => CudaKernel::Unsqueeze(UnsqueezeBackend::new(&self.stream)),

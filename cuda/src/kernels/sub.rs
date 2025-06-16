@@ -6,21 +6,21 @@ use std::sync::Arc;
 pub const PTX_SRC: &str = SUB;
 
 pub enum SubKernel {
-    EqualFwdF16,
-    EqualFwdF32,
-    EqualFwdF64,
-    EqualFwdI32,
-    EqualFwdI64,
+    SubFwdF16,
+    SubFwdF32,
+    SubFwdF64,
+    SubFwdI32,
+    SubFwdI64,
 }
 
 impl From<SubKernel> for &'static str {
     fn from(value: SubKernel) -> Self {
         match value {
-            SubKernel::EqualFwdF16 => "sub_fwd_f16",
-            SubKernel::EqualFwdF32 => "sub_fwd_f32",
-            SubKernel::EqualFwdF64 => "sub_fwd_f64",
-            SubKernel::EqualFwdI32 => "sub_fwd_i32",
-            SubKernel::EqualFwdI64 => "sub_fwd_i64",
+            SubKernel::SubFwdF16 => "sub_fwd_f16",
+            SubKernel::SubFwdF32 => "sub_fwd_f32",
+            SubKernel::SubFwdF64 => "sub_fwd_f64",
+            SubKernel::SubFwdI32 => "sub_fwd_i32",
+            SubKernel::SubFwdI64 => "sub_fwd_i64",
         }
     }
 }
@@ -53,7 +53,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 4.0, 3.0, 4.0001]).unwrap();
 
-        let f = load_kernel(ctx.clone(), SubKernel::EqualFwdF32).unwrap();
+        let f = load_kernel(ctx.clone(), SubKernel::SubFwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream
