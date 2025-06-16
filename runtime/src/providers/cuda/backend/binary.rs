@@ -7,10 +7,10 @@ use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
+use rmlk_cuda::kernels::binary;
 use rmlk_schema::{DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
-use rmlk_cuda::kernels::binary;
 
 pub unsafe fn compute<X, Y, O>(
     op: &'static str,

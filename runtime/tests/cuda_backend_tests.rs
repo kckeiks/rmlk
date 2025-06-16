@@ -18,6 +18,7 @@ mod cuda {
     mod constant_of_shape_simple;
     mod constant_of_shape_with_attrs;
     mod constant_raw_value;
+    mod equal_basic;
     mod expand_basic;
     mod gather_higher_dim;
     mod gather_higher_dim_indices;

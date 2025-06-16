@@ -9,6 +9,7 @@ use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::equal::EqualBackend;
 use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
@@ -80,6 +81,7 @@ impl DeviceService for Cuda {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.stream))
             }
             Op::Expand => CudaKernel::Expand(ExpandBackend::new(&self.stream)),
+            Op::Equal => CudaKernel::Equal(EqualBackend::new(self.stream.clone())),
             Op::Gather => CudaKernel::Gather(GatherBackend::new(self.stream.clone())),
             Op::Gemm => {
                 let f =

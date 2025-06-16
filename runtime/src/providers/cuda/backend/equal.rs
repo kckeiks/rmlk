@@ -5,29 +5,29 @@ use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
-use rmlk_cuda::kernels::greater;
-use rmlk_cuda::kernels::greater::GreaterKernel;
+use rmlk_cuda::kernels::equal;
+use rmlk_cuda::kernels::equal::EqualKernel;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
-pub struct GreaterBackend {
+pub struct EqualBackend {
     stream: Arc<CudaStream>,
 }
 
-impl GreaterBackend {
+impl EqualBackend {
     pub fn new(stream: Arc<CudaStream>) -> Self {
         Self { stream }
     }
 }
 
-impl GreaterBackend {
+impl EqualBackend {
     fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
         let kernel_name = match dtype {
-            DataType::Float16 => GreaterKernel::GreaterFwdF16,
-            DataType::Float => GreaterKernel::GreaterFwdF32,
-            DataType::Double => GreaterKernel::GreaterFwdF64,
-            DataType::Int32 => GreaterKernel::GreaterFwdI32,
-            DataType::Int64 => GreaterKernel::GreaterFwdI64,
+            DataType::Float16 => EqualKernel::EqualFwdF16,
+            DataType::Float => EqualKernel::EqualFwdF32,
+            DataType::Double => EqualKernel::EqualFwdF64,
+            DataType::Int32 => EqualKernel::EqualFwdI32,
+            DataType::Int64 => EqualKernel::EqualFwdI64,
             _ => {
                 return Err(InternalError::UnsupportedOpForDataType {
                     op: Op::Expand,
@@ -36,7 +36,7 @@ impl GreaterBackend {
             }
         };
 
-        greater::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+        equal::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
     fn compute_greater<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -44,7 +44,7 @@ impl GreaterBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { binary::compute::<D, D, bool>("greater", self.stream, func, ctx) }
+        unsafe { binary::compute::<D, D, bool>("equal", self.stream, func, ctx) }
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
@@ -54,7 +54,7 @@ impl GreaterBackend {
             DataType::Float => self.compute_greater::<f32>(ctx),
             DataType::Int64 => self.compute_greater::<i64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
-                op: Op::Greater,
+                op: Op::Equal,
                 dtype,
             }),
         }

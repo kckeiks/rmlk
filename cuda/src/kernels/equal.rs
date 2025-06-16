@@ -1,4 +1,6 @@
 use crate::ptx::EQUAL;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = EQUAL;
 
@@ -10,9 +12,9 @@ pub enum EqualKernel {
     EqualFwdI64,
 }
 
-impl EqualKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<EqualKernel> for &'static str {
+    fn from(value: EqualKernel) -> &'static str {
+        match value {
             EqualKernel::EqualFwdF16 => "equal_fwd_f16",
             EqualKernel::EqualFwdF32 => "equal_fwd_f32",
             EqualKernel::EqualFwdF64 => "equal_fwd_f64",
@@ -20,6 +22,14 @@ impl EqualKernel {
             EqualKernel::EqualFwdI64 => "equal_fwd_i64",
         }
     }
+}
+
+pub fn load_kernel(
+    ctx: Arc<CudaContext>,
+    kernel_name: EqualKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -44,7 +54,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0001]).unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, EqualKernel::EqualFwdF32.as_str()).unwrap();
+        let f = utils::load_kernel_v2(&ctx, PTX_SRC, EqualKernel::EqualFwdF32.into()).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

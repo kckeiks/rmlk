@@ -27,8 +27,7 @@ impl AdditionBackend {
         unsafe { binary::compute::<D, D, D>("add", self.stream, self.f, ctx) }
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()>
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
