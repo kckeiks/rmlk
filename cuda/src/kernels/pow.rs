@@ -1,7 +1,8 @@
 use crate::ptx::POW;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use std::sync::Arc;
 
@@ -70,9 +71,9 @@ pub enum PowKernel {
     PowFwdI64F64,
 }
 
-impl PowKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<PowKernel> for &'static str {
+    fn from(value: PowKernel) -> &'static str {
+        match value {
             PowKernel::PowFwdF16U8 => "pow_fwd_f16_u8",
             PowKernel::PowFwdF16U16 => "pow_fwd_f16_u16",
             PowKernel::PowFwdF16U32 => "pow_fwd_f16_u32",
@@ -182,9 +183,17 @@ where
     Ok(())
 }
 
+pub fn load_kernel(
+    ctx: &Arc<CudaContext>,
+    kernel_name: PowKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::kernels::pow::{compute, PowKernel};
+    use crate::kernels::pow::{compute, load_kernel, PowKernel};
     use crate::utils;
     use approx::assert_relative_eq;
     use cudarc::cudnn::CudnnDataType;
@@ -213,7 +222,7 @@ mod tests {
     {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
-        let func = utils::load_pow_kernel(&ctx, kernel).unwrap();
+        let func = load_kernel(&ctx, kernel).unwrap();
         let info = info_for_shape(&shape);
 
         let a_dev = stream.memcpy_stod::<X, _>(a_host).unwrap();

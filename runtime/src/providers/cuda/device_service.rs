@@ -17,6 +17,7 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::greater::GreaterBackend;
 use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::scatter_nd::ScatterNdBackend;
@@ -97,6 +98,7 @@ impl DeviceService for Cuda {
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.stream.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
             Op::MatMul => CudaKernel::MatMul(MatMulBackend::new(&self.stream)),
+            Op::Pow => CudaKernel::Pow(PowBackend::new(self.stream.clone())),
             Op::ReduceMean => {
                 let f = self.load_kernel(op, dtype)?;
                 CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone(), f))

@@ -1,7 +1,6 @@
 use crate::error::Result;
 use crate::kernels::cast::CastKernel;
-use crate::kernels::pow::PowKernel;
-use crate::kernels::{add, cast, div, expand, mul, pow, reduce_mean, sqrt, whereop};
+use crate::kernels::{add, cast, div, expand, mul, reduce_mean, sqrt, whereop};
 use cudarc::driver::{CudaContext, CudaFunction};
 #[cfg(test)]
 use num_traits::Num;
@@ -100,13 +99,6 @@ pub fn load_kernel_v2(
 
 pub fn load_cast_kernel(ctx: &Arc<CudaContext>, kernel_name: CastKernel) -> Result<CudaFunction> {
     let module = ctx.load_module(cast::PTX_SRC.into())?;
-    module
-        .load_function(kernel_name.as_str())
-        .map_err(Into::into)
-}
-
-pub fn load_pow_kernel(ctx: &Arc<CudaContext>, kernel_name: PowKernel) -> Result<CudaFunction> {
-    let module = ctx.load_module(pow::PTX_SRC.into())?;
     module
         .load_function(kernel_name.as_str())
         .map_err(Into::into)

@@ -45,13 +45,11 @@ const GRAPH_DEFINITION: &str = r#"
 #[test]
 fn test_run() {
     let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
-    let input: HashMap<String, Value> = [
-        (
-            "a".to_string(),
-            vec![1.0, 2.0, 3.0, 4.0].try_into().unwrap(),
-        ),
-    ]
-        .into();
+    let input: HashMap<String, Value> = [(
+        "a".to_string(),
+        vec![1.0, 2.0, 3.0, 4.0].try_into().unwrap(),
+    )]
+    .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<i32> = output.remove("cast(a)").unwrap().try_into().unwrap();
     assert_eq!(data, vec![1, 2, 3, 4]);

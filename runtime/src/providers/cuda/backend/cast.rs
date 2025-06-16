@@ -36,9 +36,10 @@ impl CastBackend {
             let output = ctx.get_output(0)?;
             let src_id = input.src_id();
             let dst_id = output.dst_id();
-            ctx.execution_state_mut().copy_shape_from_within(src_id, dst_id)?;
+            ctx.execution_state_mut()
+                .copy_shape_from_within(src_id, dst_id)?;
         }
-        
+
         let input = ctx.get_input(0)?;
 
         {

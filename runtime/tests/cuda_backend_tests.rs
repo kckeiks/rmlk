@@ -38,6 +38,7 @@ mod cuda {
     mod matmul_3d_2d;
     mod matmul_3d_3d;
     mod matmul_broadcast_batch;
+    mod pow_basic;
     mod range_basic;
     mod reduce_mean_simple;
     mod relu_basic;

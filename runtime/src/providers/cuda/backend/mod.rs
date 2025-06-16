@@ -15,6 +15,7 @@ pub mod global_average_pool;
 pub mod greater;
 pub mod matmul;
 pub mod max_pool;
+pub mod pow;
 pub mod range;
 pub mod reduce_mean;
 mod relu;
@@ -53,6 +54,7 @@ use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
 use crate::providers::cuda::sigmoid::SigmoidKernel;
@@ -80,6 +82,7 @@ pub enum CudaKernel {
     MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
     MatMul(MatMulBackend),
+    Pow(PowBackend),
     Range(RangeBackend),
     ReduceMean(ReduceMeanBackend),
     ScatterNd(ScatterNdBackend),
@@ -115,6 +118,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::MatMul(kernel) => kernel.compute(ctx),
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Pow(kernel) => kernel.compute(ctx),
             CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
             CudaKernel::ScatterNd(kernel) => kernel.compute(ctx),
