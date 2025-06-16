@@ -11,6 +11,7 @@ pub mod expand;
 pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
+mod greater;
 pub mod matmul;
 pub mod max_pool;
 pub mod range;

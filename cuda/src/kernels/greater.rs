@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::GREATER;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = GREATER;
 
@@ -10,9 +13,9 @@ pub enum GreaterKernel {
     GreaterFwdI64,
 }
 
-impl GreaterKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<GreaterKernel> for &'static str {
+    fn from(value: GreaterKernel) -> &'static str {
+        match value {
             GreaterKernel::GreaterFwdF16 => "greater_fwd_f16",
             GreaterKernel::GreaterFwdF32 => "greater_fwd_f32",
             GreaterKernel::GreaterFwdF64 => "greater_fwd_f64",
@@ -20,6 +23,11 @@ impl GreaterKernel {
             GreaterKernel::GreaterFwdI64 => "greater_fwd_i64",
         }
     }
+}
+
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: GreaterKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -45,7 +53,7 @@ mod test {
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let f =
-            utils::load_kernel_v2(&ctx, PTX_SRC, GreaterKernel::GreaterFwdF32.as_str()).unwrap();
+            utils::load_kernel_v2(&ctx, PTX_SRC, GreaterKernel::GreaterFwdF32.into()).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream
