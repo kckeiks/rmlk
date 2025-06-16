@@ -14,6 +14,7 @@ pub enum TriluKernel {
     FwdF32,
     FwdF64,
     FwdI32,
+    FwdI64,
 }
 
 impl From<TriluKernel> for &'static str {
@@ -23,6 +24,7 @@ impl From<TriluKernel> for &'static str {
             TriluKernel::FwdF32 => "trilu_fwd_f32",
             TriluKernel::FwdF64 => "trilu_fwd_f64",
             TriluKernel::FwdI32 => "trilu_fwd_i32",
+            TriluKernel::FwdI64 => "trilu_fwd_i64",
         }
     }
 }
@@ -84,7 +86,13 @@ mod tests {
     use cudarc::driver::CudaContext;
     use rmlk_schema::DataTypeMap;
 
-    fn launch_trilu_test<T>(input: &[T], shape: &[usize], upper: bool, k: i64) -> Vec<T>
+    fn launch_trilu_test<T>(
+        trilu_kernel: TriluKernel,
+        input: &[T],
+        shape: &[usize],
+        upper: bool,
+        k: i64,
+    ) -> Vec<T>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr + DataTypeMap + Clone + Unpin,
     {
@@ -93,7 +101,7 @@ mod tests {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
 
-        let func = load_kernel(&ctx, TriluKernel::FwdF32).unwrap();
+        let func = load_kernel(&ctx, trilu_kernel).unwrap();
 
         let mut strides = vec![0; 3];
         utils::calculate_stride(shape, &mut strides);
@@ -126,60 +134,60 @@ mod tests {
     #[test]
     fn test_upper_k0_f32() {
         let shape = [1, 3, 3];
-        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let expected = vec![1.0, 2.0, 3.0, 0.0, 5.0, 6.0, 0.0, 0.0, 9.0];
+        let input: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let expected: Vec<f32> = vec![1.0, 2.0, 3.0, 0.0, 5.0, 6.0, 0.0, 0.0, 9.0];
 
-        let out = launch_trilu_test(&input, &shape, true, 0);
+        let out = launch_trilu_test(TriluKernel::FwdF32, &input, &shape, true, 0);
         assert_eq!(&out, &expected);
     }
 
     #[test]
     fn test_upper_k1_f32() {
         let shape = [1, 3, 3];
-        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let expected = vec![0.0, 2.0, 3.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0];
+        let input: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let expected: Vec<f32> = vec![0.0, 2.0, 3.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0];
 
-        let out = launch_trilu_test(&input, &shape, true, 1);
+        let out = launch_trilu_test(TriluKernel::FwdF32, &input, &shape, true, 1);
         assert_eq!(&out, &expected);
     }
 
     #[test]
     fn test_lower_k_neg1_f32() {
         let shape = [1, 3, 3];
-        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let expected = vec![0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0];
+        let input: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let expected: Vec<f32> = vec![0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0];
 
-        let out = launch_trilu_test(&input, &shape, false, -1);
+        let out = launch_trilu_test(TriluKernel::FwdF32, &input, &shape, false, -1);
         assert_eq!(&out, &expected);
     }
 
     #[test]
     fn test_rect_upper_f64() {
         let shape = [1, 2, 4];
-        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let expected = vec![1.0, 2.0, 3.0, 4.0, 0.0, 6.0, 7.0, 8.0];
+        let input: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let expected: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 0.0, 6.0, 7.0, 8.0];
 
-        let out = launch_trilu_test(&input, &shape, true, 0);
+        let out = launch_trilu_test(TriluKernel::FwdF64, &input, &shape, true, 0);
         assert_eq!(&out, &expected);
     }
 
     #[test]
     fn test_batch_lower_i64() {
         let shape = [2, 2, 2];
-        let input = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let expected = vec![1, 0, 3, 4, 5, 0, 7, 8];
+        let input: Vec<i64> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let expected: Vec<i64> = vec![1, 0, 3, 4, 5, 0, 7, 8];
 
-        let out = launch_trilu_test(&input, &shape, false, 0);
+        let out = launch_trilu_test(TriluKernel::FwdI64, &input, &shape, false, 0);
         assert_eq!(out, expected);
     }
 
     #[test]
     fn test_full_keep_upper_f32() {
         let shape = [1, 2, 3];
-        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let expected = vec![0.0; input.len()];
+        let input: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let expected: Vec<f32> = vec![0.0; input.len()];
 
-        let out = launch_trilu_test(&input, &shape, true, 3);
+        let out = launch_trilu_test(TriluKernel::FwdF32, &input, &shape, true, 3);
         assert_eq!(out, expected);
     }
 }

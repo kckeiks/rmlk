@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::Read;
 use std::os::unix::fs::FileExt;
 
+use half::f16;
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Tensor {
     pub dims: Vec<usize>,
@@ -398,9 +400,21 @@ pub trait DataTypeMap {
     fn data_type() -> DataType;
 }
 
+impl DataTypeMap for f16 {
+    fn data_type() -> DataType {
+        DataType::Float16
+    }
+}
+
 impl DataTypeMap for f32 {
     fn data_type() -> DataType {
         DataType::Float
+    }
+}
+
+impl DataTypeMap for f64 {
+    fn data_type() -> DataType {
+        DataType::Double
     }
 }
 
