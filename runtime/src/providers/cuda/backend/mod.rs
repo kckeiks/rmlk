@@ -11,7 +11,7 @@ pub mod expand;
 pub mod gather;
 pub mod gemm;
 pub mod global_average_pool;
-mod greater;
+pub mod greater;
 pub mod matmul;
 pub mod max_pool;
 pub mod range;
@@ -38,6 +38,7 @@ use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::backend::cast::CastBackend;
 use crate::providers::cuda::backend::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
+use crate::providers::cuda::backend::greater::GreaterBackend;
 use crate::providers::cuda::backend::matmul::MatMulBackend;
 use crate::providers::cuda::backend::scatter_nd::ScatterNdBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
@@ -72,6 +73,7 @@ pub enum CudaKernel {
     Gather(GatherBackend),
     Gemm(GemmBackend),
     GlobalAveragePool(GlobalAverageBackend),
+    Greater(GreaterBackend),
     MaxPool(MaxPoolBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
     MatMul(MatMulBackend),
@@ -105,6 +107,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::GlobalAveragePool(kernel) => {
                 kernel.compute::<global_average_pool::ActiveKernel>(ctx)
             }
+            CudaKernel::Greater(kernel) => kernel.compute(ctx),
             CudaKernel::MatMul(kernel) => kernel.compute(ctx),
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
@@ -127,7 +130,6 @@ impl OperationBackend<Cuda> for CudaKernel {
 impl CudaKernel {
     pub fn noop_compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         match self {
-            CudaKernel::Add(kernel) => kernel.compute::<add::NoOpKernel>(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<relu::NoOpKernel>(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
             CudaKernel::ConstantOfShape(_) => {

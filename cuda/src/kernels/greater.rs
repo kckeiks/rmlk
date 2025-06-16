@@ -52,8 +52,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let f =
-            utils::load_kernel_v2(&ctx, PTX_SRC, GreaterKernel::GreaterFwdF32.into()).unwrap();
+        let f = utils::load_kernel_v2(&ctx, PTX_SRC, GreaterKernel::GreaterFwdF32.into()).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

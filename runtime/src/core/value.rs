@@ -11,6 +11,7 @@ pub(crate) enum InnerValue {
     Int32(Vec<i32>),
     Int64(Vec<i64>),
     Float32(Vec<f32>),
+    Bool(Vec<bool>),
 }
 
 impl TryFrom<Value> for Vec<f32> {
@@ -46,6 +47,17 @@ impl TryFrom<Value> for Vec<i64> {
     }
 }
 
+impl TryFrom<Value> for Vec<bool> {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value.inner {
+            InnerValue::Bool(data) => Ok(data),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl From<Vec<f32>> for Value {
     fn from(value: Vec<f32>) -> Self {
         Self {
@@ -66,6 +78,14 @@ impl From<Vec<i64>> for Value {
     fn from(value: Vec<i64>) -> Self {
         Self {
             inner: InnerValue::Int64(value),
+        }
+    }
+}
+
+impl From<Vec<bool>> for Value {
+    fn from(value: Vec<bool>) -> Self {
+        Self {
+            inner: InnerValue::Bool(value),
         }
     }
 }

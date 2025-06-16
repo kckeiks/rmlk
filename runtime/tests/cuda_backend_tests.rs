@@ -25,6 +25,7 @@ mod cuda {
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;
+    mod greater_basic;
     mod matmul_1d_1d;
     mod matmul_1d_2d;
     mod matmul_1d_3d;

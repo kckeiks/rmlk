@@ -26,7 +26,7 @@ impl AdditionBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         T: BinaryKernel,
     {
-        unsafe { binary::compute::<D, T>("add", self.stream, self.f, ctx) }
+        unsafe { binary::compute::<D, D, T>("add", self.stream, self.f, ctx) }
     }
 
     pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -46,39 +46,24 @@ impl AdditionBackend {
 pub struct ActiveKernel(());
 
 impl BinaryKernel for ActiveKernel {
-    fn execute<T>(
+    fn execute<I, O>(
         stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        c_dev_data: &mut CudaSlice<T>,
+        a_dev_data: &CudaSlice<I>,
+        b_dev_data: &CudaSlice<I>,
+        c_dev_data: &mut CudaSlice<O>,
     ) -> Result<()>
     where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+        I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+        O: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         unsafe {
-            rmlk_cuda::kernels::binary::compute(
+            rmlk_cuda::kernels::binary::compute_with_types::<I, I, O>(
                 stream, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
             )
             .map_err(Into::into)
         }
-    }
-}
-
-pub struct NoOpKernel(());
-
-impl BinaryKernel for NoOpKernel {
-    fn execute<T>(
-        _: Arc<CudaStream>,
-        _: CudaFunction,
-        _: usize,
-        _: &[usize],
-        _: &CudaSlice<T>,
-        _: &CudaSlice<T>,
-        _: &mut CudaSlice<T>,
-    ) -> Result<()> {
-        Ok(())
     }
 }

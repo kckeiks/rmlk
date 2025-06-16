@@ -13,6 +13,7 @@ use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gather::GatherBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
+use crate::providers::cuda::greater::GreaterBackend;
 use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
 use crate::providers::cuda::range::RangeBackend;
@@ -85,6 +86,7 @@ impl DeviceService for Cuda {
                     rmlk_cuda::load_add_kernel_alpha_beta_inplace(self.stream.context(), dtype)?;
                 CudaKernel::Gemm(GemmBackend::new(self.stream.clone(), f))
             }
+            Op::Greater => CudaKernel::Greater(GreaterBackend::new(self.stream.clone())),
             Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.stream.clone())),
             Op::Conv => CudaKernel::Conv(ConvolutionBackend::new(self.stream.clone())),
             Op::GlobalAveragePool => {
@@ -138,11 +140,19 @@ impl DeviceService for Cuda {
         self.dtoh(data)
     }
 
+    fn dtoh_bool(&self, data: &Self::Data) -> Result<Vec<bool>> {
+        self.dtoh(data)
+    }
+
     fn htod_i32(&self, data: Vec<i32>) -> Result<Self::Data> {
         self.htod(data)
     }
 
     fn htod_i64(&self, data: Vec<i64>) -> Result<Self::Data> {
+        self.htod(data)
+    }
+
+    fn htod_bool(&self, data: Vec<bool>) -> Result<Self::Data> {
         self.htod(data)
     }
 

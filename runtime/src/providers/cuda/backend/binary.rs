@@ -7,19 +7,19 @@ use crate::utils;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
-use num_traits::Num;
 use rmlk_schema::{DataTypeMap, Op};
 use std::cmp;
 use std::sync::Arc;
 
-pub unsafe fn compute<D, T>(
+pub unsafe fn compute<I, O, T>(
     op: &'static str,
     stream: Arc<CudaStream>,
     f: CudaFunction,
     ctx: &mut Context<Cuda>,
 ) -> Result<()>
 where
-    D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    O: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
     T: BinaryKernel,
 {
     // The output should have the same dimensions.
@@ -37,10 +37,10 @@ where
     }
 
     let a_dev_data_ref = a.try_dev_data_ptr()?;
-    let a_dev_data = a_dev_data_ref.data::<D>();
+    let a_dev_data = a_dev_data_ref.data::<I>();
 
     let b_dev_data_ref = b.try_dev_data_ptr()?;
-    let b_dev_data = b_dev_data_ref.data::<D>();
+    let b_dev_data = b_dev_data_ref.data::<I>();
 
     let elem_count: usize = a.shape().iter().product();
 
@@ -52,7 +52,7 @@ where
         let need_to_alloc_dev_data = c_dev_data_ref.is_none()
             || c_dev_data_ref
                 .as_ref()
-                .map(|data| data.data::<D>().len() != elem_count)
+                .map(|data| data.data::<O>().len() != elem_count)
                 .unwrap_or(true);
 
         // We need to remove this immutable reference so we can mutate `y`.
@@ -60,7 +60,7 @@ where
 
         if need_to_alloc_dev_data {
             let c_dev_data = stream
-                .alloc_zeros::<D>(c.shape().iter().copied().product::<usize>())
+                .alloc_zeros::<O>(c.shape().iter().copied().product::<usize>())
                 .map_err(rmlk_cuda::Error::from)?;
             c.set_dev_data(CudaData::new(c_dev_data));
         };
@@ -84,7 +84,7 @@ where
     let mut c_dev_data = c_dev_data_ref
         .as_mut()
         .expect("we already checked that it initialized")
-        .data_mut();
+        .data_mut::<O>();
 
     let rank = c.shape().len();
 
@@ -93,7 +93,7 @@ where
     info_buffer[rank..2 * rank].copy_from_slice(a_stride);
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
-    T::execute::<D>(
+    T::execute::<I, O>(
         stream,
         f,
         rank,
@@ -148,15 +148,16 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
 }
 
 pub trait BinaryKernel {
-    fn execute<T>(
+    fn execute<I, O>(
         stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        c_dev_data: &mut CudaSlice<T>,
+        a_dev_data: &CudaSlice<I>,
+        b_dev_data: &CudaSlice<I>,
+        c_dev_data: &mut CudaSlice<O>,
     ) -> Result<()>
     where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
+        I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+        O: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }

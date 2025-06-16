@@ -6,8 +6,8 @@ use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
+use rmlk_cuda::kernels::greater;
 use rmlk_cuda::kernels::greater::GreaterKernel;
-use rmlk_cuda::kernels::{greater};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
@@ -16,10 +16,8 @@ pub struct GreaterBackend {
 }
 
 impl GreaterBackend {
-    pub fn new(stream: &Arc<CudaStream>) -> Self {
-        Self {
-            stream: stream.clone(),
-        }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 }
 
@@ -47,11 +45,10 @@ impl GreaterBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { binary::compute::<D, GreaterFunc>("greater", self.stream, func, ctx) }
+        unsafe { binary::compute::<D, bool, GreaterFunc>("greater", self.stream, func, ctx) }
     }
 
-    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()>
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
@@ -65,23 +62,24 @@ impl GreaterBackend {
 pub struct GreaterFunc(());
 
 impl BinaryKernel for GreaterFunc {
-    fn execute<T>(
+    fn execute<I, O>(
         stream: Arc<CudaStream>,
         func: CudaFunction,
         rank: usize,
         info: &[usize],
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        c_dev_data: &mut CudaSlice<T>,
+        a_dev_data: &CudaSlice<I>,
+        b_dev_data: &CudaSlice<I>,
+        c_dev_data: &mut CudaSlice<O>,
     ) -> Result<()>
     where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+        I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+        O: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         unsafe {
-            rmlk_cuda::kernels::binary::compute(
+            rmlk_cuda::kernels::binary::compute_with_types::<I, I, O>(
                 stream, func, rank, info, a_dev_data, b_dev_data, c_dev_data,
             )
-                .map_err(Into::into)
+            .map_err(Into::into)
         }
     }
 }

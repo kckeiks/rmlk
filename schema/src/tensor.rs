@@ -416,6 +416,12 @@ impl DataTypeMap for i64 {
     }
 }
 
+impl DataTypeMap for bool {
+    fn data_type() -> DataType {
+        DataType::Bool
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Segment {
     pub begin: Option<i64>,

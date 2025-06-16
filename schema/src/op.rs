@@ -44,6 +44,7 @@ pub enum Op {
     Where = 32,
     // Todo: we have two constants variants. Fix it.
     Constant = 33,
+    Greater = 34,
 }
 
 impl TryFrom<u32> for Op {
@@ -105,6 +106,7 @@ impl FromStr for Op {
             "Equal" | "equal" => Self::Equal,
             "Expand" | "expand" => Self::Expand,
             "Flatten" | "flatten" => Self::Flatten, // Done.
+            "Greater" | "greater" => Self::Greater,
             "Gather" | "gather" => Self::Gather,
             "Gemm" | "gemm" => Self::Gemm, // Done.
             "GlobalAveragePool" | "globalaveragepool" => Self::GlobalAveragePool, // Done.
