@@ -9,6 +9,7 @@ use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::div::Divbackend;
 use crate::providers::cuda::equal::EqualBackend;
 use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gather::GatherBackend;
@@ -33,7 +34,6 @@ use crate::providers::cuda::CudaKernel;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
-use crate::providers::cuda::div::Divbackend;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,

@@ -51,6 +51,7 @@ use crate::providers::cuda::backend::transpose::TransposeBackend;
 use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
+use crate::providers::cuda::div::Divbackend;
 use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
@@ -65,7 +66,6 @@ use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
-use crate::providers::cuda::div::Divbackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),

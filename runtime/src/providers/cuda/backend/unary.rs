@@ -19,6 +19,15 @@ where
     I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     K: UnaryKernel,
 {
+    {
+        let input = ctx.get_input(0)?;
+        let output = ctx.get_output(0)?;
+        let src_id = input.src_id();
+        let dst_id = output.dst_id();
+        ctx.execution_state_mut()
+            .copy_shape_from_within(src_id, dst_id)?;
+    }
+
     let input = ctx.get_input(0)?;
 
     {
@@ -35,7 +44,8 @@ where
         );
     }
 
-    common::init_tensor_device_data::<I>(&stream, input)?;
+    let output_tensor = ctx.get_output(0)?;
+    common::init_tensor_device_data::<I>(&stream, output_tensor)?;
 
     let input = ctx.get_input(0)?;
 

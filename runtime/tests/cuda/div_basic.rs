@@ -57,7 +57,7 @@ fn test_run() {
             vec![1.0, 2.0, 3.0, 2.0].try_into().unwrap(),
         ),
     ]
-        .into();
+    .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output.remove("a/b").unwrap().try_into().unwrap();
     assert_eq!(data, vec![1.0, 1.0, 3.0, 2.5]);
