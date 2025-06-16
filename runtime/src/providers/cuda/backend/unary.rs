@@ -3,13 +3,13 @@ use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_schema::DataTypeMap;
 use std::sync::Arc;
 
-pub unsafe fn compute<I, K>(
+pub unsafe fn compute<I>(
     op: &'static str,
     stream: Arc<CudaStream>,
     f: CudaFunction,
@@ -17,7 +17,6 @@ pub unsafe fn compute<I, K>(
 ) -> Result<()>
 where
     I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-    K: UnaryKernel,
 {
     {
         let input = ctx.get_input(0)?;
@@ -67,18 +66,12 @@ where
     info_buffer[..rank].copy_from_slice(output.shape());
     info_buffer[rank..2 * rank].copy_from_slice(input.stride());
 
-    K::execute::<I>(stream.clone(), f, &input_dev_data, &mut output_dev_data)?;
+    rmlk_cuda::kernels::unary::compute::<I>(
+        stream.clone(),
+        f,
+        &input_dev_data,
+        &mut output_dev_data,
+    )?;
 
     Ok(())
-}
-
-pub trait UnaryKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        input_dev_data: &CudaSlice<T>,
-        output_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
 }

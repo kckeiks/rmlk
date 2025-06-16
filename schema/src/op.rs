@@ -45,6 +45,7 @@ pub enum Op {
     // Todo: we have two constants variants. Fix it.
     Constant = 33,
     Greater = 34,
+    Neg = 35,
 }
 
 impl TryFrom<u32> for Op {
@@ -113,6 +114,7 @@ impl FromStr for Op {
             "MaxPool" | "maxpool" => Self::MaxPool, // Done.
             "MatMul" | "matmul" => Self::MatMul,
             "Mul" | "mul" => Self::Mul, // Done.
+            "Neg" | "neg" => Self::Neg, // Done.
             "Pow" | "pow" => Self::Pow,
             "Range" | "range" => Self::Range,
             "Relu" | "relu" => Self::Relu, // Done.

@@ -16,7 +16,7 @@ Based on ONNX version: 1.13.1
 | `Cast`            | ✅ Done                        | Needs backend and tests          |
 | `Pow`             | ✅ Done                | Needs kernel, backend, and tests |
 | `Div`             | ✅ Done                    | Needs kernel, backend, and tests |
-| `Sub`             | 🛠️ In Progress               | Needs kernel, backend, and tests |
+| `Sub`             | ✅ Done                | Needs kernel, backend, and tests |
 | `Sqrt`            | ✅ Done                | Needs backend and tests          |
 | `Neg`             | 🛠️ In Progress               | Needs kernel, backend, and tests |
 | `Sin`             | 🛠️ In Progress               | Needs kernel, backend, and tests |

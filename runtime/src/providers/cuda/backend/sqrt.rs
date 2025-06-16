@@ -1,10 +1,9 @@
 use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
-use crate::providers::cuda::backend::unary::UnaryKernel;
 use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
@@ -22,46 +21,22 @@ impl SqrtBackend {
         }
     }
 
-    fn compute_sqrt<I, K>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_sqrt<I>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        K: UnaryKernel,
     {
-        unsafe { unary::compute::<I, K>("sqrt", self.stream.clone(), self.kernel, ctx) }
+        unsafe { unary::compute::<I>("sqrt", self.stream.clone(), self.kernel, ctx) }
     }
 
-    pub fn compute<K>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        K: UnaryKernel,
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_sqrt::<f32, K>(ctx),
+            DataType::Float => self.compute_sqrt::<f32>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Sqrt,
                 dtype,
             }),
         }
-    }
-}
-
-pub struct ActiveKernel(());
-
-impl UnaryKernel for ActiveKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        kernel: CudaFunction,
-        input_dev_data: &CudaSlice<T>,
-        output_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        unsafe {
-            rmlk_cuda::kernels::unary::compute(stream, kernel, input_dev_data, output_dev_data)?;
-        }
-
-        Ok(())
     }
 }

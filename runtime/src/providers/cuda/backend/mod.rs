@@ -16,6 +16,7 @@ pub mod global_average_pool;
 pub mod greater;
 pub mod matmul;
 pub mod max_pool;
+pub mod neg;
 pub mod pow;
 pub mod range;
 pub mod reduce_mean;
@@ -52,11 +53,12 @@ use crate::providers::cuda::backend::transpose::TransposeBackend;
 use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
-use crate::providers::cuda::div::Divbackend;
+use crate::providers::cuda::div::DivBackend;
 use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::neg::NegBackend;
 use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
@@ -77,7 +79,7 @@ pub enum CudaKernel {
     Constant(ConstantBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
-    Div(Divbackend),
+    Div(DivBackend),
     Equal(EqualBackend),
     Expand(ExpandBackend),
     Gather(GatherBackend),
@@ -85,6 +87,7 @@ pub enum CudaKernel {
     GlobalAveragePool(GlobalAverageBackend),
     Greater(GreaterBackend),
     MaxPool(MaxPoolBackend),
+    Neg(NegBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
     MatMul(MatMulBackend),
     Pow(PowBackend),
@@ -125,6 +128,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::MatMul(kernel) => kernel.compute(ctx),
             CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
+            CudaKernel::Neg(kernel) => kernel.compute(ctx),
             CudaKernel::Pow(kernel) => kernel.compute(ctx),
             CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
@@ -133,7 +137,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Sigmoid(kernel) => kernel.compute::<SigmoidKernel>(ctx),
             CudaKernel::Softmax(kernel) => kernel.compute(ctx),
             CudaKernel::Slice(kernel) => kernel.compute(ctx),
-            CudaKernel::Sqrt(kernel) => kernel.compute::<sqrt::ActiveKernel>(ctx),
+            CudaKernel::Sqrt(kernel) => kernel.compute(ctx),
             CudaKernel::Sub(kernel) => kernel.compute(ctx),
             CudaKernel::Transpose(backend) => backend.compute(ctx),
             CudaKernel::Trilu(backend) => backend.compute(ctx),

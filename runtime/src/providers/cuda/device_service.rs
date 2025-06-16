@@ -9,7 +9,7 @@ use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
 use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::div::Divbackend;
+use crate::providers::cuda::div::DivBackend;
 use crate::providers::cuda::equal::EqualBackend;
 use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gather::GatherBackend;
@@ -18,6 +18,7 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::greater::GreaterBackend;
 use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::neg::NegBackend;
 use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
@@ -83,7 +84,7 @@ impl DeviceService for Cuda {
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.stream))
             }
-            Op::Div => CudaKernel::Div(Divbackend::new(self.stream.clone())),
+            Op::Div => CudaKernel::Div(DivBackend::new(self.stream.clone())),
             Op::Expand => CudaKernel::Expand(ExpandBackend::new(&self.stream)),
             Op::Equal => CudaKernel::Equal(EqualBackend::new(self.stream.clone())),
             Op::Gather => CudaKernel::Gather(GatherBackend::new(self.stream.clone())),
@@ -99,6 +100,7 @@ impl DeviceService for Cuda {
                 CudaKernel::GlobalAveragePool(GlobalAverageBackend::new(self.stream.clone()))
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.stream.clone())),
+            Op::Neg => CudaKernel::Neg(NegBackend::new(self.stream.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
             Op::MatMul => CudaKernel::MatMul(MatMulBackend::new(&self.stream)),
             Op::Pow => CudaKernel::Pow(PowBackend::new(self.stream.clone())),
