@@ -1,6 +1,5 @@
 use crate::error::Result;
 use crate::ptx::TRILU;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
     ValidAsZeroBits,
@@ -14,7 +13,9 @@ pub enum TriluKernel {
     FwdF32,
     FwdF64,
     FwdI32,
+    FwdU32,
     FwdI64,
+    FwdU64,
 }
 
 impl From<TriluKernel> for &'static str {
@@ -24,7 +25,9 @@ impl From<TriluKernel> for &'static str {
             TriluKernel::FwdF32 => "trilu_fwd_f32",
             TriluKernel::FwdF64 => "trilu_fwd_f64",
             TriluKernel::FwdI32 => "trilu_fwd_i32",
+            TriluKernel::FwdU32 => "trilu_fwd_u32",
             TriluKernel::FwdI64 => "trilu_fwd_i64",
+            TriluKernel::FwdU64 => "trilu_fwd_u64",
         }
     }
 }
@@ -40,7 +43,7 @@ pub unsafe fn compute<T>(
     output: &mut CudaSlice<T>,
 ) -> Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     assert_eq!(rank * 2, info_buffer.len());
     assert_eq!(input.len(), output.len());
@@ -94,7 +97,7 @@ mod tests {
         k: i64,
     ) -> Vec<T>
     where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr + DataTypeMap + Clone + Unpin,
+        T: ValidAsZeroBits + DeviceRepr + DataTypeMap + Clone + Unpin,
     {
         assert_eq!(shape.len(), 3);
 

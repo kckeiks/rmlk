@@ -314,7 +314,41 @@ impl FromBytes for i32 {
     }
 }
 
+impl FromBytes for u32 {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+        if bytes.len() % size_of::<Self>() != 0 {
+            return Err(InternalError::InvalidByteLength);
+        }
+
+        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
+        let mut chunks = bytes.chunks_exact(size_of::<Self>());
+        for chunk in &mut chunks {
+            let arr = chunk.try_into().unwrap();
+            vec.push(Self::from_le_bytes(arr));
+        }
+
+        Ok(vec)
+    }
+}
+
 impl FromBytes for i64 {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+        if bytes.len() % size_of::<Self>() != 0 {
+            return Err(InternalError::InvalidByteLength);
+        }
+
+        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
+        let mut chunks = bytes.chunks_exact(size_of::<Self>());
+        for chunk in &mut chunks {
+            let arr = chunk.try_into().unwrap();
+            vec.push(Self::from_le_bytes(arr));
+        }
+
+        Ok(vec)
+    }
+}
+
+impl FromBytes for u64 {
     fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
         if bytes.len() % size_of::<Self>() != 0 {
             return Err(InternalError::InvalidByteLength);

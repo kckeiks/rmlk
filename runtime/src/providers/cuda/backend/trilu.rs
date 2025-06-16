@@ -4,8 +4,8 @@ use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
 use rmlk_cuda::kernels::trilu;
 use rmlk_cuda::kernels::trilu::TriluKernel;
@@ -29,6 +29,9 @@ impl TriluBackend {
             DataType::Float => TriluKernel::FwdF32,
             DataType::Double => TriluKernel::FwdF64,
             DataType::Int32 => TriluKernel::FwdI32,
+            DataType::Uint32 => TriluKernel::FwdU32,
+            DataType::Int64 => TriluKernel::FwdI64,
+            DataType::Uint64 => TriluKernel::FwdU64,
             _ => {
                 return Err(InternalError::UnsupportedOpForDataType {
                     op: Op::Trilu,
@@ -56,7 +59,7 @@ impl TriluBackend {
 
     fn compute_trilu<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
     {
         let func = self.load_cuda_function(T::data_type())?;
 
@@ -115,7 +118,13 @@ impl TriluBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_trilu::<f16>(ctx),
             DataType::Float => self.compute_trilu::<f32>(ctx),
+            DataType::Double => self.compute_trilu::<f64>(ctx),
+            DataType::Int32 => self.compute_trilu::<i32>(ctx),
+            DataType::Uint32 => self.compute_trilu::<u32>(ctx),
+            DataType::Int64 => self.compute_trilu::<i64>(ctx),
+            DataType::Uint64 => self.compute_trilu::<u64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Trilu,
                 dtype,
