@@ -127,10 +127,10 @@ impl PowBackend {
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let info = scratch_alloc.allocate(3 * rank)?;
-        
+
         info[..rank].copy_from_slice(x_tensor.shape());
-        info[rank..2*rank].copy_from_slice(x_tensor.stride());
-        info[2*rank..].copy_from_slice(y_tensor.stride());
+        info[rank..2 * rank].copy_from_slice(x_tensor.stride());
+        info[2 * rank..].copy_from_slice(y_tensor.stride());
 
         unsafe {
             pow::compute::<X, Y>(

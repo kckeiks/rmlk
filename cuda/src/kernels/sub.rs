@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::SUB;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = SUB;
 
@@ -10,9 +13,9 @@ pub enum SubKernel {
     EqualFwdI64,
 }
 
-impl SubKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<SubKernel> for &'static str {
+    fn from(value: SubKernel) -> Self {
+        match value {
             SubKernel::EqualFwdF16 => "sub_fwd_f16",
             SubKernel::EqualFwdF32 => "sub_fwd_f32",
             SubKernel::EqualFwdF64 => "sub_fwd_f64",
@@ -22,10 +25,15 @@ impl SubKernel {
     }
 }
 
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: SubKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod test {
     use crate::kernels::binary::{compute, create_info_buffer};
-    use crate::kernels::sub::{SubKernel, PTX_SRC};
+    use crate::kernels::sub::{load_kernel, SubKernel};
     use crate::utils;
     use approx::assert_relative_eq;
     use cudarc::driver::CudaContext;
@@ -45,7 +53,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 4.0, 3.0, 4.0001]).unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, SubKernel::EqualFwdF32.as_str()).unwrap();
+        let f = load_kernel(ctx.clone(), SubKernel::EqualFwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

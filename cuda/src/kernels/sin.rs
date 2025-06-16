@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::SIN;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = SIN;
 
@@ -8,9 +11,9 @@ pub enum SinKernel {
     SinFwdF64,
 }
 
-impl SinKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<SinKernel> for &'static str {
+    fn from(value: SinKernel) -> Self {
+        match value {
             SinKernel::SinFwdF16 => "sin_fwd_f16",
             SinKernel::SinFwdF32 => "sin_fwd_f32",
             SinKernel::SinFwdF64 => "sin_fwd_f64",
@@ -18,9 +21,14 @@ impl SinKernel {
     }
 }
 
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: SinKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod test {
-    use crate::kernels::sin::{SinKernel, PTX_SRC};
+    use crate::kernels::sin::{load_kernel, SinKernel};
     use crate::kernels::unary::compute;
     use crate::utils;
     use approx::assert_relative_eq;
@@ -41,7 +49,7 @@ mod test {
             ])
             .unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, SinKernel::SinFwdF32.as_str()).unwrap();
+        let f = load_kernel(ctx.clone(), SinKernel::SinFwdF32).unwrap();
 
         let output_shape = vec![2, 3];
         let mut out_data = stream

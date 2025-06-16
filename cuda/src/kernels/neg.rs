@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::NEG;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = NEG;
 
@@ -10,9 +13,9 @@ pub enum NegKernel {
     NegFwdI64,
 }
 
-impl NegKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<NegKernel> for &'static str {
+    fn from(value: NegKernel) -> Self {
+        match value {
             NegKernel::NegFwdF16 => "neg_fwd_f16",
             NegKernel::NegFwdF32 => "neg_fwd_f32",
             NegKernel::NegFwdF64 => "neg_fwd_f64",
@@ -22,9 +25,14 @@ impl NegKernel {
     }
 }
 
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: NegKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod test {
-    use crate::kernels::neg::{NegKernel, PTX_SRC};
+    use crate::kernels::neg::{load_kernel, NegKernel};
     use crate::kernels::unary::compute;
     use crate::utils;
     use cudarc::driver::CudaContext;
@@ -40,7 +48,7 @@ mod test {
 
         let x_data = stream.memcpy_stod(&vec![0.0, 1.0, -2.3]).unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, NegKernel::NegFwdF32.as_str()).unwrap();
+        let f = load_kernel(ctx.clone(), NegKernel::NegFwdF32).unwrap();
 
         let output_shape = vec![3];
         let mut out_data = stream

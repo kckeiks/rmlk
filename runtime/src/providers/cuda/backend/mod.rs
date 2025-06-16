@@ -7,6 +7,7 @@ pub mod concat;
 pub mod constant;
 pub mod constant_of_shape;
 pub mod conv;
+pub mod div;
 pub mod equal;
 pub mod expand;
 pub mod gather;
@@ -64,6 +65,7 @@ use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
+use crate::providers::cuda::div::Divbackend;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
@@ -73,6 +75,7 @@ pub enum CudaKernel {
     Constant(ConstantBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
+    Div(Divbackend),
     Equal(EqualBackend),
     Expand(ExpandBackend),
     Gather(GatherBackend),
@@ -107,6 +110,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Constant(kernel) => kernel.compute(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
+            CudaKernel::Div(backend) => backend.compute(ctx),
             CudaKernel::Equal(kernel) => kernel.compute(ctx),
             CudaKernel::Expand(kernel) => kernel.compute(ctx),
             CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),

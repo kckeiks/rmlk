@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::COS;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const PTX_SRC: &str = COS;
 
@@ -8,9 +11,9 @@ pub enum CosKernel {
     CosFwdF64,
 }
 
-impl CosKernel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl From<CosKernel> for &'static str {
+    fn from(value: CosKernel) -> Self {
+        match value {
             CosKernel::CosFwdF16 => "cos_fwd_f16",
             CosKernel::CosFwdF32 => "cos_fwd_f32",
             CosKernel::CosFwdF64 => "cos_fwd_f64",
@@ -18,9 +21,14 @@ impl CosKernel {
     }
 }
 
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: CosKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
+
 #[cfg(test)]
 mod test {
-    use crate::kernels::cos::{CosKernel, PTX_SRC};
+    use crate::kernels::cos::{load_kernel, CosKernel};
     use crate::kernels::unary::compute;
     use crate::utils;
     use approx::assert_relative_eq;
@@ -41,7 +49,7 @@ mod test {
             ])
             .unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, CosKernel::CosFwdF32.as_str()).unwrap();
+        let f = load_kernel(ctx.clone(), CosKernel::CosFwdF32).unwrap();
 
         let output_shape = vec![2, 3];
         let mut out_data = stream

@@ -1,15 +1,43 @@
 use crate::ptx::DIV;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
-pub const MODULE_NAME: &str = "div";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["div_fwd_f16", "div_fwd_f32", "div_fwd_f64"];
 pub const PTX_SRC: &str = DIV;
+
+pub enum DivKernel {
+    DivFwdF16,
+    DivFwdF32,
+    DivFwdF64,
+    DivFwdI32,
+    DivFwdI64,
+}
+
+impl From<DivKernel> for &'static str {
+    fn from(value: DivKernel) -> &'static str {
+        match value {
+            DivKernel::DivFwdF16 => "div_fwd_f16",
+            DivKernel::DivFwdF32 => "div_fwd_f32",
+            DivKernel::DivFwdF64 => "div_fwd_f64",
+            DivKernel::DivFwdI32 => "div_fwd_i32",
+            DivKernel::DivFwdI64 => "div_fwd_i64",
+        }
+    }
+}
+
+pub fn load_kernel(
+    ctx: Arc<CudaContext>,
+    kernel_name: DivKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
 
 #[cfg(test)]
 mod test {
     use crate::kernels::binary::{compute, create_info_buffer};
+    use crate::kernels::div::{load_kernel, DivKernel};
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_f32() {
@@ -26,7 +54,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![2.0, 2.0, 2.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel(&ctx, Op::Div, DataType::Float).unwrap();
+        let f = load_kernel(ctx.clone(), DivKernel::DivFwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let output_len = output_shape.iter().copied().product();
