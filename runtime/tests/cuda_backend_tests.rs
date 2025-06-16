@@ -5,6 +5,7 @@ mod cuda {
 
     mod add_broadcast;
     mod add_broadcast_diff_len_shapes;
+    mod cast_float_int32;
     mod concat_rank2_axis0;
     mod concat_rank2_axis1;
     mod concat_rank3_axis1;

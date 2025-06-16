@@ -31,6 +31,14 @@ impl CastBackend {
         O: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         K: CastKernel,
     {
+        {
+            let input = ctx.get_input(0)?;
+            let output = ctx.get_output(0)?;
+            let src_id = input.src_id();
+            let dst_id = output.dst_id();
+            ctx.execution_state_mut().copy_shape_from_within(src_id, dst_id)?;
+        }
+        
         let input = ctx.get_input(0)?;
 
         {
@@ -47,7 +55,8 @@ impl CastBackend {
             );
         }
 
-        common::init_tensor_device_data::<I>(&self.stream, input)?;
+        let output_tensor = ctx.get_output(0)?;
+        common::init_tensor_device_data::<O>(&self.stream, output_tensor)?;
 
         let input = ctx.get_input(0)?;
 
@@ -100,7 +109,7 @@ impl CastBackend {
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::Cast,
                 // Todo: fix because we're missing info here.
-                dtype: in_dtype,
+                dtype: out_dtype,
             }),
         }
     }
