@@ -5,48 +5,48 @@ use crate::providers::cuda::Cuda;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
-use rmlk_cuda::kernels::sin;
-use rmlk_cuda::kernels::sin::SinKernel;
+use rmlk_cuda::kernels::cos;
+use rmlk_cuda::kernels::cos::CosKernel;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
-pub struct SinBackend {
+pub struct CosBackend {
     stream: Arc<CudaStream>,
 }
 
-impl SinBackend {
+impl CosBackend {
     pub fn new(stream: Arc<CudaStream>) -> Self {
         Self { stream }
     }
 }
 
-impl SinBackend {
+impl CosBackend {
     fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
         let kernel_name = match dtype {
-            DataType::Float16 => SinKernel::SinFwdF16,
-            DataType::Float => SinKernel::SinFwdF32,
-            DataType::Double => SinKernel::SinFwdF64,
-            _ => return Err(InternalError::UnsupportedOpForDataType { op: Op::Sin, dtype }),
+            DataType::Float16 => CosKernel::CosFwdF16,
+            DataType::Float => CosKernel::CosFwdF32,
+            DataType::Double => CosKernel::CosFwdF64,
+            _ => return Err(InternalError::UnsupportedOpForDataType { op: Op::Cos, dtype }),
         };
 
-        sin::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+        cos::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
-    fn compute_sin<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_cos<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { unary::compute::<D>("sin", self.stream, func, ctx) }
+        unsafe { unary::compute::<D>("cos", self.stream, func, ctx) }
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_sin::<f32>(ctx),
-            DataType::Int32 => self.compute_sin::<i32>(ctx),
-            DataType::Int64 => self.compute_sin::<i64>(ctx),
+            DataType::Float => self.compute_cos::<f32>(ctx),
+            DataType::Int32 => self.compute_cos::<i32>(ctx),
+            DataType::Int64 => self.compute_cos::<i64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Neg, dtype }),
         }
     }

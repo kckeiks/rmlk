@@ -19,6 +19,7 @@ mod cuda {
     mod constant_of_shape_simple;
     mod constant_of_shape_with_attrs;
     mod constant_raw_value;
+    mod cos_basic;
     mod div_basic;
     mod equal_basic;
     mod expand_basic;

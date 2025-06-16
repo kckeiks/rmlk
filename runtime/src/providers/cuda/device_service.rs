@@ -8,6 +8,7 @@ use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant::ConstantBackend;
 use crate::providers::cuda::constant_of_shape::ConstantOfShapeBackend;
 use crate::providers::cuda::conv::ConvolutionBackend;
+use crate::providers::cuda::cos::CosBackend;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::div::DivBackend;
 use crate::providers::cuda::equal::EqualBackend;
@@ -85,6 +86,7 @@ impl DeviceService for Cuda {
             Op::ConstantOfShape => {
                 CudaKernel::ConstantOfShape(ConstantOfShapeBackend::new(&self.stream))
             }
+            Op::Cos => CudaKernel::Cos(CosBackend::new(self.stream.clone())),
             Op::Div => CudaKernel::Div(DivBackend::new(self.stream.clone())),
             Op::Expand => CudaKernel::Expand(ExpandBackend::new(&self.stream)),
             Op::Equal => CudaKernel::Equal(EqualBackend::new(self.stream.clone())),

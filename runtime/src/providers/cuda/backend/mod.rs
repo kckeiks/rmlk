@@ -7,6 +7,7 @@ pub mod concat;
 pub mod constant;
 pub mod constant_of_shape;
 pub mod conv;
+pub mod cos;
 pub mod div;
 pub mod equal;
 pub mod expand;
@@ -43,6 +44,7 @@ use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
 use crate::providers::cuda::backend::cast::CastBackend;
 use crate::providers::cuda::backend::constant_of_shape::ConstantOfShapeBackend;
+use crate::providers::cuda::backend::cos::CosBackend;
 use crate::providers::cuda::backend::equal::EqualBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::greater::GreaterBackend;
@@ -81,6 +83,7 @@ pub enum CudaKernel {
     Constant(ConstantBackend),
     Conv(ConvolutionBackend),
     ConstantOfShape(ConstantOfShapeBackend),
+    Cos(CosBackend),
     Div(DivBackend),
     Equal(EqualBackend),
     Expand(ExpandBackend),
@@ -119,6 +122,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Constant(kernel) => kernel.compute(ctx),
             CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
+            CudaKernel::Cos(backend) => backend.compute(ctx),
             CudaKernel::Div(backend) => backend.compute(ctx),
             CudaKernel::Equal(kernel) => kernel.compute(ctx),
             CudaKernel::Expand(kernel) => kernel.compute(ctx),
