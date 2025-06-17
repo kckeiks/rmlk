@@ -5,8 +5,8 @@ use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::scatter_nd;
@@ -78,7 +78,7 @@ impl ScatterNdBackend {
 
     fn compute_scatter_nd<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         // Todo: can we preload the function when we need to read the attributes?
         let func = self.load_cuda_function(ctx, T::data_type())?;
@@ -185,7 +185,13 @@ impl ScatterNdBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_scatter_nd::<f16>(ctx),
             DataType::Float => self.compute_scatter_nd::<f32>(ctx),
+            DataType::Double => self.compute_scatter_nd::<f64>(ctx),
+            DataType::Int32 => self.compute_scatter_nd::<i32>(ctx),
+            DataType::Uint32 => self.compute_scatter_nd::<u32>(ctx),
+            DataType::Int64 => self.compute_scatter_nd::<i64>(ctx),
+            DataType::Uint64 => self.compute_scatter_nd::<u64>(ctx),
             _ => Err(InternalError::UnsupportedOpForDataType {
                 op: Op::ReduceMean,
                 dtype,

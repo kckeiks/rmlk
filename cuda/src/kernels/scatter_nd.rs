@@ -1,5 +1,4 @@
 use crate::ptx::SCATTER_ND;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
     ValidAsZeroBits,
@@ -103,7 +102,7 @@ pub unsafe fn compute<T>(
     error: &mut CudaSlice<i32>,
 ) -> crate::error::Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     let _data_shape = &info[..data_rank];
     let _indices_shape = &info[2 * data_rank..2 * data_rank + indices_rank];

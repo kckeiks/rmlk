@@ -57,7 +57,7 @@ pub fn copy_tensor_dev_data<T>(
     dst: &mut Tensor<CudaData>,
 ) -> Result<()>
 where
-    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
 {
     let src_dev_ptr = src.try_dev_data_ptr()?;
     let src = src_dev_ptr.data::<T>();
