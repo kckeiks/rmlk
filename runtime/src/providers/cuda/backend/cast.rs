@@ -107,7 +107,7 @@ impl CastBackend {
                 )?;
                 self.compute_cast::<f32, i32, K>(kernel, ctx)
             }
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Cast,
                 // Todo: fix because we're missing info here.
                 dtype: out_dtype,

@@ -210,7 +210,7 @@ impl ReduceMeanBackend {
 
         match dtype {
             DataType::Float => self.compute_reduce_mean::<f32, K>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::ReduceMean,
                 dtype,
             }),

@@ -26,7 +26,7 @@ impl CosBackend {
             DataType::Float16 => CosKernel::CosFwdF16,
             DataType::Float => CosKernel::CosFwdF32,
             DataType::Double => CosKernel::CosFwdF64,
-            _ => return Err(InternalError::UnsupportedOpForDataType { op: Op::Cos, dtype }),
+            _ => return Err(InternalError::UnsupportedDataTypeForOp { op: Op::Cos, dtype }),
         };
 
         cos::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -47,7 +47,7 @@ impl CosBackend {
             DataType::Float => self.compute_cos::<f32>(ctx),
             DataType::Int32 => self.compute_cos::<i32>(ctx),
             DataType::Int64 => self.compute_cos::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Neg, dtype }),
+            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Neg, dtype }),
         }
     }
 }

@@ -84,7 +84,7 @@ impl TransposeBackend {
 
         match dtype {
             DataType::Float => self.compute_transpose::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Transpose,
                 dtype,
             }),

@@ -34,7 +34,7 @@ impl ExpandBackend {
             DataType::Int64 => ExpandKernel::FwdI64,
             DataType::Uint64 => ExpandKernel::FwdU64,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Expand,
                     dtype,
                 })
@@ -140,7 +140,7 @@ impl ExpandBackend {
             DataType::Uint32 => self.compute_expand::<u32>(ctx),
             DataType::Int64 => self.compute_expand::<i64>(ctx),
             DataType::Uint64 => self.compute_expand::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::ReduceMean,
                 dtype,
             }),

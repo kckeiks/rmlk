@@ -124,7 +124,7 @@ impl SoftmaxBackend {
 
         match dtype {
             DataType::Float => self.compute_softmax::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Relu,
                 dtype,
             }),

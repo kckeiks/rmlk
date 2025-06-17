@@ -115,7 +115,7 @@ pub enum InternalError {
         op: Op,
         message: String,
     },
-    UnsupportedOpForDataType {
+    UnsupportedDataTypeForOp {
         op: Op,
         dtype: DataType,
     },
@@ -205,7 +205,7 @@ impl Display for InternalError {
             InternalError::UnsupportedOp { op } => {
                 write!(f, "unsupported `{op:?}` op")
             }
-            InternalError::UnsupportedOpForDataType { op, dtype } => {
+            InternalError::UnsupportedDataTypeForOp { op, dtype } => {
                 write!(f, "unsupported data type `{dtype:?}` for op `{op:?}`")
             }
             InternalError::UnsupportedRankSize { message } => {

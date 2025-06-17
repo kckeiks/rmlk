@@ -33,7 +33,7 @@ impl SqrtBackend {
 
         match dtype {
             DataType::Float => self.compute_sqrt::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Sqrt,
                 dtype,
             }),

@@ -108,7 +108,7 @@ impl GatherBackend {
                 self.perform_device_gather::<D, i64, K>(axis, ctx)?;
             }
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     dtype,
                     op: Op::Gather,
                 })
@@ -150,7 +150,7 @@ impl GatherBackend {
 
         match dtype {
             DataType::Float => self.run_gather::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Gather,
                 dtype,
             }),

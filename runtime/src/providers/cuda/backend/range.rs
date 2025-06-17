@@ -124,7 +124,7 @@ impl RangeBackend {
             DataType::Float => self.compute_range::<f32>(ctx),
             DataType::Int32 => self.compute_range::<i32>(ctx),
             DataType::Int64 => self.compute_range::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Range,
                 dtype,
             }),

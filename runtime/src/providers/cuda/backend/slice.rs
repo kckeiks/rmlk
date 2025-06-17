@@ -209,7 +209,7 @@ impl SliceBackend {
         match (input_dtype, starts_dtype) {
             (DataType::Float, DataType::Int32) => self.compute_slice::<f32, i32>(ctx),
             (DataType::Float, DataType::Int64) => self.compute_slice::<f32, i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Slice,
                 dtype: input_dtype,
             }),

@@ -33,7 +33,7 @@ impl TriluBackend {
             DataType::Int64 => TriluKernel::FwdI64,
             DataType::Uint64 => TriluKernel::FwdU64,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Trilu,
                     dtype,
                 })
@@ -125,7 +125,7 @@ impl TriluBackend {
             DataType::Uint32 => self.compute_trilu::<u32>(ctx),
             DataType::Int64 => self.compute_trilu::<i64>(ctx),
             DataType::Uint64 => self.compute_trilu::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Trilu,
                 dtype,
             }),

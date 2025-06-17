@@ -28,7 +28,7 @@ impl SubBackend {
             DataType::Double => SubKernel::SubFwdF64,
             DataType::Int32 => SubKernel::SubFwdI32,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Expand,
                     dtype,
                 })
@@ -53,7 +53,7 @@ impl SubBackend {
             DataType::Float => self.compute_sub::<f32>(ctx),
             DataType::Int32 => self.compute_sub::<i32>(ctx),
             DataType::Int64 => self.compute_sub::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
+            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Add, dtype }),
         }
     }
 }

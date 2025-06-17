@@ -29,7 +29,7 @@ impl EqualBackend {
             DataType::Int32 => EqualKernel::EqualFwdI32,
             DataType::Int64 => EqualKernel::EqualFwdI64,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Expand,
                     dtype,
                 })
@@ -53,7 +53,7 @@ impl EqualBackend {
         match dtype {
             DataType::Float => self.compute_greater::<f32>(ctx),
             DataType::Int64 => self.compute_greater::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Equal,
                 dtype,
             }),

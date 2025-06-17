@@ -230,7 +230,7 @@ impl GemmBackend {
 
         match dtype {
             DataType::Float => self.compute_gemm::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Conv,
                 dtype,
             }),

@@ -117,7 +117,7 @@ impl UnsqueezeBackend {
 
         match dtype {
             DataType::Float | DataType::Int64 => self.compute_unsqueeze(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Unsqueeze,
                 dtype,
             }),

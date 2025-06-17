@@ -28,7 +28,7 @@ impl DivBackend {
             DataType::Double => DivKernel::DivFwdF64,
             DataType::Int32 => DivKernel::DivFwdI32,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Expand,
                     dtype,
                 })
@@ -53,7 +53,7 @@ impl DivBackend {
             DataType::Float => self.compute_div::<f32>(ctx),
             DataType::Int32 => self.compute_div::<i32>(ctx),
             DataType::Int64 => self.compute_div::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Add, dtype }),
+            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Add, dtype }),
         }
     }
 }

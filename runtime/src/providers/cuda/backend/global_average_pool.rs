@@ -140,7 +140,7 @@ impl GlobalAverageBackend {
 
         match dtype {
             DataType::Float => self.compute_global_average_pool::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::GlobalAveragePool,
                 dtype,
             }),

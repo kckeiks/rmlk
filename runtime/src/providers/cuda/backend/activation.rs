@@ -106,7 +106,7 @@ impl ActivationBackend {
 
         match dtype {
             DataType::Float => self.compute_activation::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Relu,
                 dtype,
             }),

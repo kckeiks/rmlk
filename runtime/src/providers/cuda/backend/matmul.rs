@@ -342,7 +342,7 @@ impl MatMulBackend {
 
         match dtype {
             DataType::Float => self.compute_matmul::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::MatMul,
                 dtype,
             }),

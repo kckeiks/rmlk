@@ -89,7 +89,7 @@ impl ConstantBackend {
                     bytes.ok_or(InternalError::MissingAttributes)?,
                     ctx,
                 ),
-                _ => Err(InternalError::UnsupportedOpForDataType {
+                _ => Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Constant,
                     dtype,
                 }),

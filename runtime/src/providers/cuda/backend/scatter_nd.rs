@@ -25,6 +25,37 @@ impl ScatterNdBackend {
         }
     }
 
+    #[cfg(debug_assertions)]
+    fn log_inputs(&self, ctx: &Context<Cuda>) -> Result<()> {
+        let data_tensor = ctx.get_input(0)?;
+        let indices_tensor = ctx.get_input(1)?;
+        let updates_tensor = ctx.get_input(2)?;
+
+        debug!(
+            "[data][shape={:?}][stride={:?}]",
+            data_tensor.shape(),
+            data_tensor.stride()
+        );
+        debug!(
+            "[indices][shape={:?}][stride={:?}]",
+            indices_tensor.shape(),
+            indices_tensor.stride()
+        );
+        debug!(
+            "[updates][shape={:?}][stride={:?}]",
+            updates_tensor.shape(),
+            updates_tensor.stride()
+        );
+
+        if let Some(attrs) = ctx.get_attributes() {
+            debug!("[attrs={:?}]", attrs);
+        } else {
+            debug!("[no attrs]");
+        }
+
+        Ok(())
+    }
+
     fn load_cuda_function(&self, ctx: &mut Context<Cuda>, dtype: DataType) -> Result<CudaFunction> {
         let reduction = match ctx.get_attributes().as_ref() {
             Some(attrs) => attributes::scatter_nd::get_reduction(attrs)?,
@@ -66,7 +97,7 @@ impl ScatterNdBackend {
             Some(Reduction::Min) if matches!(dtype, DataType::Int32) => ScatterNdKernel::MinFwdI32,
             Some(Reduction::Min) if matches!(dtype, DataType::Int64) => ScatterNdKernel::MinFwdI64,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::ScatterND,
                     dtype,
                 })
@@ -141,7 +172,7 @@ impl ScatterNdBackend {
 
         #[cfg(debug_assertions)]
         {
-            debug!("num_idx_tuple=num_idx_tuples={num_idx_tuples}");
+            debug!("num_idx_tuple={num_idx_tuples}");
             debug!("data_rank={num_idx_tuples}");
             debug!("indices_rank={indices_rank}");
             debug!("updates_rank={updates_rank}");
@@ -182,6 +213,9 @@ impl ScatterNdBackend {
     }
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
+        #[cfg(debug_assertions)]
+        self.log_inputs(ctx)?;
+
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
@@ -192,7 +226,7 @@ impl ScatterNdBackend {
             DataType::Uint32 => self.compute_scatter_nd::<u32>(ctx),
             DataType::Int64 => self.compute_scatter_nd::<i64>(ctx),
             DataType::Uint64 => self.compute_scatter_nd::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::ReduceMean,
                 dtype,
             }),

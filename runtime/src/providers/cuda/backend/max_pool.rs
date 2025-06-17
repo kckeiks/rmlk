@@ -157,7 +157,7 @@ impl MaxPoolBackend {
 
         match dtype {
             DataType::Float => self.compute_max_pool::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::MaxPool,
                 dtype,
             }),

@@ -83,7 +83,7 @@ impl PowBackend {
             (DataType::Int64, DataType::Float) => PowKernel::PowFwdI64F32,
             (DataType::Int64, DataType::Double) => PowKernel::PowFwdI64F64,
             (_, dtype2) => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Pow,
                     dtype: dtype2,
                 })
@@ -207,7 +207,7 @@ impl PowBackend {
             // (DataType::Float16, DataType::Uint64) => self.compute_pow::<f16, u64>(ctx),
             // (DataType::Float16, DataType::Int8) => self.compute_pow::<f16, i8>(ctx),
             // (DataType::Float16, DataType::Int16) => self.compute_pow::<f16, i16>(ctx),
-            (_, dtype2) => Err(InternalError::UnsupportedOpForDataType {
+            (_, dtype2) => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Pow,
                 dtype: dtype2,
             }),

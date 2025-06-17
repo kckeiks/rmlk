@@ -28,7 +28,7 @@ impl NegBackend {
             DataType::Double => NegKernel::NegFwdF64,
             DataType::Int32 => NegKernel::NegFwdI32,
             _ => {
-                return Err(InternalError::UnsupportedOpForDataType {
+                return Err(InternalError::UnsupportedDataTypeForOp {
                     op: Op::Expand,
                     dtype,
                 })
@@ -53,7 +53,7 @@ impl NegBackend {
             DataType::Float => self.compute_div::<f32>(ctx),
             DataType::Int32 => self.compute_div::<i32>(ctx),
             DataType::Int64 => self.compute_div::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Neg, dtype }),
+            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Neg, dtype }),
         }
     }
 }

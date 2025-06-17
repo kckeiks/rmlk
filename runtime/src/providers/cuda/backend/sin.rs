@@ -26,7 +26,7 @@ impl SinBackend {
             DataType::Float16 => SinKernel::SinFwdF16,
             DataType::Float => SinKernel::SinFwdF32,
             DataType::Double => SinKernel::SinFwdF64,
-            _ => return Err(InternalError::UnsupportedOpForDataType { op: Op::Sin, dtype }),
+            _ => return Err(InternalError::UnsupportedDataTypeForOp { op: Op::Sin, dtype }),
         };
 
         sin::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -47,7 +47,7 @@ impl SinBackend {
             DataType::Float => self.compute_sin::<f32>(ctx),
             DataType::Int32 => self.compute_sin::<i32>(ctx),
             DataType::Int64 => self.compute_sin::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType { op: Op::Neg, dtype }),
+            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Neg, dtype }),
         }
     }
 }

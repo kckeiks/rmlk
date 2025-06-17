@@ -224,7 +224,7 @@ impl WhereBackend {
         let dtype = ctx.get_input(0)?.dtype();
         match dtype {
             DataType::Float => self.compute_where::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedOpForDataType {
+            _ => Err(InternalError::UnsupportedDataTypeForOp {
                 op: Op::Where,
                 dtype,
             }),
