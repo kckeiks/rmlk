@@ -1,11 +1,14 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
-use num_traits::{Num, NumCast};
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use half::f16;
+use log::debug;
+use num_traits::{Float, Num, NumCast, ToPrimitive};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct RangeBackend {
@@ -39,16 +42,37 @@ impl RangeBackend {
 
         {
             let start_tensor = ctx.get_input(0)?;
+
+            debug!(
+                "[start][shape={:?}][stride=[{:?}]",
+                start_tensor.shape(),
+                start_tensor.stride(),
+            );
+
             let start_ptr = start_tensor.try_dev_data_ptr()?;
             let start_view = start_ptr.data::<I>();
             self.stream.memcpy_dtoh(start_view.as_ref(), start_value)?;
 
             let limit_tensor = ctx.get_input(1)?;
+
+            debug!(
+                "[limit][shape={:?}][stride=[{:?}]",
+                limit_tensor.shape(),
+                limit_tensor.stride(),
+            );
+
             let limit_ptr = limit_tensor.try_dev_data_ptr()?;
             let limit_view = limit_ptr.data::<I>();
             self.stream.memcpy_dtoh(limit_view.as_ref(), limit_value)?;
 
             let delta_tensor = ctx.get_input(2)?;
+
+            debug!(
+                "[delta][shape={:?}][stride=[{:?}]",
+                delta_tensor.shape(),
+                delta_tensor.stride(),
+            );
+
             let delta_ptr = delta_tensor.try_dev_data_ptr()?;
             let delta_view = delta_ptr.data::<I>();
             self.stream.memcpy_dtoh(delta_view.as_ref(), delta_value)?;
@@ -71,6 +95,13 @@ impl RangeBackend {
 
         // Try to init the tensor.
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][stride=[{:?}]",
+            output_tensor.shape(),
+            output_tensor.stride(),
+        );
+
         common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
 
         let output = scratch_alloc.allocate_fill::<I>(elem_count, I::zero())?;
@@ -80,39 +111,10 @@ impl RangeBackend {
 
         // Copy the data from the host to the device.
         let output_tensor = ctx.get_output(0)?;
+
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<I>();
         self.stream.memcpy_htod(output, output_view.as_mut())?;
-
-        #[cfg(debug_assertions)]
-        {
-            use log::debug;
-
-            let start = ctx.get_input(0)?;
-            let limit = ctx.get_input(1)?;
-            let delta = ctx.get_input(2)?;
-            let output = ctx.get_output(0)?;
-            debug!(
-                "[start][shape={:?}][stride=[stride=[{:?}]",
-                start.shape(),
-                start.stride(),
-            );
-            debug!(
-                "[limit][shape={:?}][stride=[stride=[{:?}]",
-                limit.shape(),
-                limit.stride(),
-            );
-            debug!(
-                "[delta][shape={:?}][stride=[stride=[{:?}]",
-                delta.shape(),
-                delta.stride(),
-            );
-            debug!(
-                "[output][shape={:?}][stride=[stride=[{:?}]",
-                output.shape(),
-                output.stride()
-            );
-        }
 
         Ok(())
     }
@@ -121,13 +123,12 @@ impl RangeBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_range::<f16>(ctx),
             DataType::Float => self.compute_range::<f32>(ctx),
+            DataType::Double => self.compute_range::<f64>(ctx),
             DataType::Int32 => self.compute_range::<i32>(ctx),
             DataType::Int64 => self.compute_range::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Range,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
@@ -139,14 +140,30 @@ pub trait ElementCount {
 impl ElementCount for i32 {
     fn element_count(start: i32, limit: i32, delta: i32) -> Result<usize> {
         let count = ((limit - start) / delta).max(0);
-        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue)
+        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue.into())
     }
 }
 
 impl ElementCount for i64 {
     fn element_count(start: i64, limit: i64, delta: i64) -> Result<usize> {
         let count = ((limit - start) / delta).max(0);
-        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue)
+        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue.into())
+    }
+}
+
+impl ElementCount for f16 {
+    fn element_count(start: f16, limit: f16, delta: f16) -> Result<usize> {
+        let count = ((limit - start) / delta).ceil();
+        if count < f16::from_f32(0.0) {
+            return Err(InternalError::UnableToConvertValue.into());
+        }
+        // Todo: circle back about this.
+        if count > f16::MAX {
+            return Err(InternalError::UnableToConvertValue.into());
+        }
+        count
+            .to_usize()
+            .ok_or(InternalError::UnableToConvertValue.into())
     }
 }
 
@@ -154,10 +171,23 @@ impl ElementCount for f32 {
     fn element_count(start: f32, limit: f32, delta: f32) -> Result<usize> {
         let count = ((limit - start) / delta).ceil();
         if count < 0.0 {
-            return Err(InternalError::UnableToConvertValue);
+            return Err(InternalError::UnableToConvertValue.into());
         }
         if count > (usize::MAX as f32) {
-            return Err(InternalError::UnableToConvertValue);
+            return Err(InternalError::UnableToConvertValue.into());
+        }
+        Ok(count as usize)
+    }
+}
+
+impl ElementCount for f64 {
+    fn element_count(start: f64, limit: f64, delta: f64) -> Result<usize> {
+        let count = ((limit - start) / delta).ceil();
+        if count < 0.0 {
+            return Err(InternalError::UnableToConvertValue.into());
+        }
+        if count > (usize::MAX as f64) {
+            return Err(InternalError::UnableToConvertValue.into());
         }
         Ok(count as usize)
     }

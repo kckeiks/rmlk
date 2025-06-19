@@ -1,5 +1,5 @@
 use crate::core::backend::OperationBackend;
-use crate::core::error::Result;
+use anyhow::Result;
 use rmlk_schema::{DataType, Op};
 
 /// Services for using an accelerator device's resources.

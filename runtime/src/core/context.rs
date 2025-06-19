@@ -1,13 +1,35 @@
 use crate::core::device_service::DeviceService;
-use crate::core::error::InternalError;
 use crate::core::execution_state::ExecutionState;
 use crate::core::tensor::Tensor;
+use anyhow::Result;
 use rmlk_graph::Node;
 use rmlk_schema::{Attribute, Definition};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, InternalError>;
+#[derive(Debug)]
+pub enum ContextError {
+    TensorIndexNotFound { node_id: usize },
+    InvalidTensorIndex { index: usize },
+    TensorNotFound { index: usize },
+}
+
+impl Display for ContextError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContextError::TensorIndexNotFound { node_id } => {
+                write!(f, "Tensor index not found: {}", node_id)
+            }
+            ContextError::InvalidTensorIndex { index } => {
+                write!(f, "Invalid tensor index: {}", index)
+            }
+            ContextError::TensorNotFound { index } => write!(f, "Tensor not found: {}", index),
+        }
+    }
+}
+
+impl std::error::Error for ContextError {}
 
 /// Computation context.
 ///
@@ -40,7 +62,7 @@ where
     pub fn new(execution_state: &'a mut ExecutionState<D>, node_id: usize) -> Result<Self> {
         let node_index = execution_state
             .get_tensor_index(&node_id)
-            .ok_or_else(|| InternalError::TensorIndexNotFound { node_id })?;
+            .ok_or_else(|| ContextError::TensorIndexNotFound { node_id })?;
         let input_count = execution_state
             .graph()
             .get_node(node_id)
@@ -66,12 +88,13 @@ where
     pub fn get_input(&self, index: usize) -> Result<Tensor<D::Data>> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
-            return Err(InternalError::InvalidTensorIndex { index: node_index });
+            return Err(ContextError::InvalidTensorIndex { index: node_index }.into());
         }
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
+            .ok_or_else(|| ContextError::TensorNotFound { index: node_index })
+            .map_err(Into::into)
     }
 
     pub fn input_exists(&self, index: usize) -> bool {
@@ -86,12 +109,13 @@ where
     pub fn get_output(&self, index: usize) -> Result<Tensor<D::Data>> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
-            return Err(InternalError::InvalidTensorIndex { index: node_index });
+            return Err(ContextError::InvalidTensorIndex { index: node_index }.into());
         }
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| InternalError::TensorNotFoundFromIndex { id: node_index })
+            .ok_or_else(|| ContextError::TensorNotFound { index: node_index })
+            .map_err(Into::into)
     }
 
     pub fn get_node(&self) -> Option<&Node<Definition>> {

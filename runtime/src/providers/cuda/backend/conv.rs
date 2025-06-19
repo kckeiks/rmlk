@@ -1,15 +1,17 @@
 use crate::attributes::conv::ConvAttributes;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::conv::BiasInput;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct ConvolutionBackend {
@@ -36,7 +38,8 @@ impl ConvolutionBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)?;
+            .ok_or(InternalError::MissingAttributes)
+            .map_err(Box::new)?;
 
         let conv_attrs =
             ConvAttributes::new(&attrs, ctx.execution_state().scratch_alloc(), filter_dims)?;
@@ -68,16 +71,17 @@ impl ConvolutionBackend {
         Ok(())
     }
 
-    fn compute_convolution<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_convolution<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: ConvolutionKernel,
     {
         // We compute the output shape first.
         // This is cheap because we're using scratch buffers.
         self.compute_output_shape(ctx)?;
 
         let x = ctx.get_input(0)?;
+
+        debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
 
         let filter_dims = match x.shape().len() {
             4 => 2,
@@ -89,31 +93,39 @@ impl ConvolutionBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)?;
+            .ok_or(InternalError::MissingAttributes)
+            .map_err(Box::new)?;
 
         let conv_attrs =
             ConvAttributes::new(&attrs, ctx.execution_state().scratch_alloc(), filter_dims)?;
 
         let w = ctx.get_input(1)?;
-        let bias = ctx.get_input(2).ok();
-        let y = ctx.get_output(0)?;
+
+        debug!("[w][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
         let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
-        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
-        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
-        debug!("[x][conv][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-        debug!("[w][conv][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
-        debug!("[y][conv][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        let y = ctx.get_output(0)?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
+
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
 
         // Todo: refactor this.
         // Extract and prepare bias argument.
         // At this point, we still don't know the data type of bias.
+        let bias = ctx.get_input(2).ok();
         let bias = match bias.as_ref() {
             Some(bias_tensor) => {
+                debug!(
+                    "[bias][shape={:?}][stride=[{:?}]",
+                    bias_tensor.shape(),
+                    bias_tensor.stride()
+                );
+
                 let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
                 // Todo: Urgent. We need to make this generic.
                 bias_shape[1] = bias_tensor.shape()[0] as i32;
@@ -138,30 +150,11 @@ impl ConvolutionBackend {
         let w_dev_data_ref = w.try_dev_data_ptr()?;
         let w_dev_data = w_dev_data_ref.data();
 
-        let elem_count = y_shape.iter().map(|d| *d as usize).product();
+        let y = ctx.get_output(0)?;
 
-        // Allocate device data for the tensor if we haven't done it yet
-        // or if the existing allocated data has a different size.
-        {
-            let mut y = ctx.get_output(0)?;
-            let y_dev_data_ref = y.dev_data_ptr_mut();
-            let need_to_alloc_dev_data = y_dev_data_ref.is_none()
-                || y_dev_data_ref
-                    .as_ref()
-                    .map(|data| data.data::<D>().len() != elem_count)
-                    .unwrap_or(true);
+        debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
-            // We need to remove this immutable reference so we can mutate `y`.
-            drop(y_dev_data_ref);
-
-            if need_to_alloc_dev_data {
-                let y_dev_data = self
-                    .stream
-                    .alloc_zeros::<f32>(elem_count)
-                    .map_err(rmlk_cuda::Error::from)?;
-                y.set_dev_data(CudaData::new(y_dev_data));
-            };
-        }
+        common::init_tensor_device_data::<D>(&self.stream, y)?;
 
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
@@ -176,10 +169,9 @@ impl ConvolutionBackend {
         match bias.as_ref() {
             Some(bias) => {
                 let data = bias.data.data();
-                T::execute::<D>(
+                rmlk_cuda::kernels::conv::compute::<D>(
                     self.stream,
-                    D::one(),
-                    D::zero(),
+                    (D::one(), D::zero()),
                     &x_dev_data,
                     &x_shape,
                     &x_stride,
@@ -200,10 +192,9 @@ impl ConvolutionBackend {
                 )?;
             }
             None => {
-                T::execute::<D>(
+                rmlk_cuda::kernels::conv::compute::<D>(
                     self.stream,
-                    D::one(),
-                    D::zero(),
+                    (D::one(), D::zero()),
                     &x_dev_data,
                     &x_shape,
                     &x_stride,
@@ -224,18 +215,16 @@ impl ConvolutionBackend {
         Ok(())
     }
 
-    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        T: ConvolutionKernel,
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_convolution::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Conv,
-                dtype,
-            }),
+            DataType::Float16 => self.compute_convolution::<f16>(ctx),
+            DataType::Float => self.compute_convolution::<f32>(ctx),
+            DataType::Double => self.compute_convolution::<f64>(ctx),
+            DataType::Int32 => self.compute_convolution::<i32>(ctx),
+            DataType::Int64 => self.compute_convolution::<i64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
@@ -244,97 +233,4 @@ struct BiasArg<'a, T> {
     data: T,
     shape: &'a [i32],
     stride: &'a [i32],
-}
-
-pub trait ConvolutionKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        alpha: T,
-        beta: T,
-        x_data: &CudaSlice<T>,
-        x_shape: &[i32],
-        x_stride: &[i32],
-        w_data: &CudaSlice<T>,
-        w_shape: &[i32],
-        pads: &[i32],
-        strides: &[i32],
-        dilations: &[i32],
-        group: i32,
-        bias: Option<BiasInput<T>>,
-        y_data: &mut CudaSlice<T>,
-        y_shape: &[i32],
-        y_stride: &[i32],
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
-}
-
-pub struct ActiveKernel(());
-
-impl ConvolutionKernel for ActiveKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        alpha: T,
-        beta: T,
-        x_data: &CudaSlice<T>,
-        x_shape: &[i32],
-        x_stride: &[i32],
-        w_data: &CudaSlice<T>,
-        w_shape: &[i32],
-        pads: &[i32],
-        strides: &[i32],
-        dilations: &[i32],
-        group: i32,
-        bias: Option<BiasInput<T>>,
-        y_data: &mut CudaSlice<T>,
-        y_shape: &[i32],
-        y_stride: &[i32],
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        rmlk_cuda::kernels::conv::compute::<T>(
-            stream,
-            (alpha, beta),
-            x_data,
-            x_shape,
-            x_stride,
-            w_data,
-            w_shape,
-            pads,
-            strides,
-            dilations,
-            group,
-            bias,
-            y_data,
-            y_shape,
-            y_stride,
-        )
-        .map_err(Into::into)
-    }
-}
-
-pub struct NoOpKernel(());
-
-impl ConvolutionKernel for NoOpKernel {
-    fn execute<T>(
-        _: Arc<CudaStream>,
-        _: T,
-        _: T,
-        _: &CudaSlice<T>,
-        _: &[i32],
-        _: &[i32],
-        _: &CudaSlice<T>,
-        _: &[i32],
-        _: &[i32],
-        _: &[i32],
-        _: &[i32],
-        _: i32,
-        _: Option<BiasInput<T>>,
-        _: &mut CudaSlice<T>,
-        _: &[i32],
-        _: &[i32],
-    ) -> Result<()> {
-        Ok(())
-    }
 }

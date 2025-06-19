@@ -1,15 +1,17 @@
 use crate::attributes;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
+use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::trilu;
 use rmlk_cuda::kernels::trilu::TriluKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct TriluBackend {
@@ -32,12 +34,7 @@ impl TriluBackend {
             DataType::Uint32 => TriluKernel::FwdU32,
             DataType::Int64 => TriluKernel::FwdI64,
             DataType::Uint64 => TriluKernel::FwdU64,
-            _ => {
-                return Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::Trilu,
-                    dtype,
-                })
-            }
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
         trilu::load_kernel(self.stream.context(), kernel_name).map_err(Into::into)
@@ -47,6 +44,11 @@ impl TriluBackend {
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         match ctx.get_input(1) {
             Ok(k_tensor) => {
+                debug!(
+                    "[k][shape={:?}][stride={:?}]",
+                    k_tensor.shape(),
+                    k_tensor.stride()
+                );
                 let k_dev_ptr = k_tensor.try_dev_data_ptr()?;
                 let k_view = k_dev_ptr.data::<i64>();
                 let k = scratch_alloc.allocate(1)?;
@@ -69,6 +71,13 @@ impl TriluBackend {
         };
 
         let input_tensor = ctx.get_input(0)?;
+
+        debug!(
+            "[input][shape={:?}][stride=[{:?}]",
+            input_tensor.shape(),
+            input_tensor.stride()
+        );
+
         let output_tensor = ctx.get_output(0)?;
         let src_id = input_tensor.src_id();
         let dst_id = output_tensor.dst_id();
@@ -82,6 +91,13 @@ impl TriluBackend {
         let output_data = self.stream.alloc_zeros::<T>(input_data_size)?;
 
         let mut output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][stride=[{:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         output_tensor.set_dev_data(CudaData::new(output_data));
 
         let k = self.get_k(ctx)?;
@@ -122,13 +138,8 @@ impl TriluBackend {
             DataType::Float => self.compute_trilu::<f32>(ctx),
             DataType::Double => self.compute_trilu::<f64>(ctx),
             DataType::Int32 => self.compute_trilu::<i32>(ctx),
-            DataType::Uint32 => self.compute_trilu::<u32>(ctx),
             DataType::Int64 => self.compute_trilu::<i64>(ctx),
-            DataType::Uint64 => self.compute_trilu::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Trilu,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

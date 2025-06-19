@@ -1,5 +1,4 @@
 use crate::core::device_service::DeviceService;
-use crate::core::error::{InternalError, Result};
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
@@ -35,7 +34,8 @@ use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
-use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, DriverError};
+use anyhow::{anyhow, Result};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr};
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
@@ -131,7 +131,7 @@ impl DeviceService for Cuda {
                 CudaKernel::Where(WhereBackend::new(self.stream.clone(), f))
             }
             op => {
-                return Err(InternalError::UnsupportedOp { op });
+                return Err(anyhow!("no backend for op `{op:?}`"));
             }
         };
 
@@ -175,11 +175,5 @@ impl DeviceService for Cuda {
             .alloc_zeros::<f32>(len)
             .map_err(Into::into)
             .map(CudaData::new)
-    }
-}
-
-impl From<DriverError> for InternalError {
-    fn from(value: DriverError) -> Self {
-        rmlk_cuda::Error::Cuda(value.0 as u32).into()
     }
 }

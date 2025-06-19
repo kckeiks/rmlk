@@ -1,5 +1,4 @@
 use crate::ptx::WHERE;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
@@ -39,7 +38,7 @@ pub unsafe fn compute<T>(
     output_data: &mut CudaSlice<T>,
 ) -> crate::error::Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     assert_eq!(4 * ndims, info_buffer.len());
 

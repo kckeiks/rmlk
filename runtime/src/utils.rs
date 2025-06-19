@@ -1,5 +1,4 @@
-use crate::core::error;
-use crate::core::error::InternalError;
+use anyhow::{anyhow, bail, Result};
 use half::f16;
 use num_traits::{Num, ToPrimitive};
 use std::cmp;
@@ -161,7 +160,7 @@ impl<'a, T> Iterator for DataIterator<'a, T> {
     }
 }
 
-pub fn normalize_indices(src: &[i64], dst: &mut [usize], size: usize) -> error::Result<()> {
+pub fn normalize_indices(src: &[i64], dst: &mut [usize], size: usize) -> Result<()> {
     debug_assert_eq!(src.len(), dst.len());
 
     for (i, axis) in src.iter().copied().enumerate() {
@@ -171,7 +170,7 @@ pub fn normalize_indices(src: &[i64], dst: &mut [usize], size: usize) -> error::
 }
 
 // This function converts `index` to a `usize` value in the range `[0, size-1]`.
-pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
+pub fn normalize_index(index: i64, size: usize) -> Result<usize> {
     let norm_index = match index < 0 {
         true => size
             .checked_sub(
@@ -180,27 +179,27 @@ pub fn normalize_index(index: i64, size: usize) -> error::Result<usize> {
                     .to_usize()
                     .expect("the runtime to be running in a `64-bit` system"),
             )
-            .ok_or(InternalError::AxisOutOfBounds { axis: index })?,
+            .ok_or_else(|| anyhow!("axis out of bound {index}"))?,
         false => index
             .to_usize()
             .expect("the runtime to be running in a `64-bit` system"),
     };
 
     if norm_index > size {
-        Err(InternalError::AxisOutOfBounds { axis: index })
+        Err(anyhow!("axis out of bound {index}"))
     } else {
         Ok(norm_index)
     }
 }
 
-pub fn derive_range(start: i64, end: i64, size: usize) -> error::Result<(usize, usize)> {
+pub fn derive_range(start: i64, end: i64, size: usize) -> Result<(usize, usize)> {
     let norm_start = match normalize_index(start, size) {
         Ok(start) => start,
         Err(_) => {
             if start < 0 {
                 0
             } else {
-                return Err(InternalError::AxisOutOfBounds { axis: start });
+                bail!("axis out of bound {start}")
             }
         }
     };
@@ -211,25 +210,25 @@ pub fn derive_range(start: i64, end: i64, size: usize) -> error::Result<(usize, 
             if end > 0 {
                 size
             } else {
-                return Err(InternalError::AxisOutOfBounds { axis: start });
+                bail!("axis out of bound {start}")
             }
         }
     };
 
     if norm_start > norm_end {
-        return Err(InternalError::InvalidRange { start, end });
+        bail!("invalid range start=`{start}` and end=`{end}`")
     }
 
     Ok((norm_start, norm_end))
 }
 
 #[inline]
-pub fn write_increasing_sequence<T>(dst: &mut [T]) -> error::Result<()>
+pub fn write_increasing_sequence<T>(dst: &mut [T]) -> Result<()>
 where
     T: From<usize>,
 {
     for i in 0..dst.len() {
-        dst[i] = T::try_from(i).map_err(|_| InternalError::UnableToConvertValue)?;
+        dst[i] = T::try_from(i)?;
     }
     Ok(())
 }
@@ -243,13 +242,13 @@ pub fn to_float_vec(data: &[u8]) -> Vec<f32> {
 }
 
 pub trait FromBytes: Sized {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError>;
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>>;
 }
 
 impl FromBytes for f16 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for f16", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -264,9 +263,9 @@ impl FromBytes for f16 {
 }
 
 impl FromBytes for f32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for f32", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -281,9 +280,9 @@ impl FromBytes for f32 {
 }
 
 impl FromBytes for f64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for f64", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -298,9 +297,9 @@ impl FromBytes for f64 {
 }
 
 impl FromBytes for i32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for i32", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -315,9 +314,9 @@ impl FromBytes for i32 {
 }
 
 impl FromBytes for u32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for u32", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -332,9 +331,9 @@ impl FromBytes for u32 {
 }
 
 impl FromBytes for i64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for i64", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
@@ -349,9 +348,9 @@ impl FromBytes for i64 {
 }
 
 impl FromBytes for u64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>, InternalError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
         if bytes.len() % size_of::<Self>() != 0 {
-            return Err(InternalError::InvalidByteLength);
+            bail!("invalid bytes length {} for u64", bytes.len())
         }
 
         let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());

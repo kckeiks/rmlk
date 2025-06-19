@@ -1,5 +1,4 @@
 use crate::ptx::REDUCE_MEAN;
-use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{
     CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
 };
@@ -28,7 +27,7 @@ pub unsafe fn compute<T>(
     output: &mut CudaSlice<T>,
 ) -> crate::error::Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     debug_assert!(axes.len() > 0);
     debug_assert!(input.len() > 0);

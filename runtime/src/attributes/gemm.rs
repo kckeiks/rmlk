@@ -1,7 +1,8 @@
-use crate::core::error::{InternalError, Result};
+use anyhow::Result;
 use log::debug;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct GemmAttributes {
@@ -33,9 +34,7 @@ impl GemmAttributes {
                 None => None,
                 Some(n) => {
                     debug!("invalid value {n} for the `transA` attribute");
-                    return Err(InternalError::InvalidAttribute {
-                        name: "transA".to_string(),
-                    });
+                    return Err(Box::new(GemmAttributeError::InvalidTransA).into());
                 }
             };
         }
@@ -47,9 +46,7 @@ impl GemmAttributes {
                 None => None,
                 Some(n) => {
                     debug!("invalid value {n} for the `transB` attribute");
-                    return Err(InternalError::InvalidAttribute {
-                        name: "transB".to_string(),
-                    });
+                    return Err(Box::new(GemmAttributeError::InvalidTransB).into());
                 }
             };
         }
@@ -89,3 +86,17 @@ impl Default for GemmAttributes {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum GemmAttributeError {
+    InvalidTransA,
+    InvalidTransB,
+}
+
+impl Display for GemmAttributeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for GemmAttributeError {}

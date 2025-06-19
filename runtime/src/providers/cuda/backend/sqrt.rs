@@ -1,11 +1,13 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct SqrtBackend {
@@ -32,11 +34,10 @@ impl SqrtBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_sqrt::<f16>(ctx),
             DataType::Float => self.compute_sqrt::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Sqrt,
-                dtype,
-            }),
+            DataType::Double => self.compute_sqrt::<f64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

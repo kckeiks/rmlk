@@ -1,7 +1,9 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
+use anyhow::Result;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 pub struct ConvAttributes<'a> {
     kernel_dims: usize,
@@ -28,50 +30,27 @@ impl<'a> ConvAttributes<'a> {
         let mut kernel_shape = None;
 
         if let Some(attr) = attrs.get("dilations") {
-            dilations = attr
-                .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "dilations".to_string(),
-                })?;
+            dilations = attr.ints().ok_or(ConvAttributesError::InvalidDilation)?;
         } else {
             dilations = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
 
         if let Some(attr) = attrs.get("group") {
-            group = Some(
-                attr.int()
-                    .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                        name: "group".to_string(),
-                    })?,
-            );
+            group = Some(attr.int().ok_or(ConvAttributesError::InvalidGroup)?);
         }
 
         if let Some(attr) = attrs.get("kernel_shape") {
-            kernel_shape =
-                Some(
-                    attr.ints()
-                        .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                            name: "kernel_shape".to_string(),
-                        })?,
-                );
+            kernel_shape = Some(attr.ints().ok_or(ConvAttributesError::InvalidKernelShape)?);
         }
 
         if let Some(attr) = attrs.get("pads") {
-            pads = attr
-                .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "pads".to_string(),
-                })?;
+            pads = attr.ints().ok_or(ConvAttributesError::InvalidPads)?;
         } else {
             pads = scratch_alloc.allocate_fill(kernel_dims, 0)?;
         }
 
         if let Some(attr) = attrs.get("strides") {
-            strides = attr
-                .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "strides".to_string(),
-                })?;
+            strides = attr.ints().ok_or(ConvAttributesError::InvalidStrides)?;
         } else {
             strides = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
@@ -105,5 +84,30 @@ impl<'a> ConvAttributes<'a> {
 
     pub fn _kernel_shape(&self) -> Option<&[i32]> {
         self._kernel_shape
+    }
+}
+
+#[derive(Debug)]
+pub enum ConvAttributesError {
+    InvalidDilation,
+    InvalidGroup,
+    InvalidKernelShape,
+    InvalidPads,
+    InvalidStrides,
+}
+
+impl Display for ConvAttributesError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for ConvAttributesError {}
+
+impl From<ConvAttributesError> for InternalError {
+    fn from(value: ConvAttributesError) -> Self {
+        InternalError::Attribute {
+            inner: Box::new(value),
+        }
     }
 }

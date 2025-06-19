@@ -37,7 +37,6 @@ pub mod unsqueeze;
 pub mod whereop;
 
 use crate::core::backend::OperationBackend;
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
@@ -74,6 +73,7 @@ use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 
 pub enum CudaKernel {
     Add(AdditionBackend),
@@ -117,30 +117,28 @@ impl OperationBackend<Cuda> for CudaKernel {
         match self {
             CudaKernel::Add(kernel) => kernel.compute(ctx),
             CudaKernel::Relu(kernel) => kernel.compute::<relu::ReluKernel>(ctx),
-            CudaKernel::Cast(kernel) => kernel.compute::<cast::ActiveKernel>(ctx),
+            CudaKernel::Cast(kernel) => kernel.compute(ctx),
             CudaKernel::Concat(kernel) => kernel.compute(ctx),
             CudaKernel::Constant(kernel) => kernel.compute(ctx),
-            CudaKernel::Conv(kernel) => kernel.compute::<conv::ActiveKernel>(ctx),
+            CudaKernel::Conv(kernel) => kernel.compute(ctx),
             CudaKernel::ConstantOfShape(backend) => backend.compute(ctx),
             CudaKernel::Cos(backend) => backend.compute(ctx),
             CudaKernel::Div(backend) => backend.compute(ctx),
             CudaKernel::Equal(kernel) => kernel.compute(ctx),
             CudaKernel::Expand(kernel) => kernel.compute(ctx),
-            CudaKernel::Gather(kernel) => kernel.compute::<gather::DefaultGatherProcessor>(ctx),
-            CudaKernel::Gemm(kernel) => kernel.compute::<gemm::ActiveKernel>(ctx),
-            CudaKernel::GlobalAveragePool(kernel) => {
-                kernel.compute::<global_average_pool::ActiveKernel>(ctx)
-            }
+            CudaKernel::Gather(kernel) => kernel.compute(ctx),
+            CudaKernel::Gemm(kernel) => kernel.compute(ctx),
+            CudaKernel::GlobalAveragePool(kernel) => kernel.compute(ctx),
             CudaKernel::Greater(kernel) => kernel.compute(ctx),
             CudaKernel::MatMul(kernel) => kernel.compute(ctx),
-            CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::ActiveKernel>(ctx),
+            CudaKernel::MaxPool(kernel) => kernel.compute(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
             CudaKernel::Neg(kernel) => kernel.compute(ctx),
             CudaKernel::Pow(kernel) => kernel.compute(ctx),
             CudaKernel::Range(backend) => backend.compute(ctx),
-            CudaKernel::ReduceMean(backend) => backend.compute::<reduce_mean::ActiveKernel>(ctx),
+            CudaKernel::ReduceMean(backend) => backend.compute(ctx),
             CudaKernel::ScatterNd(kernel) => kernel.compute(ctx),
-            CudaKernel::Shape(kernel) => kernel.compute::<shape::DefaultShapeProcessor>(ctx),
+            CudaKernel::Shape(kernel) => kernel.compute(ctx),
             CudaKernel::Sigmoid(kernel) => kernel.compute::<SigmoidKernel>(ctx),
             CudaKernel::Softmax(kernel) => kernel.compute(ctx),
             CudaKernel::Sin(kernel) => kernel.compute(ctx),
@@ -150,32 +148,7 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Transpose(backend) => backend.compute(ctx),
             CudaKernel::Trilu(backend) => backend.compute(ctx),
             CudaKernel::Unsqueeze(backend) => backend.compute(ctx),
-            CudaKernel::Where(kernel) => kernel.compute::<whereop::ActiveKernel>(ctx),
-        }
-    }
-}
-
-impl CudaKernel {
-    pub fn noop_compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
-        match self {
-            CudaKernel::Relu(kernel) => kernel.compute::<relu::NoOpKernel>(ctx),
-            CudaKernel::Conv(kernel) => kernel.compute::<conv::NoOpKernel>(ctx),
-            CudaKernel::ConstantOfShape(_) => {
-                // Todo: Some operations complicate things for the noop computations because
-                // the size of the output tensor's data depends on the input. Thus, we can't
-                // pre-allocate memory.
-                Ok(())
-            }
-            CudaKernel::Gather(kernel) => kernel.compute::<gather::NoOpGatherProcessor>(ctx),
-            CudaKernel::Gemm(kernel) => kernel.compute::<gemm::NoOpKernel>(ctx),
-            CudaKernel::GlobalAveragePool(kernel) => {
-                kernel.compute::<global_average_pool::NoOpKernel>(ctx)
-            }
-            CudaKernel::MaxPool(kernel) => kernel.compute::<max_pool::NoOpKernel>(ctx),
-            CudaKernel::Flatten(kernel) => kernel.compute(ctx),
-            CudaKernel::Shape(kernel) => kernel.compute::<shape::NoOpShapeProcessor>(ctx),
-            CudaKernel::Where(kernel) => kernel.compute::<whereop::NoOpKernel>(ctx),
-            _ => unimplemented!(),
+            CudaKernel::Where(kernel) => kernel.compute(ctx),
         }
     }
 }

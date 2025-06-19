@@ -1,14 +1,15 @@
 use crate::attributes;
 use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
-use cudarc::cudnn::CudnnDataType;
+use anyhow::Result;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
+use log::debug;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct ConstantBackend {
@@ -24,7 +25,7 @@ impl ConstantBackend {
 
     fn load_from_values<T>(&mut self, values: &[T], ctx: &mut Context<Cuda>) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
     {
         {
             let output_tensor = ctx.get_output(0)?;
@@ -34,6 +35,13 @@ impl ConstantBackend {
         }
 
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][strides={:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let output_tensor = ctx.get_output(0)?;
@@ -51,7 +59,7 @@ impl ConstantBackend {
         ctx: &mut Context<Cuda>,
     ) -> Result<()>
     where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num + FromBytes + Unpin,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes + Unpin,
     {
         {
             let output_tensor = ctx.get_output(0)?;
@@ -61,6 +69,13 @@ impl ConstantBackend {
         }
 
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][strides={:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let data = T::from_bytes(bytes)?;
@@ -75,11 +90,24 @@ impl ConstantBackend {
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)?;
+            .ok_or(InternalError::MissingAttributes)
+            .map_err(Box::new)?;
+
+        debug!("[attributes={:?}]", attrs);
 
         if let Some((dtype, shape, bytes)) = attributes::constant::get_raw_value(&attrs) {
             return match dtype {
+                DataType::Float16 => self.load_from_bytes::<f16>(
+                    shape,
+                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    ctx,
+                ),
                 DataType::Float => self.load_from_bytes::<f32>(
+                    shape,
+                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    ctx,
+                ),
+                DataType::Double => self.load_from_bytes::<f64>(
                     shape,
                     bytes.ok_or(InternalError::MissingAttributes)?,
                     ctx,
@@ -89,10 +117,22 @@ impl ConstantBackend {
                     bytes.ok_or(InternalError::MissingAttributes)?,
                     ctx,
                 ),
-                _ => Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::Constant,
-                    dtype,
-                }),
+                DataType::Uint32 => self.load_from_bytes::<u32>(
+                    shape,
+                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    ctx,
+                ),
+                DataType::Int64 => self.load_from_bytes::<i64>(
+                    shape,
+                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    ctx,
+                ),
+                DataType::Uint64 => self.load_from_bytes::<u64>(
+                    shape,
+                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    ctx,
+                ),
+                _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
             };
         }
 
@@ -112,6 +152,6 @@ impl ConstantBackend {
             return self.load_from_values::<i32>(value, ctx);
         }
 
-        Err(InternalError::MissingAttributes)
+        Err(InternalError::MissingAttributes.into())
     }
 }

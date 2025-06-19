@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
+anyhow.workspace = true
 # Memory arenas.
 bumpalo.workspace = true
 

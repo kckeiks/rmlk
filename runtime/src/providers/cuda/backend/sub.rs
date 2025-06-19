@@ -1,13 +1,15 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
 use rmlk_cuda::kernels::sub;
 use rmlk_cuda::kernels::sub::SubKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct SubBackend {
@@ -27,12 +29,8 @@ impl SubBackend {
             DataType::Float => SubKernel::SubFwdF32,
             DataType::Double => SubKernel::SubFwdF64,
             DataType::Int32 => SubKernel::SubFwdI32,
-            _ => {
-                return Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::Expand,
-                    dtype,
-                })
-            }
+            DataType::Int64 => SubKernel::SubFwdI64,
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
         sub::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -50,10 +48,12 @@ impl SubBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_sub::<f16>(ctx),
             DataType::Float => self.compute_sub::<f32>(ctx),
+            DataType::Double => self.compute_sub::<f64>(ctx),
             DataType::Int32 => self.compute_sub::<i32>(ctx),
             DataType::Int64 => self.compute_sub::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Add, dtype }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

@@ -1,13 +1,14 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
-use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use anyhow::Result;
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct WhereBackend {
@@ -45,15 +46,15 @@ impl WhereBackend {
                 let inter_shape = alloc.allocate_fill(rank, 0)?;
 
                 if !utils::compute_broadcast_output_shape(x.shape(), y.shape(), inter_shape) {
-                    return Err(InternalError::IncompatibleTensorShape {
+                    return Err(InternalError::IncompatibleShapesForBroadcast {
                         shapes: [
                             (x.src_id().into(), x.shape().to_vec()),
                             (y.src_id().into(), y.shape().to_vec()),
                         ]
                         .try_into()
                         .expect("Small map so should succeed"),
-                        op: Op::Where,
-                    });
+                    }
+                    .into());
                 }
 
                 let output_shape = alloc.allocate_fill(rank, 0)?;
@@ -63,12 +64,12 @@ impl WhereBackend {
                     condition.shape(),
                     output_shape,
                 ) {
-                    return Err(InternalError::IncompatibleTensorShape {
+                    return Err(InternalError::IncompatibleShapesForBroadcast {
                         shapes: [(condition.src_id().into(), y.shape().to_vec())]
                             .try_into()
                             .expect("Small map so should succeed"),
-                        op: Op::Where,
-                    });
+                    }
+                    .into());
                 }
 
                 let output = ctx.get_output(0)?;
@@ -81,42 +82,37 @@ impl WhereBackend {
         Ok(())
     }
 
-    fn compute_where<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_where<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: WhereKernel,
+        D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         // The output should have the same dimensions.
         // We do it now to avoid lifetime errors.
         self.process_shapes(ctx)?;
 
         let x = ctx.get_input(0)?;
+
+        debug!(
+            "[x][where][shape={:?}][stride=[{:?}]",
+            x.shape(),
+            x.stride()
+        );
+
         let y = ctx.get_input(1)?;
+
+        debug!(
+            "[y][where][shape={:?}][stride=[{:?}]",
+            y.shape(),
+            y.stride()
+        );
+
         let condition = ctx.get_input(2)?;
 
-        {
-            let output = ctx.get_output(0)?;
-            debug!(
-                "[x][where][shape={:?}][stride=[{:?}]",
-                x.shape(),
-                x.stride()
-            );
-            debug!(
-                "[y][where][shape={:?}][stride=[{:?}]",
-                y.shape(),
-                y.stride()
-            );
-            debug!(
-                "[condition][where][shape={:?}][stride=[{:?}]",
-                condition.shape(),
-                condition.stride()
-            );
-            debug!(
-                "[output][where][shape={:?}][stride=[{:?}]",
-                output.shape(),
-                output.stride()
-            );
-        }
+        debug!(
+            "[condition][where][shape={:?}][stride=[{:?}]",
+            condition.shape(),
+            condition.stride()
+        );
 
         let x_dev_data_ref = x.try_dev_data_ptr()?;
         let x_dev_data = x_dev_data_ref.data::<D>();
@@ -127,30 +123,15 @@ impl WhereBackend {
         let condition_dev_data_ref = condition.try_dev_data_ptr()?;
         let condition_dev_data = condition_dev_data_ref.data::<D>();
 
-        let elem_count: usize = x.shape().iter().product();
+        let output = ctx.get_output(0)?;
 
-        // Allocate device data for the tensor if we haven't done it yet
-        // or if the existing allocated data has a different size.
-        {
-            let mut output = ctx.get_output(0)?;
-            let output_dev_data_ref = output.dev_data_ptr_mut();
-            let need_to_alloc_dev_data = output_dev_data_ref.is_none()
-                || output_dev_data_ref
-                    .as_ref()
-                    .map(|data| data.data::<D>().len() != elem_count)
-                    .unwrap_or(true);
+        debug!(
+            "[output][where][shape={:?}][stride=[{:?}]",
+            output.shape(),
+            output.stride()
+        );
 
-            // We need to remove this immutable reference so we can mutate `y`.
-            drop(output_dev_data_ref);
-
-            if need_to_alloc_dev_data {
-                let output_dev_data = self
-                    .stream
-                    .alloc_zeros::<f32>(output.shape().iter().copied().product::<usize>())
-                    .map_err(rmlk_cuda::Error::from)?;
-                output.set_dev_data(CudaData::new(output_dev_data));
-            };
-        }
+        common::init_tensor_device_data::<D>(&self.stream, output)?;
 
         let output = ctx.get_output(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
@@ -203,98 +184,31 @@ impl WhereBackend {
         info_buffer[2 * rank..3 * rank].copy_from_slice(y_stride);
         info_buffer[3 * rank..].copy_from_slice(condition_stride);
 
-        T::execute::<D>(
-            self.stream,
-            self.f,
-            rank,
-            info_buffer,
-            &x_dev_data,
-            &y_dev_data,
-            &condition_dev_data,
-            &mut output_dev_data,
-        )?;
-
-        Ok(())
-    }
-
-    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        T: WhereKernel,
-    {
-        let dtype = ctx.get_input(0)?.dtype();
-        match dtype {
-            DataType::Float => self.compute_where::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Where,
-                dtype,
-            }),
-        }
-    }
-}
-
-pub trait WhereKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        rank: usize,
-        info: &[usize],
-        x_dev_data: &CudaSlice<T>,
-        y_dev_data: &CudaSlice<T>,
-        condition_dev_data: &CudaSlice<T>,
-        output_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
-}
-
-pub struct ActiveKernel(());
-
-impl WhereKernel for ActiveKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        rank: usize,
-        info: &[usize],
-        x_dev_data: &CudaSlice<T>,
-        y_dev_data: &CudaSlice<T>,
-        condition_dev_data: &CudaSlice<T>,
-        output_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
         unsafe {
             rmlk_cuda::kernels::whereop::compute(
-                stream,
-                func,
+                self.stream,
+                self.f,
                 rank,
-                info,
-                x_dev_data,
-                y_dev_data,
-                condition_dev_data,
-                output_dev_data,
-            )
-            .map_err(Into::into)
+                info_buffer,
+                &x_dev_data,
+                &y_dev_data,
+                &condition_dev_data,
+                &mut output_dev_data,
+            )?;
         }
-    }
-}
 
-pub struct NoOpKernel(());
-
-impl WhereKernel for NoOpKernel {
-    fn execute<T>(
-        _: Arc<CudaStream>,
-        _: CudaFunction,
-        _: usize,
-        _: &[usize],
-        _: &CudaSlice<T>,
-        _: &CudaSlice<T>,
-        _: &CudaSlice<T>,
-        _: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
         Ok(())
+    }
+
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = ctx.get_input(0)?.dtype();
+        match dtype {
+            DataType::Float16 => self.compute_where::<f16>(ctx),
+            DataType::Float => self.compute_where::<f32>(ctx),
+            DataType::Double => self.compute_where::<f64>(ctx),
+            DataType::Int32 => self.compute_where::<i32>(ctx),
+            DataType::Int64 => self.compute_where::<i64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+        }
     }
 }

@@ -1,12 +1,15 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
+use log::debug;
 use num_traits::{Num, ToPrimitive};
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct ShapeBackend {
@@ -38,22 +41,29 @@ impl ShapeBackend {
         Ok(())
     }
 
-    pub fn compute_shape<D, T>(mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    pub fn compute_shape<D>(mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        T: ShapeProcessor,
     {
         let data = ctx.get_input(0)?;
+
+        debug!(
+            "[data][shape={:?}][strides={:?}]",
+            data.shape(),
+            data.stride()
+        );
+
         let rank = data.shape().len();
 
-        let raw_start = ctx
-            .get_attributes()
-            .map(|attrs| attributes::shape::get_start(&attrs))
+        let attrs = ctx.get_attributes();
+
+        debug!("[attributes={attrs:?}]");
+
+        let raw_start = attrs
+            .as_ref()
+            .map(|attrs| attributes::shape::get_start(attrs.as_ref()))
             .unwrap_or(0);
-        let raw_end = match ctx
-            .get_attributes()
-            .and_then(|attrs| attributes::shape::get_end(&attrs))
-        {
+        let raw_end = match attrs.and_then(|attrs| attributes::shape::get_end(&attrs)) {
             None => rank.to_i32().ok_or(InternalError::UnsupportedRankSize {
                 message: format!("failed to convert `{rank}` to i32"),
             })?,
@@ -65,6 +75,13 @@ impl ShapeBackend {
         self.compute_output_shape(start, end, ctx)?;
 
         let output = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][strides={:?}]",
+            output.shape(),
+            output.stride()
+        );
+
         common::init_tensor_device_data::<i64>(&self.stream, output)?;
 
         let shape = ctx.get_output(0)?;
@@ -77,64 +94,21 @@ impl ShapeBackend {
             .scratch_alloc()
             .allocate_and_convert_from_slice::<_, i64>(data.shape())?;
 
-        T::compute::<i64>(
-            &self.stream,
-            &shape_host_buf[start..end],
-            &mut shape_dev_data,
-        )
+        self.stream
+            .memcpy_htod(&shape_host_buf[start..end], shape_dev_data.as_mut())
+            .map_err(Into::into)
     }
 
-    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        T: ShapeProcessor,
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_shape::<f32, T>(ctx),
-            DataType::Int64 => self.compute_shape::<i64, T>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Shape,
-                dtype,
-            }),
+            DataType::Float16 => self.compute_shape::<f16>(ctx),
+            DataType::Float => self.compute_shape::<f32>(ctx),
+            DataType::Double => self.compute_shape::<f64>(ctx),
+            DataType::Int32 => self.compute_shape::<i32>(ctx),
+            DataType::Int64 => self.compute_shape::<i64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
-    }
-}
-
-pub trait ShapeProcessor {
-    fn compute<D>(
-        stream: &Arc<CudaStream>,
-        shape: &[D],
-        output_dev_data: &mut CudaSlice<D>,
-    ) -> Result<()>
-    where
-        D: CudnnDataType + ValidAsZeroBits + DeviceRepr;
-}
-
-pub struct DefaultShapeProcessor(());
-
-impl ShapeProcessor for DefaultShapeProcessor {
-    fn compute<D>(
-        stream: &Arc<CudaStream>,
-        shape: &[D],
-        output_dev_data: &mut CudaSlice<D>,
-    ) -> Result<()>
-    where
-        D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        stream
-            .memcpy_htod(shape, output_dev_data)
-            .map_err(Into::into)
-    }
-}
-
-pub struct NoOpShapeProcessor(());
-
-impl ShapeProcessor for NoOpShapeProcessor {
-    fn compute<D>(_: &Arc<CudaStream>, _: &[D], _: &mut CudaSlice<D>) -> Result<()>
-    where
-        D: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        Ok(())
     }
 }

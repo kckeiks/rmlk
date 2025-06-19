@@ -1,13 +1,14 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_cuda::kernels::cos;
 use rmlk_cuda::kernels::cos::CosKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct CosBackend {
@@ -26,7 +27,7 @@ impl CosBackend {
             DataType::Float16 => CosKernel::CosFwdF16,
             DataType::Float => CosKernel::CosFwdF32,
             DataType::Double => CosKernel::CosFwdF64,
-            _ => return Err(InternalError::UnsupportedDataTypeForOp { op: Op::Cos, dtype }),
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
         cos::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -47,7 +48,7 @@ impl CosBackend {
             DataType::Float => self.compute_cos::<f32>(ctx),
             DataType::Int32 => self.compute_cos::<i32>(ctx),
             DataType::Int64 => self.compute_cos::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Neg, dtype }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

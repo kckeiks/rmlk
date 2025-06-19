@@ -1,13 +1,14 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use num_traits::Num;
 use rmlk_cuda::kernels::pow;
 use rmlk_cuda::kernels::pow::PowKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct PowBackend {
@@ -82,12 +83,7 @@ impl PowBackend {
             (DataType::Int64, DataType::Float16) => PowKernel::PowFwdI64F16,
             (DataType::Int64, DataType::Float) => PowKernel::PowFwdI64F32,
             (DataType::Int64, DataType::Double) => PowKernel::PowFwdI64F64,
-            (_, dtype2) => {
-                return Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::Pow,
-                    dtype: dtype2,
-                })
-            }
+            (_, dtype2) => return Err(InternalError::UnsupportedDataType { dtype: dtype2 }.into()),
         };
 
         pow::load_kernel(&self.stream.context(), kernel_name).map_err(Into::into)
@@ -207,10 +203,7 @@ impl PowBackend {
             // (DataType::Float16, DataType::Uint64) => self.compute_pow::<f16, u64>(ctx),
             // (DataType::Float16, DataType::Int8) => self.compute_pow::<f16, i8>(ctx),
             // (DataType::Float16, DataType::Int16) => self.compute_pow::<f16, i16>(ctx),
-            (_, dtype2) => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Pow,
-                dtype: dtype2,
-            }),
+            (_, dtype2) => Err(InternalError::UnsupportedDataType { dtype: dtype2 }.into()),
         }
     }
 }

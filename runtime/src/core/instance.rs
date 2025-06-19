@@ -1,7 +1,7 @@
 use crate::core::backend::OperationBackend;
 use crate::core::context::Context;
 use crate::core::device_service::DeviceService;
-use crate::core::error::{Error, InternalError};
+use crate::core::error::Error;
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::plan::Plan;
@@ -90,10 +90,14 @@ impl Builder {
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
             .map_err(rmlk_cuda::Error::from)
-            .map_err(InternalError::from)?;
+            .map_err(|e| Error::Internal { error: Box::new(e) })?;
         // Todo: We don't always want to use the default stream.
         let provider = Cuda::new(ctx.default_stream());
-        let values = TensorStore::new(&provider, &self.graph, self.initializers)?;
+        let values = TensorStore::new(&provider, &self.graph, self.initializers).map_err(|e| {
+            Error::Internal {
+                error: e.into_boxed_dyn_error(),
+            }
+        })?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
@@ -102,7 +106,11 @@ impl Builder {
         ));
 
         Ok(ModelInstance {
-            execution_state: ExecutionState::new(instance_state.clone(), values)?,
+            execution_state: ExecutionState::new(instance_state.clone(), values).map_err(|e| {
+                Error::Internal {
+                    error: e.into_boxed_dyn_error(),
+                }
+            })?,
             instance_state,
         })
     }
@@ -137,7 +145,11 @@ where
                 return Err(Error::NodeNotFound { id: node_id });
             }
 
-            self.execution_state.load_value(node_id, value)?;
+            self.execution_state
+                .load_value(node_id, value)
+                .map_err(|e| Error::Internal {
+                    error: e.into_boxed_dyn_error(),
+                })?;
         }
 
         Ok(())
@@ -151,7 +163,12 @@ where
                     return Err(Error::NodeNotFound { id: output });
                 }
                 Some(node) => {
-                    let value = self.execution_state.get_value(output)?;
+                    let value =
+                        self.execution_state
+                            .get_value(output)
+                            .map_err(|e| Error::Internal {
+                                error: e.into_boxed_dyn_error(),
+                            })?;
                     result.insert(
                         node.value()
                             .name()
@@ -188,7 +205,10 @@ where
                 continue;
             }
 
-            let mut ctx = Context::new(&mut self.execution_state, id)?;
+            let mut ctx =
+                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
+                    error: e.into_boxed_dyn_error(),
+                })?;
 
             trace!(
                 "[node={id}][{op:?}][name={:?}][inputs={:?}][outputs={:?}]",
@@ -206,7 +226,22 @@ where
                 }
             };
 
-            provider.get_backend(op, dtype)?.compute(&mut ctx)?;
+            if let Err(e) = provider
+                .get_backend(op, dtype)
+                .map_err(|e| Error::Computation {
+                    op,
+                    // Todo: add name.
+                    name: "".to_string(),
+                    error: e.into_boxed_dyn_error(),
+                })?
+                .compute(&mut ctx)
+            {
+                Error::Computation {
+                    op,
+                    name: "".to_string(),
+                    error: e.into_boxed_dyn_error(),
+                };
+            }
         }
 
         let output = self.get_outputs()?;

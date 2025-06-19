@@ -8,22 +8,50 @@ pub type Result<T> = std::result::Result<T, InternalError>;
 
 #[derive(Debug)]
 pub enum Error {
-    Internal { error: InternalError },
+    Computation {
+        op: Op,
+        name: String,
+        error: Box<dyn std::error::Error>,
+    },
+    Internal {
+        error: Box<dyn std::error::Error>,
+    },
     ModelDeserializationFailed,
-    NodeNotFound { id: usize },
-    ExpectedName { node_id: usize },
-    InvalidUserInput { input: HashMap<String, Value> },
-    FailedToFindNodeId { name: String },
+    NodeNotFound {
+        id: usize,
+    },
+    ExpectedName {
+        node_id: usize,
+    },
+    InvalidUserInput {
+        input: HashMap<String, Value>,
+    },
+    FailedToFindNodeId {
+        name: String,
+    },
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
 
 impl From<InternalError> for Error {
     fn from(value: InternalError) -> Self {
-        Self::Internal { error: value }
+        Self::Internal {
+            error: Box::new(value),
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum InternalError {
+    Attribute {
+        inner: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
     AxisOutOfBounds {
         axis: i64,
     },
@@ -57,7 +85,9 @@ pub enum InternalError {
     },
     IncompatibleTensorShape {
         shapes: HashMap<usize, Vec<usize>>,
-        op: Op,
+    },
+    IncompatibleShapesForBroadcast {
+        shapes: HashMap<usize, Vec<usize>>,
     },
     InvalidInput {
         input: usize,
@@ -111,19 +141,21 @@ pub enum InternalError {
     UnsupportedOp {
         op: Op,
     },
-    UnsupportedInputs {
-        op: Op,
+    UnsupportedInputValues {
         message: String,
     },
-    UnsupportedDataTypeForOp {
-        op: Op,
-        dtype: DataType,
-    },
+}
+
+impl InternalError {
+    pub fn boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
 }
 
 impl Display for InternalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            InternalError::Attribute { inner } => write!(f, "{}", inner),
             InternalError::AxisOutOfBounds { axis } => {
                 write!(f, "invalid axis `{axis}`")
             }
@@ -154,8 +186,11 @@ impl Display for InternalError {
             InternalError::TensorIndexNotFound { node_id } => {
                 write!(f, "failed to find tensor index: {node_id:?}")
             }
-            InternalError::IncompatibleTensorShape { shapes, op } => {
-                write!(f, "incompatible shapes `{shapes:?}` for {op:?}")
+            InternalError::IncompatibleTensorShape { shapes } => {
+                write!(f, "incompatible shapes `{shapes:?}`")
+            }
+            InternalError::IncompatibleShapesForBroadcast { shapes } => {
+                write!(f, "incompatible shapes {shapes:?} for broadcast")
             }
             InternalError::InvalidByteLength => {
                 write!(f, "invalid byte length")
@@ -205,9 +240,6 @@ impl Display for InternalError {
             InternalError::UnsupportedOp { op } => {
                 write!(f, "unsupported `{op:?}` op")
             }
-            InternalError::UnsupportedDataTypeForOp { op, dtype } => {
-                write!(f, "unsupported data type `{dtype:?}` for op `{op:?}`")
-            }
             InternalError::UnsupportedRankSize { message } => {
                 write!(f, "unsupported rank size `{message}`")
             }
@@ -223,18 +255,14 @@ impl Display for InternalError {
                     "expected buffer of size `{expected}` instead of `{actual}`"
                 )
             }
-            InternalError::UnsupportedInputs { op, message } => {
-                write!(f, "unsupported inputs for `{op:?}`: {message}")
-            }
             InternalError::UnknownShapeBuffer { index } => {
                 write!(f, "unknown buffer given index `{:?}`", index)
+            }
+            InternalError::UnsupportedInputValues { message } => {
+                write!(f, "unsupported input values `{message}`")
             }
         }
     }
 }
 
-impl From<rmlk_cuda::Error> for InternalError {
-    fn from(value: rmlk_cuda::Error) -> Self {
-        Self::Device { error: value }
-    }
-}
+impl std::error::Error for InternalError {}

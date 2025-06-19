@@ -1,4 +1,5 @@
 use crate::providers::cuda::activation::ActivationKernel;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
@@ -14,7 +15,7 @@ impl ActivationKernel for SigmoidKernel {
         x_shape: &[i32],
         x_stride: &[i32],
         y_data: &mut CudaSlice<T>,
-    ) -> crate::core::error::Result<()>
+    ) -> Result<()>
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {

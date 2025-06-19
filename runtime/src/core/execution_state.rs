@@ -1,17 +1,18 @@
 use crate::core::allocators::ScratchAllocator;
 use crate::core::device_service::DeviceService;
-use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
 use crate::core::tensor_handle::{DstTensorId, SrcTensorId};
 use crate::core::value::{InnerValue, Value};
+use anyhow::Result;
 use log::trace;
 use rmlk_graph::{Graph, Node};
 use rmlk_schema::Op;
 use rmlk_schema::{DataType, Definition};
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 /// Execution state for a computational graph.
@@ -65,10 +66,7 @@ where
                 if graph.get_node(*input).is_some() {
                     node_values.push(*input);
                 } else {
-                    return Err(InternalError::ExecutionState(format!(
-                        "the input `{}` for node `{node_id}` does not exist in the graph",
-                        *input
-                    )));
+                    return Err(ExecutionStateError::InputTensorNotFound { id: *input }.into());
                 }
             }
 
@@ -78,10 +76,7 @@ where
                 if graph.get_node(*output).is_some() {
                     node_values.push(*output);
                 } else {
-                    return Err(InternalError::ExecutionState(format!(
-                        "the output `{}` for node `{node_id}` does not exist in the graph",
-                        *output
-                    )));
+                    return Err(ExecutionStateError::OutputTensorNotFound { id: *output }.into());
                 }
             }
         }
@@ -130,11 +125,9 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_float(data)?;
-                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-                    InternalError::ExecutionState(format!(
-                        "failed to load value: missing tensor for node {node_id}"
-                    ))
-                })?;
+                let mut tensor = self
+                    .get_tensor_from_node_id(node_id)
+                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
                 tensor.set_dev_data(data);
             }
             InnerValue::Int32(data) => {
@@ -144,11 +137,9 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_i32(data)?;
-                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-                    InternalError::ExecutionState(format!(
-                        "failed to load value: missing tensor for node {node_id}"
-                    ))
-                })?;
+                let mut tensor = self
+                    .get_tensor_from_node_id(node_id)
+                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
                 tensor.set_dev_data(data);
             }
             InnerValue::Int64(data) => {
@@ -158,11 +149,9 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_i64(data)?;
-                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-                    InternalError::ExecutionState(format!(
-                        "failed to load value: missing tensor for node {node_id}"
-                    ))
-                })?;
+                let mut tensor = self
+                    .get_tensor_from_node_id(node_id)
+                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
                 tensor.set_dev_data(data);
             }
             InnerValue::Bool(data) => {
@@ -172,11 +161,9 @@ where
                     .device(0)
                     .expect("We always have one device")
                     .htod_bool(data)?;
-                let mut tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-                    InternalError::ExecutionState(format!(
-                        "failed to load value: missing tensor for node {node_id}"
-                    ))
-                })?;
+                let mut tensor = self
+                    .get_tensor_from_node_id(node_id)
+                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
                 tensor.set_dev_data(data);
             }
         }
@@ -194,17 +181,14 @@ where
             .device(0)
             .expect("We always have one device");
 
-        let tensor = self.get_tensor_from_node_id(node_id).ok_or_else(|| {
-            InternalError::ExecutionState(format!(
-                "failed to get value: missing tensor for node {node_id}"
-            ))
-        })?;
+        let tensor = self
+            .get_tensor_from_node_id(node_id)
+            .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
 
-        let ptr = tensor.dev_data_ptr().take().ok_or_else(|| {
-            InternalError::ExecutionState(format!(
-                "failed to get value: empty tensor for node {node_id}"
-            ))
-        })?;
+        let ptr = tensor
+            .dev_data_ptr()
+            .take()
+            .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
 
         match tensor.dtype() {
             DataType::Float => Ok(provider.dtoh_float(&ptr)?.into()),
@@ -251,3 +235,28 @@ where
         self.op_tensors.get(value_index).copied()
     }
 }
+
+#[derive(Debug)]
+pub enum ExecutionStateError {
+    InputTensorNotFound { id: usize },
+    OutputTensorNotFound { id: usize },
+    TensorNotFound { id: usize },
+}
+
+impl Display for ExecutionStateError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionStateError::InputTensorNotFound { id } => {
+                write!(f, "Input tensor not found: {}", id)
+            }
+            ExecutionStateError::OutputTensorNotFound { id } => {
+                write!(f, "Output tensor not found: {}", id)
+            }
+            ExecutionStateError::TensorNotFound { id } => {
+                write!(f, "Tensor not found: {}", id)
+            }
+        }
+    }
+}
+
+impl Error for ExecutionStateError {}

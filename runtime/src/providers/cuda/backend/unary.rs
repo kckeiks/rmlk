@@ -1,7 +1,7 @@
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
@@ -29,21 +29,20 @@ where
 
     let input = ctx.get_input(0)?;
 
-    {
-        let output = ctx.get_output(0)?;
-        debug!(
-            "[input][{op}][shape={:?}][stride=[{:?}]",
-            input.shape(),
-            input.stride()
-        );
-        debug!(
-            "[output][{op}][shape={:?}][stride=[{:?}]",
-            output.shape(),
-            output.stride()
-        );
-    }
+    debug!(
+        "[input][{op}][shape={:?}][stride=[{:?}]",
+        input.shape(),
+        input.stride()
+    );
 
     let output_tensor = ctx.get_output(0)?;
+
+    debug!(
+        "[output][{op}][shape={:?}][stride=[{:?}]",
+        output_tensor.shape(),
+        output_tensor.stride()
+    );
+
     common::init_tensor_device_data::<I>(&stream, output_tensor)?;
 
     let input = ctx.get_input(0)?;

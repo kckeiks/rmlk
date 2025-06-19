@@ -1,17 +1,18 @@
 use crate::attributes;
 use crate::attributes::scatter_nd::Reduction;
 use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::scatter_nd;
 use rmlk_cuda::kernels::scatter_nd::ScatterNdKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ScatterNdBackend {
@@ -25,42 +26,13 @@ impl ScatterNdBackend {
         }
     }
 
-    #[cfg(debug_assertions)]
-    fn log_inputs(&self, ctx: &Context<Cuda>) -> Result<()> {
-        let data_tensor = ctx.get_input(0)?;
-        let indices_tensor = ctx.get_input(1)?;
-        let updates_tensor = ctx.get_input(2)?;
-
-        debug!(
-            "[data][shape={:?}][stride={:?}]",
-            data_tensor.shape(),
-            data_tensor.stride()
-        );
-        debug!(
-            "[indices][shape={:?}][stride={:?}]",
-            indices_tensor.shape(),
-            indices_tensor.stride()
-        );
-        debug!(
-            "[updates][shape={:?}][stride={:?}]",
-            updates_tensor.shape(),
-            updates_tensor.stride()
-        );
-
-        if let Some(attrs) = ctx.get_attributes() {
-            debug!("[attrs={:?}]", attrs);
-        } else {
-            debug!("[no attrs]");
-        }
-
-        Ok(())
-    }
-
     fn load_cuda_function(&self, ctx: &mut Context<Cuda>, dtype: DataType) -> Result<CudaFunction> {
         let reduction = match ctx.get_attributes().as_ref() {
             Some(attrs) => attributes::scatter_nd::get_reduction(attrs)?,
             None => None,
         };
+
+        debug!("[reduction={:?}]", reduction);
 
         let kernel = match reduction {
             None if matches!(dtype, DataType::Float16) => ScatterNdKernel::FwdF16,
@@ -96,12 +68,7 @@ impl ScatterNdBackend {
             Some(Reduction::Min) if matches!(dtype, DataType::Double) => ScatterNdKernel::MinFwdF64,
             Some(Reduction::Min) if matches!(dtype, DataType::Int32) => ScatterNdKernel::MinFwdI32,
             Some(Reduction::Min) if matches!(dtype, DataType::Int64) => ScatterNdKernel::MinFwdI64,
-            _ => {
-                return Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::ScatterND,
-                    dtype,
-                })
-            }
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
         scatter_nd::load_kernel(self.stream.context(), kernel).map_err(Into::into)
@@ -129,8 +96,28 @@ impl ScatterNdBackend {
         }
 
         let data_tensor = ctx.get_input(0)?;
+
+        debug!(
+            "[data][shape={:?}][stride={:?}]",
+            data_tensor.shape(),
+            data_tensor.stride()
+        );
+
         let indices_tensor = ctx.get_input(1)?;
+
+        debug!(
+            "[indices][shape={:?}][stride={:?}]",
+            indices_tensor.shape(),
+            indices_tensor.stride()
+        );
+
         let updates_tensor = ctx.get_input(2)?;
+
+        debug!(
+            "[updates][shape={:?}][stride={:?}]",
+            updates_tensor.shape(),
+            updates_tensor.stride()
+        );
 
         let data_rank = data_tensor.shape().len();
         let indices_rank = indices_tensor.shape().len();
@@ -150,6 +137,13 @@ impl ScatterNdBackend {
         let updates_view = updates_dev_ptr.data::<T>();
 
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][stride={:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_dev_ptr.data_mut::<T>();
 
@@ -157,6 +151,7 @@ impl ScatterNdBackend {
 
         let info =
             scratch_alloc.allocate::<usize>(2 * data_rank + 2 * indices_rank + 2 * updates_rank)?;
+
         scatter_nd::create_info_buffer(
             data_tensor.shape(),
             data_tensor.stride(),
@@ -170,17 +165,14 @@ impl ScatterNdBackend {
         // Todo: maybe we should preallocate this value since its size never changes.
         let mut error = self.stream.alloc_zeros::<i32>(1)?;
 
-        #[cfg(debug_assertions)]
-        {
-            debug!("num_idx_tuple={num_idx_tuples}");
-            debug!("data_rank={num_idx_tuples}");
-            debug!("indices_rank={indices_rank}");
-            debug!("updates_rank={updates_rank}");
-            debug!("info={info:?}");
-            debug!("indices size={}", indices_view.len());
-            debug!("updates size={}", updates_view.len());
-            debug!("output size={}", output_view.len());
-        }
+        debug!("num_idx_tuple={num_idx_tuples}");
+        debug!("data_rank={num_idx_tuples}");
+        debug!("indices_rank={indices_rank}");
+        debug!("updates_rank={updates_rank}");
+        debug!("info={info:?}");
+        debug!("indices size={}", indices_view.len());
+        debug!("updates size={}", updates_view.len());
+        debug!("output size={}", output_view.len());
 
         unsafe {
             scatter_nd::compute(
@@ -202,20 +194,13 @@ impl ScatterNdBackend {
         self.stream.memcpy_dtoh(&error, error_buf)?;
 
         if error_buf[0] != 0 {
-            return Err(InternalError::InvalidInput {
-                input: 0,
-                op: Op::ScatterND,
-                message: format!("Scatter ND error: {}", error_buf[0]),
-            });
+            return Err(ScatterNdError::KernelFailed { code: error_buf[0] }.into());
         }
 
         Ok(())
     }
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
-        #[cfg(debug_assertions)]
-        self.log_inputs(ctx)?;
-
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
@@ -226,10 +211,22 @@ impl ScatterNdBackend {
             DataType::Uint32 => self.compute_scatter_nd::<u32>(ctx),
             DataType::Int64 => self.compute_scatter_nd::<i64>(ctx),
             DataType::Uint64 => self.compute_scatter_nd::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::ReduceMean,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum ScatterNdError {
+    KernelFailed { code: i32 },
+}
+
+impl Display for ScatterNdError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScatterNdError::KernelFailed { code } => write!(f, "kernel failed: {}", code),
+        }
+    }
+}
+
+impl std::error::Error for ScatterNdError {}

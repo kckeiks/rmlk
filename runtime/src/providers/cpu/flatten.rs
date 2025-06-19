@@ -1,6 +1,8 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::{device_service::DeviceService, Context};
-use num_traits::ToPrimitive;
+use anyhow::Result;
+use log::debug;
+use std::fmt::{Display, Formatter};
 
 pub struct FlattenTemplate(());
 
@@ -15,10 +17,11 @@ impl FlattenTemplate {
 
 pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
+
+    debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+
     if x.shape().len() == 0 {
-        return Err(InternalError::InvalidTensorShape {
-            shape: x.shape().to_vec(),
-        });
+        return Err(FlattenError::InvalidInputShape.into());
     }
 
     let mut y_shape = [0; 2];
@@ -35,9 +38,7 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
             y_shape[1] = x.shape().iter().product();
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
-            return Err(InternalError::AxisOutOfBounds {
-                axis: axis.to_i64().expect("`i32` values fit in `i64`"),
-            });
+            return Err(FlattenError::AxisOutOfShape.into());
         }
         axis => {
             let axis = axis.unsigned_abs() as usize;
@@ -56,59 +57,22 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     ctx.execution_state_mut()
         .copy_shape_from_slice(&y_shape, index)?;
 
-    #[cfg(debug_assertions)]
-    {
-        use log::debug;
-
-        let x = ctx.get_input(0)?;
-        let y = ctx.get_output(0)?;
-        debug!(
-            "[x][flatten][shape={:?}][stride=[stride=[{:?}]",
-            x.shape(),
-            x.stride()
-        );
-        debug!(
-            "[y][flatten][shape={:?}][stride=[stride=[{:?}]",
-            y.shape(),
-            y.stride()
-        );
-    }
+    let y = ctx.get_output(0)?;
+    debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
     Ok(())
 }
 
-// #[cfg(test)]
-// mod test {
-//     use crate::core::Context;
-//     use crate::ops::flatten::_compute;
-//     use crate::test_utils;
-//     use crate::test_utils::{MockProvider, TestNode, TestParams};
-//     use rmlk_schema::{DataType, Op};
-//
-//     #[test]
-//     fn test_flatten_f32() {
-//         let shape = vec![1, 1, 4, 4];
-//         let dtype = DataType::Float;
-//
-//         let node_a = TestNode {
-//             shape,
-//             dtype,
-//             data: Some(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-//         };
-//
-//         let params = TestParams {
-//             inputs: vec![node_a],
-//             attributes: Vec::new(),
-//             op: Op::Flatten,
-//         };
-//
-//         let mut state = test_utils::build_graph_and_state(MockProvider::new(), params);
-//         let mut context = Context::new(&mut state, 2).unwrap();
-//
-//         _compute(&mut context).unwrap();
-//
-//         let shape = context.get_output(0).unwrap().shape();
-//
-//         assert_eq!(shape, &vec![1, 16])
-//     }
-// }
+#[derive(Debug)]
+pub enum FlattenError {
+    AxisOutOfShape,
+    InvalidInputShape,
+}
+
+impl Display for FlattenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for FlattenError {}

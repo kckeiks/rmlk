@@ -1,14 +1,16 @@
 use crate::attributes;
 use crate::attributes::constant_of_shape::AttributeTensor;
-use crate::core::error::{InternalError, Result};
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
-use rmlk_schema::{DataTypeMap, Op};
+use rmlk_schema::DataTypeMap;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ConstantOfShapeBackend {
@@ -30,6 +32,13 @@ impl ConstantOfShapeBackend {
 
         let input_data = {
             let input = ctx.get_input(0)?;
+
+            debug!(
+                "[input][shape={:?}][strides={:?}]",
+                input.shape(),
+                input.shape()
+            );
+
             let input_size = input.shape().iter().product();
             let on_host_data = scratch_alloc.allocate::<i64>(input_size)?;
 
@@ -51,6 +60,13 @@ impl ConstantOfShapeBackend {
         common::init_tensor_device_data::<O>(&self.stream, output)?;
 
         let output = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][strides={:?}]",
+            output.shape(),
+            output.shape()
+        );
+
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let on_host_data =
             scratch_alloc.allocate_fill::<O>(output.shape().iter().product(), value)?;
@@ -66,6 +82,11 @@ impl ConstantOfShapeBackend {
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
         let attrs = ctx.get_attributes().clone();
+
+        if let Some(attrs) = ctx.get_attributes() {
+            debug!("[attributes={:?}]", attrs);
+        }
+
         match attrs
             .as_ref()
             .map(|attrs| attributes::constant_of_shape::get_value(attrs))
@@ -74,45 +95,48 @@ impl ConstantOfShapeBackend {
         {
             Some(AttributeTensor::F16(data)) => self.compute_constant_of_shape::<f16>(
                 ctx,
-                *data.first().ok_or(InternalError::InvalidInput {
-                    input: 0,
-                    op: Op::ConstantOfShape,
-                    message: "expecting tensor to have one value".to_string(),
-                })?,
+                *data
+                    .first()
+                    .ok_or(Box::new(ConstOfShapeError::EmptyAttributeTensor))?,
             ),
             Some(AttributeTensor::F32(data)) => self.compute_constant_of_shape::<f32>(
                 ctx,
-                *data.first().ok_or(InternalError::InvalidInput {
-                    input: 0,
-                    op: Op::ConstantOfShape,
-                    message: "expecting tensor to have one value".to_string(),
-                })?,
+                *data
+                    .first()
+                    .ok_or(Box::new(ConstOfShapeError::EmptyAttributeTensor))?,
             ),
             Some(AttributeTensor::F64(data)) => self.compute_constant_of_shape::<f64>(
                 ctx,
-                *data.first().ok_or(InternalError::InvalidInput {
-                    input: 0,
-                    op: Op::ConstantOfShape,
-                    message: "expecting tensor to have one value".to_string(),
-                })?,
+                *data
+                    .first()
+                    .ok_or(Box::new(ConstOfShapeError::EmptyAttributeTensor))?,
             ),
             Some(AttributeTensor::I32(data)) => self.compute_constant_of_shape::<i32>(
                 ctx,
-                *data.first().ok_or(InternalError::InvalidInput {
-                    input: 0,
-                    op: Op::ConstantOfShape,
-                    message: "expecting tensor to have one value".to_string(),
-                })?,
+                *data
+                    .first()
+                    .ok_or(Box::new(ConstOfShapeError::EmptyAttributeTensor))?,
             ),
             Some(AttributeTensor::I64(data)) => self.compute_constant_of_shape::<i64>(
                 ctx,
-                *data.first().ok_or(InternalError::InvalidInput {
-                    input: 0,
-                    op: Op::ConstantOfShape,
-                    message: "expecting tensor to have one value".to_string(),
-                })?,
+                *data
+                    .first()
+                    .ok_or(Box::new(ConstOfShapeError::EmptyAttributeTensor))?,
             ),
             None => self.compute_constant_of_shape::<f32>(ctx, 0.0),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum ConstOfShapeError {
+    EmptyAttributeTensor,
+}
+
+impl Display for ConstOfShapeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for ConstOfShapeError {}

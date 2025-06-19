@@ -1,6 +1,6 @@
 use crate::core::device_service::DeviceData;
-use crate::core::error::{InternalError, Result};
 use crate::core::tensor_handle::{DstTensorId, SrcTensorId};
+use anyhow::{anyhow, bail, Result};
 use rmlk_schema::DataType;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -48,7 +48,7 @@ where
     pub fn try_dev_data_ptr(&self) -> Result<Ref<'_, T>> {
         {
             if self.data.as_ref().borrow().as_ref().is_none() {
-                return Err(InternalError::MissingDeviceData);
+                bail!("missing device data");
             }
         }
 
@@ -68,7 +68,7 @@ where
     pub fn try_dev_data_ptr_mut(&self) -> Result<RefMut<'_, T>> {
         {
             if self.data.as_ref().borrow().as_ref().is_none() {
-                return Err(InternalError::MissingDeviceData);
+                bail!("missing device data");
             }
         }
 
@@ -105,11 +105,11 @@ where
     }
 
     pub fn try_shape(&self) -> Result<&[usize]> {
-        self.shape.ok_or(InternalError::MissingDeviceData)
+        self.shape.ok_or(anyhow!("missing shape"))
     }
 
     pub fn try_stride(&self) -> Result<&[usize]> {
-        self.stride.ok_or(InternalError::MissingDeviceData)
+        self.stride.ok_or(anyhow!("missing strides"))
     }
 
     pub fn src_id(&self) -> SrcTensorId {

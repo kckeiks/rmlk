@@ -1,6 +1,7 @@
 use cudarc::cublas::result::CublasError;
 use cudarc::cudnn::CudnnError;
 use cudarc::driver::DriverError;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum Error {
@@ -29,5 +30,13 @@ impl From<DriverError> for Error {
         Self::Cuda(value.0 as u32)
     }
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;

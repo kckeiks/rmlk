@@ -1,6 +1,6 @@
 use crate::core::context::Context;
 use crate::core::device_service::DeviceService;
-use crate::core::error::Result;
+use anyhow::Result;
 
 pub trait OperationBackend<T: DeviceService> {
     /// Computes the operation for this backend.

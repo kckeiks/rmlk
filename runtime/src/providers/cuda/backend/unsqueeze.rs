@@ -1,10 +1,13 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::Cuda;
 use crate::utils;
+use anyhow::Result;
 use cudarc::driver::CudaStream;
-use rmlk_schema::{DataType, Op};
+use log::debug;
+use rmlk_schema::DataType;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct UnsqueezeBackend {
@@ -26,11 +29,7 @@ impl UnsqueezeBackend {
         let axes = ctx.get_input(1)?;
 
         if axes.shape().len() != 1 {
-            return Err(InternalError::InvalidInput {
-                input: 1,
-                op: Op::NoOp,
-                message: "`axes` is supposed to be a 1D tensor".to_string(),
-            });
+            return Err(UnsqueezeError::InvalidAxesRank.into());
         }
 
         let axes_value_count = *axes.shape().first().unwrap();
@@ -44,14 +43,16 @@ impl UnsqueezeBackend {
 
         // Todo: validate the range of axes values.
         if duplicates_exist(&axes_data) {
-            return Err(InternalError::InvalidInput {
-                input: 1,
-                op: Op::Unsqueeze,
-                message: format!("duplicates exist: {:?}", axes_data),
-            });
+            return Err(UnsqueezeError::DuplicateAxes.into());
         }
 
         let data = ctx.get_input(0)?;
+
+        debug!(
+            "[data][shape={:?}][stride=[{:?}]",
+            data.shape(),
+            data.stride()
+        );
 
         let expanded_rank = axes_value_count + data.shape().len();
 
@@ -80,34 +81,23 @@ impl UnsqueezeBackend {
         let expanded_shape = self.compute_output_shape(&scratch_alloc, ctx)?;
 
         let axes = ctx.get_input(1)?;
-        let data_ptr = axes
+
+        debug!(
+            "[axes][shape={:?}][stride=[{:?}]",
+            axes.shape(),
+            axes.stride()
+        );
+
+        let axes_ptr = axes
             .dev_data_ptr_clone()
             .ok_or(InternalError::MissingDeviceData)?;
 
         let mut expanded = ctx.get_output(0)?;
-        expanded.set_dev_data_ptr(data_ptr);
+        expanded.set_dev_data_ptr(axes_ptr);
 
         let dst_id = expanded.dst_id();
         ctx.execution_state_mut()
             .copy_shape_from_slice(expanded_shape, dst_id)?;
-
-        #[cfg(debug_assertions)]
-        {
-            use log::debug;
-
-            let x = ctx.get_input(0)?;
-            let y = ctx.get_output(0)?;
-            debug!(
-                "[x][flatten][shape={:?}][stride=[stride=[{:?}]",
-                x.shape(),
-                x.stride()
-            );
-            debug!(
-                "[y][flatten][shape={:?}][stride=[stride=[{:?}]",
-                y.shape(),
-                y.stride()
-            );
-        }
 
         Ok(())
     }
@@ -117,10 +107,7 @@ impl UnsqueezeBackend {
 
         match dtype {
             DataType::Float | DataType::Int64 => self.compute_unsqueeze(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Unsqueeze,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
@@ -135,3 +122,17 @@ fn duplicates_exist<T: Eq>(slice: &[T]) -> bool {
     }
     false
 }
+
+#[derive(Debug)]
+pub enum UnsqueezeError {
+    InvalidAxesRank,
+    DuplicateAxes,
+}
+
+impl Display for UnsqueezeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for UnsqueezeError {}

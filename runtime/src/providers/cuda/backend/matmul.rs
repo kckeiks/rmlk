@@ -1,7 +1,8 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
@@ -9,8 +10,9 @@ use num_traits::Num;
 use rmlk_cuda::kernels::gemm;
 use rmlk_cuda::kernels::gemm::GemmParams;
 use rmlk_cuda::params::CudaParamMap;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::cmp;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -47,11 +49,7 @@ impl MatMulBackend {
         let b_rank = b.shape().len();
 
         if a_rank == 0 || b_rank == 0 {
-            return Err(InternalError::InvalidInput {
-                input: 0,
-                op: Op::MatMul,
-                message: "".to_string(),
-            });
+            return Err(MatMulError::ZeroRank.into());
         }
 
         let (promoted_a, batch_a, a_2d_shape, a_2d_stride) = if a_rank == 1 {
@@ -91,24 +89,12 @@ impl MatMulBackend {
 
         if a_2d_shape[1] != b_2d_shape[0] {
             // Todo: we need a better error.
-            return Err(InternalError::InvalidInput {
-                input: 0,
-                op: Op::MatMul,
-                message: format!(
-                    "matrices are not compatible for the op: A={a_2d_shape:?}, B={b_2d_shape:?}"
-                ),
-            });
+            return Err(MatMulError::IncompatibleDimForMul.into());
         }
 
         if batch_a != batch_b && batch_a != 1 && batch_b != 1 {
             // Todo: we need a better error.
-            return Err(InternalError::InvalidInput {
-                input: 0,
-                op: Op::MatMul,
-                message: format!(
-                    "cannot broadcast batch dimensions batch A `{batch_a}` and batch B `{batch_b}`"
-                ),
-            });
+            return Err(MatMulError::IncompatibleDimForBroadcast.into());
         }
 
         let gemm_params = gemm::gemm_params(
@@ -202,21 +188,9 @@ impl MatMulBackend {
         let b = ctx.get_input(1)?;
         let y = ctx.get_output(0)?;
 
-        debug!(
-            "[a][matmul][shape={:?}][stride=[{:?}]",
-            a.shape(),
-            a.stride()
-        );
-        debug!(
-            "[b][matmul][shape={:?}][stride=[{:?}]",
-            b.shape(),
-            b.stride()
-        );
-        debug!(
-            "[y][matmul][shape={:?}][stride=[{:?}]",
-            y.shape(),
-            y.stride()
-        );
+        debug!("[a][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+        debug!("[b][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+        debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
         let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
         let a_size = a.shape().iter().product::<usize>();
@@ -341,11 +315,25 @@ impl MatMulBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            // Todo: add support.
+            // DataType::Float16 => self.compute_matmul::<f16>(ctx),
             DataType::Float => self.compute_matmul::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::MatMul,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum MatMulError {
+    ZeroRank,
+    IncompatibleDimForMul,
+    IncompatibleDimForBroadcast,
+}
+
+impl Display for MatMulError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for MatMulError {}

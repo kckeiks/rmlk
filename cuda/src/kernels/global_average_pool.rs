@@ -75,8 +75,8 @@ where
         &kernel_shape,
         &pads,
         &strides,
-        cudarc::cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
-        cudarc::cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+        cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
+        cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
     )?;
 
     let out_desc = cudnn.create_nd_tensor(y_shape, y_stride)?;

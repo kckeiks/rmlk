@@ -1,14 +1,13 @@
 use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::Context;
-use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
-use cudarc::cudnn::CudnnDataType;
+use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use rmlk_cuda::kernels::binary;
-use rmlk_schema::{DataTypeMap, Op};
+use rmlk_schema::DataTypeMap;
 use std::cmp;
 use std::sync::Arc;
 
@@ -19,9 +18,9 @@ pub unsafe fn compute<X, Y, O>(
     ctx: &mut Context<Cuda>,
 ) -> Result<()>
 where
-    X: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    Y: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    O: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    X: DataTypeMap + ValidAsZeroBits + DeviceRepr,
+    Y: DataTypeMap + ValidAsZeroBits + DeviceRepr,
+    O: DataTypeMap + ValidAsZeroBits + DeviceRepr,
 {
     // The output should have the same dimensions.
     // We do it now to avoid lifetime errors.
@@ -30,12 +29,8 @@ where
     let a = ctx.get_input(0)?;
     let b = ctx.get_input(1)?;
 
-    {
-        let c = ctx.get_output(0)?;
-        debug!("[a][{op}][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-        debug!("[b][{op}][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-        debug!("[c][{op}][shape={:?}][stride=[{:?}]", c.shape(), c.stride());
-    }
+    debug!("[a][{op}][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+    debug!("[b][{op}][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
 
     let a_dev_data_ref = a.try_dev_data_ptr()?;
     let a_dev_data = a_dev_data_ref.data::<X>();
@@ -43,29 +38,15 @@ where
     let b_dev_data_ref = b.try_dev_data_ptr()?;
     let b_dev_data = b_dev_data_ref.data::<Y>();
 
-    let elem_count: usize = a.shape().iter().product();
+    let c_tensor = ctx.get_output(0)?;
 
-    // Allocate device data for the tensor if we haven't done it yet
-    // or if the existing allocated data has a different size.
-    {
-        let mut c = ctx.get_output(0)?;
-        let c_dev_data_ref = c.dev_data_ptr_mut();
-        let need_to_alloc_dev_data = c_dev_data_ref.is_none()
-            || c_dev_data_ref
-                .as_ref()
-                .map(|data| data.data::<O>().len() != elem_count)
-                .unwrap_or(true);
+    debug!(
+        "[c][{op}][shape={:?}][stride=[{:?}]",
+        c_tensor.shape(),
+        c_tensor.stride()
+    );
 
-        // We need to remove this immutable reference so we can mutate `y`.
-        drop(c_dev_data_ref);
-
-        if need_to_alloc_dev_data {
-            let c_dev_data = stream
-                .alloc_zeros::<O>(c.shape().iter().copied().product::<usize>())
-                .map_err(rmlk_cuda::Error::from)?;
-            c.set_dev_data(CudaData::new(c_dev_data));
-        };
-    }
+    common::init_tensor_device_data::<O>(&stream, c_tensor)?;
 
     let stride_buf_len = cmp::max(a.shape().len(), b.shape().len());
     let strides = ctx
@@ -134,8 +115,8 @@ fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
                     ]
                     .try_into()
                     .expect("Small map so should succeed"),
-                    op: Op::Add,
-                });
+                }
+                .into());
             }
 
             let c = ctx.get_output(0)?;

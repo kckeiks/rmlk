@@ -1,14 +1,14 @@
 use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct SoftmaxBackend {
@@ -31,6 +31,7 @@ impl SoftmaxBackend {
         let output_id = output.dst_id();
         ctx.execution_state_mut()
             .copy_shape_from_within(input_id, output_id)
+            .map_err(Into::into)
     }
 
     fn compute_softmax<T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -45,16 +46,23 @@ impl SoftmaxBackend {
 
         // We only support these two axis options.
         if !(axis == -1 || (axis == 1 && rank == 4)) {
-            return Err(InternalError::UnsupportedInputs {
-                op: Op::Softmax,
+            return Err(InternalError::UnsupportedInputValues {
                 message: format!("unsupported inputs axis `{axis}` and rank `{rank}"),
-            });
+            }
+            .into());
         }
 
         // This initializes the output shape.
         self.compute_output_shape(ctx)?;
 
         let input_tensor = ctx.get_input(0)?;
+
+        debug!(
+            "[input][shape={:?}][stride=[{:?}]",
+            input_tensor.shape(),
+            input_tensor.stride()
+        );
+
         let scratch_alloc = ctx.execution_state().scratch_alloc();
 
         // Notice that the tensor will never be updated with this shape.
@@ -75,25 +83,17 @@ impl SoftmaxBackend {
             }
         };
 
-        #[cfg(debug_assertions)]
-        {
-            let output_tensor = ctx.get_output(0)?;
-            debug!(
-                "[input][softmax][shape={:?}][stride=[{:?}]",
-                input_tensor.shape(),
-                input_tensor.stride()
-            );
-            debug!(
-                "[output][softmax][shape={:?}][stride=[{:?}]",
-                output_tensor.shape(),
-                output_tensor.stride()
-            );
-        }
-
         let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
         let input_data_view = input_dev_ptr.data::<T>();
 
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][stride=[{:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let output_tensor = ctx.get_output(0)?;
@@ -124,10 +124,7 @@ impl SoftmaxBackend {
 
         match dtype {
             DataType::Float => self.compute_softmax::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Relu,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

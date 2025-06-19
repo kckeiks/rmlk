@@ -1,7 +1,9 @@
-use crate::core::error::{InternalError, Result};
+use anyhow::anyhow;
+use anyhow::Result;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum Reduction {
     Add,
     Mul,
@@ -21,8 +23,6 @@ pub fn get_reduction(attrs: &HashMap<Box<str>, Attribute>) -> Result<Option<Redu
         "mul" | "Mul" => Ok(Some(Reduction::Mul)),
         "max" | "Max" => Ok(Some(Reduction::Max)),
         "min" | "Min" => Ok(Some(Reduction::Min)),
-        val => Err(InternalError::InvalidAttribute {
-            name: format!("unknown value `{val}` for `reduction`"),
-        }),
+        val => Err(anyhow!("unknown value `{val}` for `reduction`")),
     }
 }

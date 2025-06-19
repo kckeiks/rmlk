@@ -1,11 +1,15 @@
 use crate::attributes::transpose;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use half::f16;
+use log::debug;
+use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct TransposeBackend {
@@ -22,6 +26,12 @@ impl TransposeBackend {
         I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
         let input = ctx.get_input(0)?;
+
+        debug!(
+            "[input][shape={:?}][stride=[{:?}]",
+            input.shape(),
+            input.stride()
+        );
 
         let alloc = ctx.execution_state().scratch_alloc().clone();
 
@@ -40,9 +50,7 @@ impl TransposeBackend {
             Some(perm) => {
                 // The length of perm must be equal to the rank of the input.
                 if perm.len() != output_shape.len() {
-                    return Err(InternalError::InvalidAttribute {
-                        name: "length of `perm` is not equal to rank of the tensor".to_string(),
-                    });
+                    return Err(TransposeError::InvalidPermLength.into());
                 }
 
                 for (dst_i, dim_i) in perm.iter().enumerate() {
@@ -50,12 +58,7 @@ impl TransposeBackend {
                     let i =
                         usize::try_from(*dim_i).map_err(|_| InternalError::UnableToConvertValue)?;
                     if i >= output_shape.len() {
-                        return Err(InternalError::InvalidAttribute {
-                            name: format!(
-                                "index `{i}` is out of bounds for input shape `{:?}`",
-                                input.shape()
-                            ),
-                        });
+                        return Err(TransposeError::PermIndexOutOfBounds { index: *dim_i }.into());
                     }
                     output_shape[dst_i] = input.shape()[i];
                 }
@@ -74,6 +77,12 @@ impl TransposeBackend {
 
         let mut output = ctx.get_output(0)?;
 
+        debug!(
+            "[output][shape={:?}][stride=[{:?}]",
+            output.shape(),
+            output.stride()
+        );
+
         output.set_dev_data(CudaData::new(dev_data));
 
         Ok(())
@@ -83,11 +92,33 @@ impl TransposeBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_transpose::<f16>(ctx),
             DataType::Float => self.compute_transpose::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Transpose,
-                dtype,
-            }),
+            DataType::Double => self.compute_transpose::<f64>(ctx),
+            DataType::Int32 => self.compute_transpose::<i32>(ctx),
+            DataType::Int64 => self.compute_transpose::<i64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum TransposeError {
+    InvalidPermLength,
+    PermIndexOutOfBounds { index: i32 },
+}
+
+impl Display for TransposeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransposeError::InvalidPermLength => {
+                write!(f, "invalid perm length")
+            }
+            TransposeError::PermIndexOutOfBounds { index } => {
+                write!(f, "perm index `{}` out of bounds", index)
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransposeError {}

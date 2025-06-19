@@ -1,12 +1,15 @@
 use crate::attributes;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
-use cudarc::cudnn::CudnnDataType;
+use anyhow::Result;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
+use log::debug;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ConcatBackend {
@@ -20,35 +23,37 @@ impl ConcatBackend {
         }
     }
 
-    fn compute_output_shape(&mut self, ctx: &mut Context<Cuda>, axis: usize) -> Result<()> {
-        let input = ctx.get_input(0)?;
+    fn compute_output_shape(&mut self, ctx: &mut Context<Cuda>, target_axis: usize) -> Result<()> {
+        let input_tensor = ctx.get_input(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let base_shape = scratch_alloc.allocate_from_slice(input.shape())?;
+        let base_shape = scratch_alloc.allocate_from_slice(input_tensor.shape())?;
         let mut shape_on_axis = 0;
         for i in 0..usize::MAX {
             match ctx.get_input(i) {
-                Ok(input) => {
-                    if input.shape().len() != base_shape.len() {
-                        return Err(InternalError::InvalidInput {
-                            input: i,
-                            op: Op::Concat,
-                            message: "all inputs must have the same rank".to_string(),
-                        });
+                Ok(next_input_tensor) => {
+                    if next_input_tensor.shape().len() != base_shape.len() {
+                        return Err(ConcatError::ShapeMismatch {
+                            index: i,
+                            base_rank: base_shape.len(),
+                            found_rank: next_input_tensor.shape().len(),
+                        }
+                        .into());
                     }
 
-                    shape_on_axis += input.shape()[axis];
+                    shape_on_axis += next_input_tensor.shape()[target_axis];
 
-                    for (j, d) in input.shape().iter().enumerate() {
-                        if j == axis {
+                    for (axis, dim) in next_input_tensor.shape().iter().enumerate() {
+                        if axis == target_axis {
                             continue;
                         }
 
-                        if *d != base_shape[j] {
-                            return Err(InternalError::InvalidInput {
-                                input: j,
-                                op: Op::Concat,
-                                message: "dimensions do not match for axis `i`".to_string(),
-                            });
+                        if *dim != base_shape[axis] {
+                            return Err(ConcatError::DimensionMismatch {
+                                axis,
+                                dim: *dim,
+                                expected_dim: base_shape[axis],
+                            }
+                            .into());
                         }
                     }
                 }
@@ -56,7 +61,7 @@ impl ConcatBackend {
             }
         }
 
-        base_shape[axis] = shape_on_axis;
+        base_shape[target_axis] = shape_on_axis;
 
         let output = ctx.get_output(0)?;
         let dst_id = output.dst_id();
@@ -66,54 +71,36 @@ impl ConcatBackend {
         Ok(())
     }
 
-    #[cfg(debug_assertions)]
-    fn log_input_and_output(&mut self, ctx: &Context<Cuda>) {
-        use log::debug;
-
-        for i in 0..usize::MAX {
-            match ctx.get_input(i) {
-                Ok(input) => {
-                    debug!(
-                        "[input][{i}][concat][shape={:?}][stride=[{:?}]",
-                        input.shape(),
-                        input.stride()
-                    );
-                }
-                _ => break,
-            }
-        }
-
-        let output = ctx.get_output(0).unwrap();
-
-        debug!(
-            "[output][concat][shape={:?}][stride=[stride=[{:?}]",
-            output.shape(),
-            output.stride()
-        );
-    }
-
     // TODO: If axis is last dimension (step == 1), consider larger DtoD copies
     fn compute_concat<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        // Todo: validate axis.
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)?;
+            .ok_or(InternalError::MissingAttributes)
+            .map_err(Box::new)?;
+
+        debug!("[attributes={:?}]", attrs);
+
+        // Todo: validate axis.
         let axis = usize::try_from(attributes::concat::get_axis(&attrs).ok_or_else(|| {
-            InternalError::MissingAttribute {
+            Box::new(InternalError::MissingAttribute {
                 name: "`axis` is missing".to_string(),
-            }
+            })
         })?)
         .map_err(|_| InternalError::UnableToConvertValue)?;
 
         self.compute_output_shape(ctx, axis)?;
 
-        #[cfg(debug_assertions)]
-        self.log_input_and_output(ctx);
-
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][0][shape={:?}][stride=[{:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
 
         let output_tensor = ctx.get_output(0)?;
@@ -121,11 +108,24 @@ impl ConcatBackend {
         let mut output_data = output_ptr.data_mut::<I>();
 
         let input = ctx.get_input(0)?;
+
+        debug!(
+            "[input][0][shape={:?}][stride=[{:?}]",
+            input.shape(),
+            input.stride()
+        );
+
         let outer_dims = input.shape()[..axis].iter().product::<usize>();
         let mut axis_offset = 0;
         for i in 0..usize::MAX {
             match ctx.get_input(i) {
                 Ok(input) => {
+                    debug!(
+                        "[input][{i}][shape={:?}][stride=[{:?}]",
+                        input.shape(),
+                        input.stride()
+                    );
+
                     let dim = input.shape()[axis];
                     let step = input.stride()[axis];
                     let outer_block_size = step * dim;
@@ -160,11 +160,39 @@ impl ConcatBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_concat::<f16>(ctx),
             DataType::Float => self.compute_concat::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Concat,
-                dtype,
-            }),
+            DataType::Double => self.compute_concat::<f64>(ctx),
+            DataType::Int32 => self.compute_concat::<i32>(ctx),
+            DataType::Uint32 => self.compute_concat::<u32>(ctx),
+            DataType::Int64 => self.compute_concat::<i64>(ctx),
+            DataType::Uint64 => self.compute_concat::<u64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum ConcatError {
+    ShapeMismatch {
+        index: usize,
+        base_rank: usize,
+        found_rank: usize,
+    },
+    DimensionMismatch {
+        axis: usize,
+        dim: usize,
+        expected_dim: usize,
+    },
+}
+
+impl Display for ConcatError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConcatError::ShapeMismatch { index, base_rank, found_rank } => write!(f, "shape mismatch for input {index}: base rank {base_rank} and found rank {found_rank}"),
+            ConcatError::DimensionMismatch { axis, dim, expected_dim } => write!(f, "dimension mismatch for input {axis} and input dim {dim} expected dim {expected_dim}"),
+        }
+    }
+}
+
+impl std::error::Error for ConcatError {}

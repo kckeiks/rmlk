@@ -1,14 +1,14 @@
 use crate::core::allocators::{BufferArena, ShapeBufArena, ShapeBufArenaMut};
 use crate::core::device_service::DeviceData;
-use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::tensor_handle::TensorHandle;
 use crate::core::{device_service::DeviceService, Tensor};
 use crate::utils;
+use anyhow::Result;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 /// Tensor store.
@@ -50,7 +50,7 @@ where
             .try_get_tensor(src_id)?
             .arena_id()
             .copied()
-            .ok_or(InternalError::TensorNotFound { node_id: src_id })?;
+            .ok_or(StoreError::TensorNotFound { id: src_id })?;
         let dst_arena_id = self.try_get_tensor(dst_id)?.arena_id().copied();
 
         let mut shape_buf_arena = ShapeBufArenaMut::new(&mut self.buf_arena);
@@ -92,14 +92,16 @@ where
         self.tensors
             .get(id)
             .and_then(|handle| handle.as_ref())
-            .ok_or(InternalError::TensorNotFound { node_id: id })
+            .ok_or(StoreError::TensorNotFound { id })
+            .map_err(Into::into)
     }
 
     fn try_get_tensor_mut(&mut self, id: usize) -> Result<&mut TensorHandle<T>> {
         self.tensors
             .get_mut(id)
             .and_then(|handle| handle.as_mut())
-            .ok_or(InternalError::TensorNotFound { node_id: id })
+            .ok_or(StoreError::TensorNotFound { id })
+            .map_err(Into::into)
     }
 }
 
@@ -152,9 +154,12 @@ where
             ));
 
             let on_host_data = match ir_tensor.float_data.is_empty() {
-                true => utils::to_float_vec(ir_tensor.raw_data.as_ref().ok_or_else(|| {
-                    InternalError::TensorStore("failed to parse tensor raw data".to_string())
-                })?),
+                true => utils::to_float_vec(
+                    ir_tensor
+                        .raw_data
+                        .as_ref()
+                        .ok_or(StoreError::FailedToParseTensorRawData)?,
+                ),
                 false => {
                     // Todo: remove allocation.
                     ir_tensor.float_data
@@ -183,10 +188,8 @@ where
                     let def = node.value();
                     let dtype = def
                         .dtype()
-                        .ok_or(InternalError::ExpectedDataTypeInDef { node_id })?;
-                    let shape = def
-                        .shape()
-                        .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
+                        .ok_or(StoreError::DataTypeNotFound { node_id })?;
+                    let shape = def.shape().ok_or(StoreError::ShapeNotFound { node_id })?;
                     let arena_id = ShapeBufArenaMut::new(&mut self.arena)
                         .alloc_from_shape_slice(shape.as_slice())?;
                     let tensor =
@@ -194,9 +197,7 @@ where
                     self.tensors[node_id].replace(tensor);
                 }
                 None => {
-                    return Err(InternalError::TensorStore(format!(
-                        "failed to create tensor store: failed to find input node `{node_id}`"
-                    )))
+                    return Err(StoreError::UnknownInputNode { id: node_id }.into());
                 }
             }
         }
@@ -211,21 +212,15 @@ where
                     let def = node.value();
                     let dtype = def
                         .dtype()
-                        .ok_or(InternalError::ExpectedDataTypeInDef { node_id })?;
-                    let shape = def
-                        .shape()
-                        .ok_or(InternalError::ExpectedShapeInDef { node_id })?;
+                        .ok_or(StoreError::DataTypeNotFound { node_id })?;
+                    let shape = def.shape().ok_or(StoreError::ShapeNotFound { node_id })?;
                     let arena_id = ShapeBufArenaMut::new(&mut self.arena)
                         .alloc_from_shape_slice(shape.as_slice())?;
                     let tensor =
                         TensorHandle::new(dtype, Some(arena_id), Rc::new(RefCell::new(None)));
                     self.tensors[node_id].replace(tensor);
                 }
-                None => {
-                    return Err(InternalError::TensorStore(format!(
-                        "failed to create tensor store: failed to find output node `{node_id}`"
-                    )))
-                }
+                None => return Err(StoreError::UnknownOutputNode { id: node_id }.into()),
             }
         }
 
@@ -242,23 +237,28 @@ where
             for output in node.outputs() {
                 match self.graph.get_node(*output) {
                     Some(_) => {
-                        if self.tensors.get(*output)
-                            .ok_or_else(|| {
-                                InternalError::TensorStore(
-                                    format!("failed to create tensor store: node {} is referring to an output node ID that is unknown", *output)
-                                )
+                        if self
+                            .tensors
+                            .get(*output)
+                            .ok_or(StoreError::OutputNodeNotFound {
+                                node_id,
+                                output_id: *output,
                             })?
                             .is_none()
                         {
-                            self.tensors[*output].replace(TensorHandle::new(DataType::Undefined, None, Rc::new(RefCell::new(None))));
+                            self.tensors[*output].replace(TensorHandle::new(
+                                DataType::Undefined,
+                                None,
+                                Rc::new(RefCell::new(None)),
+                            ));
                         }
                     }
                     None => {
-                        return Err(InternalError::TensorStore(format!(
-                            "failed to create tensor store: failed to find output node `{}` for node {}",
-                            *output,
-                            node_id
-                        )))
+                        return Err(StoreError::OutputNodeNotFound {
+                            output_id: *output,
+                            node_id,
+                        }
+                        .into())
                     }
                 }
             }
@@ -279,3 +279,37 @@ where
         })
     }
 }
+
+#[derive(Debug)]
+pub enum StoreError {
+    TensorNotFound { id: usize },
+    OutputNodeNotFound { output_id: usize, node_id: usize },
+    UnknownOutputNode { id: usize },
+    UnknownInputNode { id: usize },
+    FailedToParseTensorRawData,
+    DataTypeNotFound { node_id: usize },
+    ShapeNotFound { node_id: usize },
+}
+
+impl Display for StoreError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::TensorNotFound { id } => write!(f, "tensor not found: {}", id),
+            StoreError::OutputNodeNotFound { output_id, node_id } => write!(
+                f,
+                "Output node `{output_id}` not found for node `{node_id}`"
+            ),
+            StoreError::UnknownOutputNode { id } => write!(f, "Unknown output node `{id}`"),
+            StoreError::UnknownInputNode { id } => write!(f, "Unknown input node `{id}`"),
+            StoreError::FailedToParseTensorRawData => write!(f, "failed to parse tensor raw data"),
+            StoreError::DataTypeNotFound { node_id } => {
+                write!(f, "DataType not found in node `{}`", node_id)
+            }
+            StoreError::ShapeNotFound { node_id } => {
+                write!(f, "shape not found in node `{}`", node_id)
+            }
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}

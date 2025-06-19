@@ -1,8 +1,9 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::{InternalError, Result};
+use anyhow::Result;
 use log::{debug, warn};
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 pub struct MaxPoolAttributes<'a> {
     pads: &'a [i32],
@@ -21,14 +22,8 @@ impl<'a> MaxPoolAttributes<'a> {
         let kernel_shape = match attrs.get("kernel_shape") {
             Some(attr) => attr
                 .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "kernel_shape".to_string(),
-                })?,
-            None => {
-                return Err(InternalError::MissingAttribute {
-                    name: "kernel_shape".to_string(),
-                })
-            }
+                .ok_or(MaxPoolAttributeError::InvalidKernelShape)?,
+            None => return Err(MaxPoolAttributeError::MissingKernelShape.into()),
         };
 
         let pads;
@@ -41,9 +36,7 @@ impl<'a> MaxPoolAttributes<'a> {
                 Some(0) => Some(false),
                 Some(n) => {
                     debug!("unsupported attribute type `{n}` for `ceil_mode`");
-                    return Err(InternalError::InvalidAttribute {
-                        name: "ceil_mode".to_string(),
-                    });
+                    return Err(MaxPoolAttributeError::InvalidCeilMode.into());
                 }
                 None => None,
             }
@@ -57,21 +50,13 @@ impl<'a> MaxPoolAttributes<'a> {
         let kernel_dims = kernel_shape.len();
 
         if let Some(attr) = attrs.get("pads") {
-            pads = attr
-                .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "pads".to_string(),
-                })?;
+            pads = attr.ints().ok_or(MaxPoolAttributeError::InvalidPads)?;
         } else {
             pads = scratch_alloc.allocate_fill(kernel_dims, 0)?;
         }
 
         if let Some(attr) = attrs.get("strides") {
-            strides = attr
-                .ints()
-                .ok_or_else(|| InternalError::InvalidAttributeDataType {
-                    name: "strides".to_string(),
-                })?;
+            strides = attr.ints().ok_or(MaxPoolAttributeError::InvalidStrides)?;
         } else {
             strides = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
@@ -109,3 +94,20 @@ impl<'a> MaxPoolAttributes<'a> {
         false
     }
 }
+
+#[derive(Debug)]
+pub enum MaxPoolAttributeError {
+    InvalidKernelShape,
+    InvalidCeilMode,
+    InvalidPads,
+    InvalidStrides,
+    MissingKernelShape,
+}
+
+impl Display for MaxPoolAttributeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for MaxPoolAttributeError {}

@@ -1,15 +1,16 @@
 use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
+use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::expand;
 use rmlk_cuda::kernels::expand::ExpandKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::cmp;
 use std::sync::Arc;
 
@@ -34,10 +35,7 @@ impl ExpandBackend {
             DataType::Int64 => ExpandKernel::FwdI64,
             DataType::Uint64 => ExpandKernel::FwdU64,
             _ => {
-                return Err(InternalError::UnsupportedDataTypeForOp {
-                    op: Op::Expand,
-                    dtype,
-                })
+                return Err(InternalError::UnsupportedDataType { dtype }.into());
             }
         };
 
@@ -54,7 +52,20 @@ impl ExpandBackend {
 
         let output_shape = {
             let input_tensor = ctx.get_input(0)?;
+
+            debug!(
+                "[input][shape={:?}][stride={:?}]",
+                input_tensor.shape(),
+                input_tensor.stride()
+            );
+
             let shape_tensor = ctx.get_input(1)?;
+
+            debug!(
+                "[shape][shape={:?}][stride={:?}]",
+                shape_tensor.shape(),
+                shape_tensor.stride()
+            );
 
             let rank = cmp::max(input_tensor.shape().len(), shape_tensor.shape().len());
 
@@ -72,15 +83,15 @@ impl ExpandBackend {
             if !utils::compute_broadcast_output_shape(input_tensor.shape(), shape, output_shape) {
                 let a_id = input_tensor.src_id();
                 let b_id = shape_tensor.src_id();
-                return Err(InternalError::IncompatibleTensorShape {
+                return Err(InternalError::IncompatibleShapesForBroadcast {
                     shapes: [
                         (a_id.into(), input_tensor.shape().to_vec()),
                         (b_id.into(), shape_tensor.shape().to_vec()),
                     ]
                     .try_into()
                     .expect("Small map so should succeed"),
-                    op: Op::Expand,
-                });
+                }
+                .into());
             }
 
             output_shape
@@ -92,6 +103,13 @@ impl ExpandBackend {
             .copy_shape_from_slice(output_shape, dst_id)?;
 
         let output_tensor = ctx.get_output(0)?;
+
+        debug!(
+            "[output][shape={:?}][stride={:?}]",
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
         common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
         let input_tensor = ctx.get_input(0)?;
@@ -140,10 +158,7 @@ impl ExpandBackend {
             DataType::Uint32 => self.compute_expand::<u32>(ctx),
             DataType::Int64 => self.compute_expand::<i64>(ctx),
             DataType::Uint64 => self.compute_expand::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::ReduceMean,
-                dtype,
-            }),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }

@@ -1,9 +1,10 @@
-use crate::core::error::Result;
 use crate::utils::FromBytes;
+use anyhow::Result;
 use half::f16;
 use rmlk_schema::{Attribute, DataType};
 use std::collections::HashMap;
 
+// Todo: add support for more types.
 pub enum AttributeTensor {
     F16(Vec<f16>),
     F32(Vec<f32>),

@@ -65,8 +65,8 @@ pub unsafe fn compute_with_types<X, Y, O>(
     c: &mut CudaSlice<O>,
 ) -> Result<()>
 where
-    X: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    Y: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    X: ValidAsZeroBits + DeviceRepr,
+    Y: ValidAsZeroBits + DeviceRepr,
 {
     assert_eq!(3 * ndims, info_buffer.len());
 
@@ -132,7 +132,7 @@ pub unsafe fn compute_alpha_beta_inplace<T>(
     b: &mut CudaSlice<T>,
 ) -> Result<()>
 where
-    T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
+    T: ValidAsZeroBits + DeviceRepr,
 {
     assert_eq!(3 * ndims, info_buffer.len());
 

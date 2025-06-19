@@ -1,5 +1,5 @@
-use crate::core::error::{InternalError, Result};
 use crate::utils;
+use anyhow::{anyhow, bail, Result};
 use bumpalo::Bump;
 use log::warn;
 use std::rc::Rc;
@@ -41,10 +41,11 @@ impl ScratchAllocator {
     where
         S: Copy,
         T: Default + TryFrom<S>,
+        <T as TryFrom<S>>::Error: std::error::Error + Send + Sync + 'static,
     {
         let target = self.inner.alloc_slice_fill_default::<T>(src.len());
         for (i, elem) in src.iter().enumerate() {
-            target[i] = T::try_from(*elem).map_err(|_| InternalError::UnableToConvertValue)?;
+            target[i] = T::try_from(*elem)?;
         }
         Ok(target)
     }
@@ -116,14 +117,15 @@ impl<'a> ShapeBufArenaMut<'a> {
     /// Returns an error if the size of the `src` and `dst` don't match.
     pub fn try_copy_shape_from_slice(&mut self, src: &[usize], dst: &ArenaId) -> Result<()> {
         if src.len() != dst.shape_len() {
-            return Err(InternalError::BufferSizeMismatch {
-                expected: src.len(),
-                actual: dst.shape_len(),
-            });
+            bail!(
+                "src length is `{}` but dst length is `{}`",
+                src.len(),
+                dst.shape_len()
+            );
         }
 
         self.get_shape_buf_mut(dst)
-            .ok_or(InternalError::UnknownShapeBuffer { index: *dst })?
+            .ok_or_else(|| anyhow!("shape buffer was not found"))?
             .copy_from_slice(src);
         let stride = self
             .get_stride_buf_mut(dst)

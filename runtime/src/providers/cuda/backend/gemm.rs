@@ -1,18 +1,19 @@
 use crate::attributes::gemm::GemmAttributes;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cublas::StridedBatchedConfig;
-use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmParams;
 use rmlk_cuda::kernels::{binary, gemm};
 use rmlk_cuda::params::CudaParamMap;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::cmp;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct GemmBackend {
@@ -37,15 +38,11 @@ impl GemmBackend {
 
         let output_ndims = cmp::max(a.shape().len(), b.shape().len());
         if output_ndims != 2 {
-            return Err(InternalError::IncompatibleTensorShape {
-                shapes: [
-                    (a.src_id().into(), a.shape().to_vec()),
-                    (b.src_id().into(), b.shape().to_vec()),
-                ]
-                .try_into()
-                .expect("Small map so should succeed"),
-                op: Op::Gemm,
-            });
+            return Err(GemmError::Expected2DInputs {
+                a_shape: a.shape().to_vec(),
+                b_shape: b.shape().to_vec(),
+            }
+            .into());
         }
 
         gemm::gemm_params(
@@ -74,34 +71,23 @@ impl GemmBackend {
         gemm_params: &GemmParams,
     ) -> Result<StridedBatchedConfig<T>>
     where
-        T: CudaParamMap
-            + DataTypeMap
-            + CudnnDataType
-            + ValidAsZeroBits
-            + DeviceRepr
-            + Num
-            + TryFrom<f32>,
+        T: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
     {
-        let alpha = T::try_from(attrs.alpha()).map_err(|_| InternalError::UnableToConvertValue)?;
+        let alpha = T::try_from(attrs.alpha())
+            .map_err(|_| InternalError::UnableToConvertValue)
+            .map_err(Box::new)?;
         gemm::strided_batch_config::<T>((T::from(alpha), T::zero()), &gemm_params)
             .map_err(Into::into)
     }
 
-    pub fn compute_bias_addition<D, T>(
+    pub fn compute_bias_addition<D>(
         self,
         params: &GemmParams,
         attrs: &GemmAttributes,
         ctx: &mut Context<Cuda>,
     ) -> Result<()>
     where
-        D: CudaParamMap
-            + DataTypeMap
-            + CudnnDataType
-            + ValidAsZeroBits
-            + DeviceRepr
-            + Num
-            + TryFrom<f32>,
-        T: GemmKernel,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
     {
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
@@ -116,7 +102,9 @@ impl GemmBackend {
             .expect("we already checked that it initialized")
             .data_mut();
 
-        let beta = D::try_from(attrs.beta()).map_err(|_| InternalError::UnableToConvertValue)?;
+        let beta = D::try_from(attrs.beta())
+            .map_err(|_| InternalError::UnableToConvertValue)
+            .map_err(Box::new)?;
 
         let (_, c_stride) = compute_bias_shape(c.shape(), params)?;
 
@@ -126,34 +114,30 @@ impl GemmBackend {
         info_buffer[rank..2 * rank].copy_from_slice(&c_stride);
         info_buffer[2 * rank..].copy_from_slice(y.stride());
 
-        T::execute_bias_addition::<D>(
-            self.func,
-            &self.stream,
-            rank,
-            info_buffer,
-            beta,
-            &c_dev_data,
-            &mut y_dev_data,
-        )?;
+        unsafe {
+            binary::compute_alpha_beta_inplace(
+                &self.stream,
+                self.func,
+                beta,
+                D::one(),
+                rank,
+                info_buffer,
+                &c_dev_data,
+                &mut y_dev_data,
+            )?;
+        }
 
         Ok(())
     }
 
-    pub fn compute_multiplication<D, T>(
+    pub fn compute_multiplication<D>(
         &self,
         params: &GemmParams,
         attrs: &GemmAttributes,
         ctx: &mut Context<Cuda>,
     ) -> Result<()>
     where
-        D: CudaParamMap
-            + DataTypeMap
-            + CudnnDataType
-            + ValidAsZeroBits
-            + DeviceRepr
-            + Num
-            + TryFrom<f32>,
-        T: GemmKernel,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
     {
         self.compute_output_shape(&params, ctx)?;
         let config = self.create_config(&attrs, &params)?;
@@ -162,9 +146,9 @@ impl GemmBackend {
         let b = ctx.get_input(1)?;
         let y = ctx.get_output(0)?;
 
-        debug!("[a][gemm][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-        debug!("[b][gemm][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-        debug!("[c][gemm][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!("[a][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
+        debug!("[b][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+        debug!("[c][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
 
         let a_dev_data_ref = a.try_dev_data_ptr()?;
         let a_dev_data = a_dev_data_ref.data::<D>();
@@ -184,7 +168,7 @@ impl GemmBackend {
             .expect("we already checked that it initialized")
             .data_mut();
 
-        T::execute_multiplication::<D>(
+        gemm::compute::<D>(
             &self.stream,
             &a_dev_data,
             &b_dev_data,
@@ -195,147 +179,37 @@ impl GemmBackend {
         Ok(())
     }
 
-    pub fn compute_gemm<D, T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    pub fn compute_gemm<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: CudaParamMap
-            + DataTypeMap
-            + CudnnDataType
-            + ValidAsZeroBits
-            + DeviceRepr
-            + Num
-            + TryFrom<f32>,
-        T: GemmKernel,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
     {
         let attrs = match ctx.get_attributes() {
             Some(attrs) => GemmAttributes::new(&attrs)?,
             None => GemmAttributes::default(),
         };
 
+        debug!("attributes={:?}", attrs);
+
         let params = self.prepare_gemm_params(&attrs, ctx)?;
 
-        self.compute_multiplication::<D, T>(&params, &attrs, ctx)?;
+        self.compute_multiplication::<D>(&params, &attrs, ctx)?;
 
         if ctx.input_exists(2) {
-            self.compute_bias_addition::<D, T>(&params, &attrs, ctx)?;
+            self.compute_bias_addition::<D>(&params, &attrs, ctx)?;
         }
 
         Ok(())
     }
 
-    pub fn compute<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        T: GemmKernel,
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_gemm::<f32, T>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::Conv,
-                dtype,
-            }),
+            // Todo Add support
+            // DataType::Float16 => self.compute_gemm::<f16>(ctx),
+            DataType::Float => self.compute_gemm::<f32>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
-    }
-}
-
-pub trait GemmKernel {
-    /// This should compute `AB = 1 * AB + beta * C`.
-    fn execute_bias_addition<T>(
-        func: CudaFunction,
-        stream: &Arc<CudaStream>,
-        rank: usize,
-        info: &[usize],
-        beta: T,
-        c_dev_data: &CudaSlice<T>,
-        ab_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num;
-
-    fn execute_multiplication<T>(
-        stream: &Arc<CudaStream>,
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        y_dev_data: &mut CudaSlice<T>,
-        config: StridedBatchedConfig<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr;
-}
-
-pub struct ActiveKernel(());
-
-impl GemmKernel for ActiveKernel {
-    fn execute_bias_addition<T>(
-        func: CudaFunction,
-        stream: &Arc<CudaStream>,
-        rank: usize,
-        info: &[usize],
-        beta: T,
-        c_dev_data: &CudaSlice<T>,
-        ab_dev_data: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-    {
-        unsafe {
-            binary::compute_alpha_beta_inplace(
-                stream,
-                func,
-                beta,
-                T::one(),
-                rank,
-                info,
-                c_dev_data,
-                ab_dev_data,
-            )
-            .map_err(Into::into)
-        }
-    }
-
-    fn execute_multiplication<T>(
-        stream: &Arc<CudaStream>,
-        a_dev_data: &CudaSlice<T>,
-        b_dev_data: &CudaSlice<T>,
-        y_dev_data: &mut CudaSlice<T>,
-        config: StridedBatchedConfig<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        gemm::compute::<T>(stream, a_dev_data, b_dev_data, y_dev_data, config).map_err(Into::into)
-    }
-}
-
-pub struct NoOpKernel(());
-
-impl GemmKernel for NoOpKernel {
-    fn execute_bias_addition<T>(
-        _: CudaFunction,
-        _: &Arc<CudaStream>,
-        _: usize,
-        _: &[usize],
-        _: T,
-        _: &CudaSlice<T>,
-        _: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-    {
-        Ok(())
-    }
-
-    fn execute_multiplication<T>(
-        _: &Arc<CudaStream>,
-        _: &CudaSlice<T>,
-        _: &CudaSlice<T>,
-        _: &mut CudaSlice<T>,
-        _: StridedBatchedConfig<T>,
-    ) -> Result<()>
-    where
-        T: CudaParamMap + CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        Ok(())
     }
 }
 
@@ -355,6 +229,27 @@ fn compute_bias_shape(shape: &[usize], params: &GemmParams) -> Result<([usize; 2
         }
         _ => Err(InternalError::InvalidTensorShape {
             shape: shape.to_vec(),
-        }),
+        }
+        .into()),
     }
 }
+
+#[derive(Debug)]
+pub enum GemmError {
+    Expected2DInputs {
+        a_shape: Vec<usize>,
+        b_shape: Vec<usize>,
+    },
+}
+
+impl Display for GemmError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GemmError::Expected2DInputs { a_shape, b_shape } => {
+                write!(f, "expected 2d inputs, got {:?} and {:?}", a_shape, b_shape)
+            }
+        }
+    }
+}
+
+impl std::error::Error for GemmError {}

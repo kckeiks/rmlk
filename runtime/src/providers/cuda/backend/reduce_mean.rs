@@ -1,14 +1,16 @@
 use crate::attributes::reduce_mean;
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
-use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
+use anyhow::Result;
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ReduceMeanBackend {
@@ -30,19 +32,11 @@ impl ReduceMeanBackend {
 
         for axis in axes.iter().copied() {
             if axis > rank {
-                return Err(InternalError::InvalidInput {
-                    input: 1,
-                    op: Op::ReduceMean,
-                    message: "`axis` value cannot be larger than the rank".to_string(),
-                });
+                return Err(ReduceMeanError::AxisOutOfBounds.into());
             }
 
             if reduced[axis] {
-                return Err(InternalError::InvalidInput {
-                    input: 1,
-                    op: Op::ReduceMean,
-                    message: "`axes` cannot contain duplicate values".to_string(),
-                });
+                return Err(ReduceMeanError::DuplicateAxis.into());
             }
 
             reduced[axis] = true;
@@ -63,11 +57,7 @@ impl ReduceMeanBackend {
             buf
         } else {
             if rank < axes.len() {
-                return Err(InternalError::InvalidInput {
-                    input: 1,
-                    op: Op::ReduceMean,
-                    message: "`axes` length cannot be larger than the rank".to_string(),
-                });
+                return Err(ReduceMeanError::AxesLargerThanRank.into());
             }
 
             let buf = alloc.allocate::<usize>(rank - axes.len())?;
@@ -94,7 +84,7 @@ impl ReduceMeanBackend {
 
     fn copy_input_to_output<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         {
             let src = ctx.get_input(0)?.src_id();
@@ -113,10 +103,9 @@ impl ReduceMeanBackend {
         Ok(())
     }
 
-    fn compute_reduce_mean<I, K>(mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_reduce_mean<I>(mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-        K: ReduceMeanKernel,
+        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         let rank = ctx.get_input(0)?.shape().len();
         let alloc = ctx.execution_state().scratch_alloc().clone();
@@ -185,16 +174,18 @@ impl ReduceMeanBackend {
             let mut output_dev_ptr = output.try_dev_data_ptr_mut()?;
             let mut output_dev_data = output_dev_ptr.data_mut::<I>();
 
-            K::execute(
-                self.stream.clone(),
-                self.kernel,
-                reduced_dim_prod,
-                axes,
-                rank,
-                info,
-                &input_dev_data,
-                &mut output_dev_data,
-            )?;
+            unsafe {
+                rmlk_cuda::kernels::reduce_mean::compute(
+                    self.stream.clone(),
+                    self.kernel,
+                    reduced_dim_prod,
+                    axes,
+                    rank,
+                    info,
+                    &input_dev_data,
+                    &mut output_dev_data,
+                )?;
+            }
         } else {
             self.copy_input_to_output::<I>(ctx)?;
         }
@@ -202,65 +193,31 @@ impl ReduceMeanBackend {
         Ok(())
     }
 
-    pub fn compute<K>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        K: ReduceMeanKernel,
-    {
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float => self.compute_reduce_mean::<f32, K>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp {
-                op: Op::ReduceMean,
-                dtype,
-            }),
+            DataType::Float16 => self.compute_reduce_mean::<f16>(ctx),
+            DataType::Float => self.compute_reduce_mean::<f32>(ctx),
+            DataType::Double => self.compute_reduce_mean::<f64>(ctx),
+            DataType::Int32 => self.compute_reduce_mean::<i32>(ctx),
+            DataType::Int64 => self.compute_reduce_mean::<i64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
 
-pub trait ReduceMeanKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        reduced_dim_prod: usize,
-        axes: &[usize],
-        rank: usize,
-        tensor_info: &[usize],
-        input: &CudaSlice<T>,
-        output: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr;
+#[derive(Debug)]
+pub enum ReduceMeanError {
+    AxisOutOfBounds,
+    DuplicateAxis,
+    AxesLargerThanRank,
 }
 
-pub struct ActiveKernel(());
-
-impl ReduceMeanKernel for ActiveKernel {
-    fn execute<T>(
-        stream: Arc<CudaStream>,
-        func: CudaFunction,
-        reduced_dim_prod: usize,
-        axes: &[usize],
-        rank: usize,
-        tensor_info: &[usize],
-        input: &CudaSlice<T>,
-        output: &mut CudaSlice<T>,
-    ) -> Result<()>
-    where
-        T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
-    {
-        unsafe {
-            rmlk_cuda::kernels::reduce_mean::compute(
-                stream,
-                func,
-                reduced_dim_prod,
-                axes,
-                rank,
-                tensor_info,
-                input,
-                output,
-            )
-            .map_err(Into::into)
-        }
+impl Display for ReduceMeanError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
+
+impl std::error::Error for ReduceMeanError {}

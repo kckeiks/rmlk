@@ -1,13 +1,15 @@
-use crate::core::error::{InternalError, Result};
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 use crate::providers::cuda::Cuda;
+use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use num_traits::Num;
 use rmlk_cuda::kernels::sin;
 use rmlk_cuda::kernels::sin::SinKernel;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct SinBackend {
@@ -26,10 +28,12 @@ impl SinBackend {
             DataType::Float16 => SinKernel::SinFwdF16,
             DataType::Float => SinKernel::SinFwdF32,
             DataType::Double => SinKernel::SinFwdF64,
-            _ => return Err(InternalError::UnsupportedDataTypeForOp { op: Op::Sin, dtype }),
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
-        sin::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+        sin::load_kernel(self.stream.context().clone(), kernel_name)
+            .map_err(Box::new)
+            .map_err(Into::into)
     }
 
     fn compute_sin<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -44,10 +48,10 @@ impl SinBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
+            DataType::Float16 => self.compute_sin::<f16>(ctx),
             DataType::Float => self.compute_sin::<f32>(ctx),
-            DataType::Int32 => self.compute_sin::<i32>(ctx),
-            DataType::Int64 => self.compute_sin::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataTypeForOp { op: Op::Neg, dtype }),
+            DataType::Double => self.compute_sin::<f64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
 }
