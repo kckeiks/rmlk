@@ -3,9 +3,11 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use crate::utils::FromF32;
 use anyhow::Result;
 use cudarc::cublas::StridedBatchedConfig;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::gemm::GemmParams;
@@ -71,13 +73,10 @@ impl GemmBackend {
         gemm_params: &GemmParams,
     ) -> Result<StridedBatchedConfig<T>>
     where
-        T: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
+        T: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
-        let alpha = T::try_from(attrs.alpha())
-            .map_err(|_| InternalError::UnableToConvertValue)
-            .map_err(Box::new)?;
-        gemm::strided_batch_config::<T>((T::from(alpha), T::zero()), &gemm_params)
-            .map_err(Into::into)
+        let alpha = T::from_f32(attrs.alpha());
+        gemm::strided_batch_config::<T>((alpha, T::zero()), &gemm_params).map_err(Into::into)
     }
 
     pub fn compute_bias_addition<D>(
@@ -87,7 +86,7 @@ impl GemmBackend {
         ctx: &mut Context<Cuda>,
     ) -> Result<()>
     where
-        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
@@ -102,9 +101,7 @@ impl GemmBackend {
             .expect("we already checked that it initialized")
             .data_mut();
 
-        let beta = D::try_from(attrs.beta())
-            .map_err(|_| InternalError::UnableToConvertValue)
-            .map_err(Box::new)?;
+        let beta = D::from_f32(attrs.beta());
 
         let (_, c_stride) = compute_bias_shape(c.shape(), params)?;
 
@@ -137,7 +134,7 @@ impl GemmBackend {
         ctx: &mut Context<Cuda>,
     ) -> Result<()>
     where
-        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
         self.compute_output_shape(&params, ctx)?;
         let config = self.create_config(&attrs, &params)?;
@@ -181,7 +178,7 @@ impl GemmBackend {
 
     pub fn compute_gemm<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + TryFrom<f32>,
+        D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
         let attrs = match ctx.get_attributes() {
             Some(attrs) => GemmAttributes::new(&attrs)?,
@@ -205,8 +202,7 @@ impl GemmBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            // Todo Add support
-            // DataType::Float16 => self.compute_gemm::<f16>(ctx),
+            DataType::Float16 => self.compute_gemm::<f16>(ctx),
             DataType::Float => self.compute_gemm::<f32>(ctx),
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }

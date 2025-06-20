@@ -364,6 +364,22 @@ impl FromBytes for u64 {
     }
 }
 
+pub trait FromF32 {
+    fn from_f32(value: f32) -> Self;
+}
+
+impl FromF32 for f32 {
+    fn from_f32(value: f32) -> Self {
+        value
+    }
+}
+
+impl FromF32 for f16 {
+    fn from_f32(value: f32) -> Self {
+        f16::from_f32(value)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::utils::derive_range;

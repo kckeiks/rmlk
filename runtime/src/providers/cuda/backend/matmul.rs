@@ -2,9 +2,11 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use crate::utils::FromF32;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::gemm;
@@ -179,7 +181,7 @@ impl MatMulBackend {
             + ValidAsZeroBits
             + DeviceRepr
             + Num
-            + TryFrom<f32>,
+            + FromF32,
     {
         self.compute_output_shape(&params, ctx)?;
         let config = gemm::strided_batch_config::<D>((D::one(), D::zero()), &params.gemm)?;
@@ -313,7 +315,7 @@ impl MatMulBackend {
             + ValidAsZeroBits
             + DeviceRepr
             + Num
-            + TryFrom<f32>,
+            + FromF32,
     {
         let params = self.prepare_gemm_params(ctx)?;
         self.compute_multiplication::<D>(&params, ctx)?;
@@ -325,8 +327,7 @@ impl MatMulBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            // Todo: add support.
-            // DataType::Float16 => self.compute_matmul::<f16>(ctx),
+            DataType::Float16 => self.compute_matmul::<f16>(ctx),
             DataType::Float => self.compute_matmul::<f32>(ctx),
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
