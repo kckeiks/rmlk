@@ -13,6 +13,7 @@ use log::{debug, trace};
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -37,10 +38,10 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*input)
-                .ok_or_else(|| Error::NodeNotFound { id: *input })?
+                .ok_or_else(|| BuilderError::InputNodeNotFound { id: *input })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::ExpectedName { node_id: *input })?;
+                .ok_or_else(|| BuilderError::MissingNodeName { id: *input })?;
             map_name_to_id.insert(name.clone(), *input);
         }
 
@@ -48,16 +49,16 @@ impl Builder {
             let name = graph_schema
                 .node
                 .get(*output)
-                .ok_or_else(|| Error::NodeNotFound { id: *output })?
+                .ok_or_else(|| BuilderError::OutputNodeNotFound { id: *output })?
                 .name
                 .as_ref()
-                .ok_or_else(|| Error::ExpectedName { node_id: *output })?;
+                .ok_or_else(|| BuilderError::MissingNodeName { id: *output })?;
             map_name_to_id.insert(name.clone(), *output);
         }
 
+        // Use an allocator here.
         let mut nodes = Vec::with_capacity(graph_schema.node.len());
         for node_schema in graph_schema.node {
-            debug_assert!(node_schema.id == nodes.len());
             let mut def = Definition::new(node_schema);
             let node = rmlk_graph::Node::new(
                 def.take_inputs().unwrap_or_default(),
@@ -89,8 +90,7 @@ impl Builder {
 
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
-            .map_err(rmlk_cuda::Error::from)
-            .map_err(|e| Error::Internal { error: Box::new(e) })?;
+            .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
         // Todo: We don't always want to use the default stream.
         let provider = Cuda::new(ctx.default_stream());
         let values = TensorStore::new(&provider, &self.graph, self.initializers).map_err(|e| {
@@ -249,5 +249,32 @@ where
         self.clean_up();
 
         Ok(output)
+    }
+}
+
+#[derive(Debug)]
+pub enum BuilderError {
+    InputNodeNotFound { id: usize },
+    OutputNodeNotFound { id: usize },
+    MissingNodeName { id: usize },
+    UnexpectedDeviceFailure { error: rmlk_cuda::Error },
+}
+
+impl Display for BuilderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuilderError::InputNodeNotFound { id } => {
+                write!(f, "Node `{}` not found", id)
+            }
+            BuilderError::MissingNodeName { id } => {
+                write!(f, "Missing name for node `{}`", id)
+            }
+            BuilderError::UnexpectedDeviceFailure { error } => {
+                write!(f, "Unexpected device failure: {}", error)
+            }
+            BuilderError::OutputNodeNotFound { id } => {
+                write!(f, "Node `{}` not found", id)
+            }
+        }
     }
 }

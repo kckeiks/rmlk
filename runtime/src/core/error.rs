@@ -1,4 +1,5 @@
 use crate::core::allocators::ArenaId;
+use crate::core::instance::BuilderError;
 use crate::Value;
 use rmlk_schema::{DataType, Op};
 use std::collections::HashMap;
@@ -29,6 +30,9 @@ pub enum Error {
     FailedToFindNodeId {
         name: String,
     },
+    ModelBuildFailed {
+        error: BuilderError,
+    },
 }
 
 impl Display for Error {
@@ -44,6 +48,12 @@ impl From<InternalError> for Error {
         Self::Internal {
             error: Box::new(value),
         }
+    }
+}
+
+impl From<BuilderError> for Error {
+    fn from(value: BuilderError) -> Self {
+        Error::ModelBuildFailed { error: value }
     }
 }
 
