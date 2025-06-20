@@ -1,5 +1,6 @@
 use crate::attributes;
 use crate::attributes::constant_of_shape::AttributeTensor;
+use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
@@ -45,7 +46,9 @@ impl ConstantOfShapeBackend {
             let data_ptr = input.try_dev_data_ptr()?;
             let dev_view = data_ptr.data::<i64>();
 
-            self.stream.memcpy_dtoh(dev_view.as_ref(), on_host_data)?;
+            self.stream
+                .memcpy_dtoh(dev_view.as_ref(), on_host_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             on_host_data
         };
@@ -75,7 +78,8 @@ impl ConstantOfShapeBackend {
         let mut output_data_view = output_data_ptr.data_mut::<O>();
 
         self.stream
-            .memcpy_htod(on_host_data, output_data_view.as_mut())?;
+            .memcpy_htod(on_host_data, output_data_view.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         Ok(())
     }

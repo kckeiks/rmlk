@@ -195,15 +195,20 @@ impl MatMulBackend {
         let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
         let a_size = a.shape().iter().product::<usize>();
         let a_broadcast_slice = if params.gemm.b > 1 && a_expected_size != a_size {
-            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * a_size)?;
+            let mut slice = self
+                .stream
+                .alloc_zeros::<D>(params.gemm.b * a_size)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
             for batch_i in 0..params.gemm.b {
                 let a_dev_data_ref = a.try_dev_data_ptr()?;
                 let a_dev_data = a_dev_data_ref.data::<D>();
                 debug_assert_eq!(a_size, a_dev_data.len());
-                self.stream.memcpy_dtod(
-                    a_dev_data.as_ref(),
-                    &mut slice.slice_mut(batch_i * a_size..batch_i * a_size + a_size),
-                )?;
+                self.stream
+                    .memcpy_dtod(
+                        a_dev_data.as_ref(),
+                        &mut slice.slice_mut(batch_i * a_size..batch_i * a_size + a_size),
+                    )
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
             }
 
             Some(slice)
@@ -214,15 +219,20 @@ impl MatMulBackend {
         let b_expected_size = params.gemm.b * params.gemm.matrix_b_shape.iter().product::<usize>();
         let b_size = b.shape().iter().product::<usize>();
         let b_broadcast_slice = if params.gemm.b > 1 && b_expected_size != b_size {
-            let mut slice = self.stream.alloc_zeros::<D>(params.gemm.b * b_size)?;
+            let mut slice = self
+                .stream
+                .alloc_zeros::<D>(params.gemm.b * b_size)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
             for batch_i in 0..params.gemm.b {
                 let b_dev_data_ref = b.try_dev_data_ptr()?;
                 let b_dev_data = b_dev_data_ref.data::<D>();
                 debug_assert_eq!(b_size, b_dev_data.len());
-                self.stream.memcpy_dtod(
-                    b_dev_data.as_ref(),
-                    &mut slice.slice_mut(batch_i * b_size..batch_i * b_size + b_size),
-                )?;
+                self.stream
+                    .memcpy_dtod(
+                        b_dev_data.as_ref(),
+                        &mut slice.slice_mut(batch_i * b_size..batch_i * b_size + b_size),
+                    )
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
             }
 
             Some(slice)

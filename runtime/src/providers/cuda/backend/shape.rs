@@ -96,6 +96,7 @@ impl ShapeBackend {
 
         self.stream
             .memcpy_htod(&shape_host_buf[start..end], shape_dev_data.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })
             .map_err(Into::into)
     }
 

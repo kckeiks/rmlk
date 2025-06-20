@@ -226,7 +226,9 @@ where
                 .slice_mut(slice_count * batch_size..slice_count * batch_size + batch_size);
 
             // Write to the output slice.
-            stream.memcpy_dtod(&subslice, &mut out_slice)?;
+            stream
+                .memcpy_dtod(&subslice, &mut out_slice)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             slice_count += 1;
         }

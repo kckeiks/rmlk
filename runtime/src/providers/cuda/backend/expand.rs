@@ -74,7 +74,8 @@ impl ExpandBackend {
 
             let shape_on_host = scratch_alloc.allocate::<i64>(shape_view.len())?;
             self.stream
-                .memcpy_dtoh(shape_view.as_ref(), shape_on_host)?;
+                .memcpy_dtoh(shape_view.as_ref(), shape_on_host)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
             let shape =
                 scratch_alloc.allocate_and_convert_from_slice::<i64, usize>(shape_on_host)?;
 

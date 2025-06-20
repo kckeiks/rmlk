@@ -138,13 +138,15 @@ impl ConcatBackend {
                             let output_offset =
                                 (outer_i * output_outer_block_size) + (axis_offset + j) * step;
 
-                            self.stream.memcpy_dtod(
-                                &input_data.slice(
-                                    (outer_i * outer_block_size) + (j * step)
-                                        ..(outer_i * outer_block_size) + (j * step) + step,
-                                ),
-                                &mut output_data.slice_mut(output_offset..output_offset + step),
-                            )?;
+                            self.stream
+                                .memcpy_dtod(
+                                    &input_data.slice(
+                                        (outer_i * outer_block_size) + (j * step)
+                                            ..(outer_i * outer_block_size) + (j * step) + step,
+                                    ),
+                                    &mut output_data.slice_mut(output_offset..output_offset + step),
+                                )
+                                .map_err(|e| InternalError::Device { error: e.into() })?;
                         }
                     }
                     axis_offset += dim;

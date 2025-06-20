@@ -51,7 +51,9 @@ impl RangeBackend {
 
             let start_ptr = start_tensor.try_dev_data_ptr()?;
             let start_view = start_ptr.data::<I>();
-            self.stream.memcpy_dtoh(start_view.as_ref(), start_value)?;
+            self.stream
+                .memcpy_dtoh(start_view.as_ref(), start_value)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             let limit_tensor = ctx.get_input(1)?;
 
@@ -63,7 +65,9 @@ impl RangeBackend {
 
             let limit_ptr = limit_tensor.try_dev_data_ptr()?;
             let limit_view = limit_ptr.data::<I>();
-            self.stream.memcpy_dtoh(limit_view.as_ref(), limit_value)?;
+            self.stream
+                .memcpy_dtoh(limit_view.as_ref(), limit_value)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             let delta_tensor = ctx.get_input(2)?;
 
@@ -75,7 +79,9 @@ impl RangeBackend {
 
             let delta_ptr = delta_tensor.try_dev_data_ptr()?;
             let delta_view = delta_ptr.data::<I>();
-            self.stream.memcpy_dtoh(delta_view.as_ref(), delta_value)?;
+            self.stream
+                .memcpy_dtoh(delta_view.as_ref(), delta_value)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
         }
 
         let start = start_value[0];
@@ -114,7 +120,9 @@ impl RangeBackend {
 
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<I>();
-        self.stream.memcpy_htod(output, output_view.as_mut())?;
+        self.stream
+            .memcpy_htod(output, output_view.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         Ok(())
     }

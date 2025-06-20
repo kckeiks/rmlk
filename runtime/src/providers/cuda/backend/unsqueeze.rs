@@ -39,7 +39,9 @@ impl UnsqueezeBackend {
         let axes_ptr = axes.try_dev_data_ptr()?;
         let axes_view = axes_ptr.data::<i64>();
 
-        self.stream.memcpy_dtoh(axes_view.as_ref(), axes_data)?;
+        self.stream
+            .memcpy_dtoh(axes_view.as_ref(), axes_data)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         // Todo: validate the range of axes values.
         if duplicates_exist(&axes_data) {

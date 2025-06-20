@@ -47,7 +47,9 @@ impl ConstantBackend {
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
-        self.stream.memcpy_htod(values, output_view.as_mut())?;
+        self.stream
+            .memcpy_htod(values, output_view.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         Ok(())
     }
@@ -82,7 +84,9 @@ impl ConstantBackend {
         let output_tensor = ctx.get_output(0)?;
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
-        self.stream.memcpy_htod(&data, output_view.as_mut())?;
+        self.stream
+            .memcpy_htod(&data, output_view.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         Ok(())
     }

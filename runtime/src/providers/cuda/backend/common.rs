@@ -1,3 +1,4 @@
+use crate::core::error::InternalError;
 use crate::core::Tensor;
 use crate::providers::cuda::data::CudaData;
 use anyhow::Result;
@@ -66,7 +67,9 @@ where
             .alloc::<T>(src.len())
             .map_err(rmlk_cuda::Error::from)?
     };
-    stream.memcpy_dtod(src.as_ref(), &mut dev_data)?;
+    stream
+        .memcpy_dtod(src.as_ref(), &mut dev_data)
+        .map_err(|e| InternalError::Device { error: e.into() })?;
     dst.set_dev_data(CudaData::new(dev_data));
 
     Ok(())

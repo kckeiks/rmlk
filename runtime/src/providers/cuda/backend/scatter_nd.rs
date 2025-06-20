@@ -163,7 +163,10 @@ impl ScatterNdBackend {
         );
 
         // Todo: maybe we should preallocate this value since its size never changes.
-        let mut error = self.stream.alloc_zeros::<i32>(1)?;
+        let mut error = self
+            .stream
+            .alloc_zeros::<i32>(1)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         debug!("num_idx_tuple={num_idx_tuples}");
         debug!("data_rank={num_idx_tuples}");
@@ -191,7 +194,9 @@ impl ScatterNdBackend {
         }
 
         let error_buf = scratch_alloc.allocate::<i32>(1)?;
-        self.stream.memcpy_dtoh(&error, error_buf)?;
+        self.stream
+            .memcpy_dtoh(&error, error_buf)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         if error_buf[0] != 0 {
             return Err(ScatterNdError::KernelFailed { code: error_buf[0] }.into());

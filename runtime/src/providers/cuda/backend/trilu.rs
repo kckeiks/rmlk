@@ -52,7 +52,9 @@ impl TriluBackend {
                 let k_dev_ptr = k_tensor.try_dev_data_ptr()?;
                 let k_view = k_dev_ptr.data::<i64>();
                 let k = scratch_alloc.allocate(1)?;
-                self.stream.memcpy_dtoh(k_view.as_ref(), k)?;
+                self.stream
+                    .memcpy_dtoh(k_view.as_ref(), k)
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
                 Ok(k[0])
             }
             Err(_) => Ok(0),
@@ -88,7 +90,10 @@ impl TriluBackend {
         let rank = input_tensor.shape().len();
         let input_data_size = input_tensor.shape().iter().product::<usize>();
 
-        let output_data = self.stream.alloc_zeros::<T>(input_data_size)?;
+        let output_data = self
+            .stream
+            .alloc_zeros::<T>(input_data_size)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         let mut output_tensor = ctx.get_output(0)?;
 

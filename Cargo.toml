@@ -14,6 +14,6 @@ num-traits = "0.2"
 # Benchmarking.
 criterion = { version = "0.5", default-features = false }
 
-cudarc = {  git = "https://github.com/kckeiks/cudarc", branch = "softmax-support", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16", "dynamic-loading", "std"]}
+cudarc = {  git = "https://github.com/kckeiks/cudarc", branch = "softmax-support", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16", "dynamic-loading"]}
 
 half = "2.4"

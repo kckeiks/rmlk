@@ -86,7 +86,9 @@ impl SliceBackend {
                 let axes_len = axes_view.len();
 
                 let axes_data = scratch_alloc.allocate(axes_len)?;
-                self.stream.memcpy_dtoh(axes_view.as_ref(), axes_data)?;
+                self.stream
+                    .memcpy_dtoh(axes_view.as_ref(), axes_data)
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
 
                 // Todo: how do we avoid this here? Maybe make the util function generic?
                 let axes_data = scratch_alloc.allocate_and_convert_from_slice(axes_data)?;
@@ -114,7 +116,9 @@ impl SliceBackend {
             let steps_view = steps_ptr.data::<Tind>();
             let steps_len = steps_view.len();
             let steps_data = scratch_alloc.allocate(steps_len)?;
-            self.stream.memcpy_dtoh(steps_view.as_ref(), steps_data)?;
+            self.stream
+                .memcpy_dtoh(steps_view.as_ref(), steps_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
             steps = Some(steps_data);
         }
 
@@ -132,7 +136,9 @@ impl SliceBackend {
             let starts_len = starts_view.len();
 
             let starts_data = scratch_alloc.allocate(starts_len)?;
-            self.stream.memcpy_dtoh(starts_view.as_ref(), starts_data)?;
+            self.stream
+                .memcpy_dtoh(starts_view.as_ref(), starts_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             starts_data
         };
@@ -151,7 +157,9 @@ impl SliceBackend {
             let ends_len = ends_view.len();
 
             let ends_data = scratch_alloc.allocate(ends_len)?;
-            self.stream.memcpy_dtoh(ends_view.as_ref(), ends_data)?;
+            self.stream
+                .memcpy_dtoh(ends_view.as_ref(), ends_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
             ends_data
         };
@@ -185,7 +193,9 @@ impl SliceBackend {
         let input_view = input_ptr.data::<T>();
 
         let input_data = scratch_alloc.allocate::<T>(input_view.len())?;
-        self.stream.memcpy_dtoh(input_view.as_ref(), input_data)?;
+        self.stream
+            .memcpy_dtoh(input_view.as_ref(), input_data)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         let output_data =
             scratch_alloc.allocate(ctx.get_output(0)?.shape().iter().product::<usize>())?;
@@ -208,7 +218,9 @@ impl SliceBackend {
         let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
         let mut output_view = output_ptr.data_mut::<T>();
 
-        self.stream.memcpy_htod(output_data, output_view.as_mut())?;
+        self.stream
+            .memcpy_htod(output_data, output_view.as_mut())
+            .map_err(|e| InternalError::Device { error: e.into() })?;
 
         Ok(())
     }
