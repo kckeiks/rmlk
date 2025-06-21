@@ -23,21 +23,32 @@ impl ConstantBackend {
         }
     }
 
-    fn load_from_values<T>(&mut self, values: &[T], ctx: &mut Context<Cuda>) -> Result<()>
+    fn load_from_values<T>(
+        &mut self,
+        values: &[T],
+        ctx: &mut Context<Cuda>,
+        is_scalar: bool,
+    ) -> Result<()>
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
     {
         {
             let output_tensor = ctx.get_output(0)?;
             let dst_id = output_tensor.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_slice(&[values.len()], dst_id)?;
+            if is_scalar {
+                ctx.execution_state_mut()
+                    .copy_shape_from_slice(&[], dst_id)?;
+            } else {
+                ctx.execution_state_mut()
+                    .copy_shape_from_slice(&[values.len()], dst_id)?;
+            }
         }
 
         let output_tensor = ctx.get_output(0)?;
 
         debug!(
-            "[output][shape={:?}][strides={:?}]",
+            "[output][dtype={:?}][shape={:?}][strides={:?}]",
+            output_tensor.dtype(),
             output_tensor.shape(),
             output_tensor.stride()
         );
@@ -73,7 +84,8 @@ impl ConstantBackend {
         let output_tensor = ctx.get_output(0)?;
 
         debug!(
-            "[output][shape={:?}][strides={:?}]",
+            "[output][dtype={:?}][shape={:?}][strides={:?}]",
+            output_tensor.dtype(),
             output_tensor.shape(),
             output_tensor.stride()
         );
@@ -141,20 +153,24 @@ impl ConstantBackend {
         }
 
         if let Some(value) = attributes::constant::get_float(&attrs) {
-            return self.load_from_values::<f32>(&[value], ctx);
+            return self.load_from_values::<f32>(&[value], ctx, true);
         }
 
         if let Some(value) = attributes::constant::get_floats(&attrs) {
-            return self.load_from_values::<f32>(value, ctx);
+            return self.load_from_values::<f32>(value, ctx, false);
         }
 
         if let Some(value) = attributes::constant::get_int(&attrs) {
-            return self.load_from_values::<i32>(&[value], ctx);
+            return self.load_from_values::<i32>(&[value], ctx, true);
         }
 
         if let Some(value) = attributes::constant::get_ints(&attrs) {
-            return self.load_from_values::<i32>(value, ctx);
+            return self.load_from_values::<i32>(value, ctx, false);
         }
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Err(InternalError::MissingAttributes.into())
     }

@@ -1,12 +1,14 @@
 use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
-use cudarc::driver::CudaStream;
+use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
-use rmlk_schema::DataType;
+use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -27,6 +29,13 @@ impl UnsqueezeBackend {
         ctx: &Context<Cuda>,
     ) -> Result<&'a [usize]> {
         let axes = ctx.get_input(1)?;
+
+        debug!(
+            "[axes][dtype={:?}][shape={:?}][stride=[{:?}]",
+            axes.dtype(),
+            axes.shape(),
+            axes.stride()
+        );
 
         if axes.shape().len() != 1 {
             return Err(UnsqueezeError::InvalidAxesRank.into());
@@ -51,7 +60,8 @@ impl UnsqueezeBackend {
         let data = ctx.get_input(0)?;
 
         debug!(
-            "[data][shape={:?}][stride=[{:?}]",
+            "[data][dtype={:?}][shape={:?}][stride=[{:?}]",
+            data.dtype(),
             data.shape(),
             data.stride()
         );
@@ -77,29 +87,44 @@ impl UnsqueezeBackend {
         Ok(expanded_shape)
     }
 
-    fn compute_unsqueeze(&mut self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+    fn compute_unsqueeze<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
+    {
+        {
+            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-        let expanded_shape = self.compute_output_shape(&scratch_alloc, ctx)?;
+            let expanded_shape = self.compute_output_shape(&scratch_alloc, ctx)?;
 
-        let axes = ctx.get_input(1)?;
+            let data = ctx.get_input(0)?;
+            let mut expanded = ctx.get_output(0)?;
+            common::copy_tensor_dev_data::<T>(&self.stream, &data, &mut expanded)?;
 
-        debug!(
-            "[axes][shape={:?}][stride=[{:?}]",
-            axes.shape(),
-            axes.stride()
-        );
+            let dst_id = expanded.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_slice(expanded_shape, dst_id)?;
 
-        let axes_ptr = axes
-            .dev_data_ptr_clone()
-            .ok_or(InternalError::MissingDeviceData)?;
+            let expanded = ctx.get_output(0)?;
 
-        let mut expanded = ctx.get_output(0)?;
-        expanded.set_dev_data_ptr(axes_ptr);
+            debug!(
+                "[expanded][dtype={:?}][shape={:?}][stride={:?}]",
+                expanded.dtype(),
+                expanded.shape(),
+                expanded.stride()
+            );
+        }
 
-        let dst_id = expanded.dst_id();
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(expanded_shape, dst_id)?;
+        common::write_results_binary::<T, i64, T>(
+            "debugging/unsqueeze",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -108,7 +133,11 @@ impl UnsqueezeBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float | DataType::Int64 => self.compute_unsqueeze(ctx),
+            DataType::Float16 => self.compute_unsqueeze::<f16>(ctx),
+            DataType::Float => self.compute_unsqueeze::<f32>(ctx),
+            DataType::Double => self.compute_unsqueeze::<f64>(ctx),
+            DataType::Int32 => self.compute_unsqueeze::<i32>(ctx),
+            DataType::Int64 => self.compute_unsqueeze::<i64>(ctx),
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }

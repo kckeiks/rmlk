@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "concat(a, b)",
         "dtype": "float",
-        "shape": [2, 6, 768]
+        "shape": [2, 3, 6]
       }
     },
     {

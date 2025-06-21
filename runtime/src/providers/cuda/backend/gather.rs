@@ -28,15 +28,21 @@ impl GatherBackend {
         let data = ctx.get_input(0)?;
 
         debug!(
-            "[data][shape={:?}][stride={:?}]",
+            "[data][dtype={:?}][shape={:?}][stride={:?}]",
+            data.dtype(),
             data.shape(),
             data.stride()
         );
 
+        if data.is_scalar() {
+            return Err(GatherError::ScalarInputDataNotAllowed.into());
+        }
+
         let indices = ctx.get_input(1)?;
 
         debug!(
-            "[indices][shape={:?}][stride={:?}]",
+            "[indices][dtype={:?}][shape={:?}][stride={:?}]",
+            indices.dtype(),
             indices.shape(),
             indices.stride()
         );
@@ -115,14 +121,28 @@ impl GatherBackend {
         match dtype {
             DataType::Int32 => {
                 self.perform_device_gather::<D, i32>(axis, ctx)?;
+                common::write_results_gather::<D, i32>(
+                    "debugging/gather",
+                    self.stream.clone(),
+                    ctx,
+                )?;
             }
             DataType::Int64 => {
                 self.perform_device_gather::<D, i64>(axis, ctx)?;
+                common::write_results_gather::<D, i64>(
+                    "debugging/gather",
+                    self.stream.clone(),
+                    ctx,
+                )?;
             }
             _ => {
                 return Err(InternalError::UnsupportedDataType { dtype }.into());
             }
         }
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -148,7 +168,8 @@ impl GatherBackend {
         let output = ctx.get_output(0)?;
 
         debug!(
-            "[output][shape={:?}][stride={:?}]",
+            "[output][dtype={:?}][shape={:?}][stride={:?}]",
+            output.dtype(),
             output.shape(),
             output.stride()
         );
@@ -240,11 +261,15 @@ where
 #[derive(Debug)]
 pub enum GatherError {
     RankAxisMismatch,
+    ScalarInputDataNotAllowed,
 }
 
 impl Display for GatherError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            GatherError::RankAxisMismatch => write!(f, "rank axis mismatch"),
+            GatherError::ScalarInputDataNotAllowed => write!(f, "scalar input data not allowed"),
+        }
     }
 }
 

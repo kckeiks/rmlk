@@ -1,9 +1,11 @@
-use crate::attributes;
 use crate::core::error::InternalError;
 use crate::core::Context;
+use crate::providers::cuda::backend::common;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
+use crate::providers::TENSOR_3D_RANK;
 use crate::utils::FromBytes;
+use crate::{attributes, utils};
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
@@ -12,6 +14,7 @@ use num_traits::Num;
 use rmlk_cuda::kernels::trilu;
 use rmlk_cuda::kernels::trilu::TriluKernel;
 use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct TriluBackend {
@@ -37,6 +40,8 @@ impl TriluBackend {
             _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         trilu::load_kernel(self.stream.context(), kernel_name).map_err(Into::into)
     }
 
@@ -45,10 +50,15 @@ impl TriluBackend {
         match ctx.get_input(1) {
             Ok(k_tensor) => {
                 debug!(
-                    "[k][shape={:?}][stride={:?}]",
-                    k_tensor.shape(),
-                    k_tensor.stride()
+                    "[k][scalar={:?}][dtype={:?}]",
+                    k_tensor.is_scalar(),
+                    k_tensor.dtype(),
                 );
+
+                if !k_tensor.is_scalar() {
+                    return Err(TriluError::InvalidKTensor.into());
+                }
+
                 let k_dev_ptr = k_tensor.try_dev_data_ptr()?;
                 let k_view = k_dev_ptr.data::<i64>();
                 let k = scratch_alloc.allocate(1)?;
@@ -65,72 +75,89 @@ impl TriluBackend {
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
     {
-        let func = self.load_cuda_function(T::data_type())?;
+        {
+            let func = self.load_cuda_function(T::data_type())?;
 
-        let upper = match ctx.get_attributes() {
-            None => true,
-            Some(attr) => attributes::trilu::get_upper(&attr),
-        };
+            let upper = match ctx.get_attributes() {
+                None => true,
+                Some(attr) => attributes::trilu::get_upper(&attr),
+            };
 
-        let input_tensor = ctx.get_input(0)?;
+            let input_tensor = ctx.get_input(0)?;
 
-        debug!(
-            "[input][shape={:?}][stride=[{:?}]",
-            input_tensor.shape(),
-            input_tensor.stride()
-        );
+            debug!(
+                "[input][dtype={:?}][shape={:?}][stride=[{:?}]",
+                input_tensor.dtype(),
+                input_tensor.shape(),
+                input_tensor.stride()
+            );
 
-        let output_tensor = ctx.get_output(0)?;
-        let src_id = input_tensor.src_id();
-        let dst_id = output_tensor.dst_id();
-        ctx.execution_state_mut()
-            .copy_shape_from_within(src_id, dst_id)?;
+            let output_tensor = ctx.get_output(0)?;
+            let src_id = input_tensor.src_id();
+            let dst_id = output_tensor.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_within(src_id, dst_id)?;
 
-        let input_tensor = ctx.get_input(0)?;
-        let rank = input_tensor.shape().len();
-        let input_data_size = input_tensor.shape().iter().product::<usize>();
+            let input_tensor = ctx.get_input(0)?;
+            let input_data_size = input_tensor.shape().iter().product::<usize>();
 
-        let output_data = self
-            .stream
-            .alloc_zeros::<T>(input_data_size)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+            let output_data = self
+                .stream
+                .alloc_zeros::<T>(input_data_size)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
 
-        let mut output_tensor = ctx.get_output(0)?;
+            let mut output_tensor = ctx.get_output(0)?;
 
-        debug!(
-            "[output][shape={:?}][stride=[{:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
 
-        output_tensor.set_dev_data(CudaData::new(output_data));
+            output_tensor.set_dev_data(CudaData::new(output_data));
 
-        let k = self.get_k(ctx)?;
+            let k = self.get_k(ctx)?;
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-        let info = scratch_alloc.allocate(2 * rank)?;
-        info[..rank].copy_from_slice(input_tensor.shape());
-        info[rank..].copy_from_slice(input_tensor.stride());
+            let (batch_shape, batch_stride) =
+                utils::create_3d_shape_and_stride(input_tensor.shape());
 
-        let input_ptr = input_tensor.try_dev_data_ptr()?;
-        let input_view = input_ptr.data::<T>();
+            debug!(
+                "[input][batch][shape={:?}][stride=[{:?}]",
+                batch_shape, batch_stride
+            );
 
-        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_ptr.data_mut::<T>();
+            let info = scratch_alloc.allocate(2 * TENSOR_3D_RANK)?;
+            info[..TENSOR_3D_RANK].copy_from_slice(&batch_shape);
+            info[TENSOR_3D_RANK..].copy_from_slice(&batch_stride);
 
-        unsafe {
-            trilu::compute(
-                self.stream.clone(),
-                func,
-                upper,
-                k,
-                rank,
-                info,
-                input_view.as_ref(),
-                output_view.as_mut(),
-            )?;
+            let input_ptr = input_tensor.try_dev_data_ptr()?;
+            let input_view = input_ptr.data::<T>();
+
+            let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
+            let mut output_view = output_ptr.data_mut::<T>();
+
+            unsafe {
+                trilu::compute(
+                    self.stream.clone(),
+                    func,
+                    upper,
+                    k,
+                    TENSOR_3D_RANK,
+                    info,
+                    input_view.as_ref(),
+                    output_view.as_mut(),
+                )?;
+            }
         }
+
+        common::write_results_trilu::<T>("debugging/trilu", self.stream.clone(), ctx).unwrap();
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -148,3 +175,16 @@ impl TriluBackend {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum TriluError {
+    InvalidKTensor,
+}
+
+impl Display for TriluError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for TriluError {}

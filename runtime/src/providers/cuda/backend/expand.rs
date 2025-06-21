@@ -39,6 +39,8 @@ impl ExpandBackend {
             }
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         expand::load_kernel(self.stream.context(), kernel_name).map_err(Into::into)
     }
 
@@ -46,104 +48,154 @@ impl ExpandBackend {
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let func = self.load_cuda_function(T::data_type())?;
+        {
+            let func = self.load_cuda_function(T::data_type())?;
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-        let output_shape = {
-            let input_tensor = ctx.get_input(0)?;
+            let output_shape = {
+                let input_tensor = ctx.get_input(0)?;
+
+                debug!(
+                    "[input][dtype={:?}][shape={:?}][stride={:?}]",
+                    input_tensor.dtype(),
+                    input_tensor.shape(),
+                    input_tensor.stride()
+                );
+
+                let shape_tensor = ctx.get_input(1)?;
+
+                debug!(
+                    "[shape][dtype=i64][shape={:?}][stride={:?}]",
+                    shape_tensor.shape(),
+                    shape_tensor.stride()
+                );
+
+                let rank = shape_tensor.shape().iter().product();
+
+                let shape_dev_ptr = shape_tensor.try_dev_data_ptr()?;
+                let shape_view = shape_dev_ptr.data::<i64>();
+
+                let shape_on_host = scratch_alloc.allocate::<i64>(shape_view.len())?;
+                self.stream
+                    .memcpy_dtoh(shape_view.as_ref(), shape_on_host)
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
+                let target_shape =
+                    scratch_alloc.allocate_and_convert_from_slice::<i64, usize>(shape_on_host)?;
+
+                let output_shape = scratch_alloc.allocate(rank)?;
+
+                if !utils::compute_broadcast_output_shape(
+                    input_tensor.shape(),
+                    target_shape,
+                    output_shape,
+                ) {
+                    let a_id = input_tensor.src_id();
+                    let b_id = shape_tensor.src_id();
+                    return Err(InternalError::IncompatibleShapesForBroadcast {
+                        shapes: [
+                            (a_id.into(), input_tensor.shape().to_vec()),
+                            (b_id.into(), shape_tensor.shape().to_vec()),
+                        ]
+                        .try_into()
+                        .expect("Small map so should succeed"),
+                    }
+                    .into());
+                }
+
+                output_shape
+            };
+
+            let output_tensor = ctx.get_output(0)?;
+            let dst_id = output_tensor.dst_id();
+            ctx.execution_state_mut()
+                .copy_shape_from_slice(output_shape, dst_id)?;
+
+            let output_tensor = ctx.get_output(0)?;
 
             debug!(
-                "[input][shape={:?}][stride={:?}]",
-                input_tensor.shape(),
-                input_tensor.stride()
+                "[output][dtype={:?}][shape={:?}][stride={:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
             );
 
+            common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
+
+            let input_tensor = ctx.get_input(0)?;
             let shape_tensor = ctx.get_input(1)?;
 
-            debug!(
-                "[shape][shape={:?}][stride={:?}]",
-                shape_tensor.shape(),
-                shape_tensor.stride()
-            );
-
+            // Todo: What is this unused?
             let rank = cmp::max(input_tensor.shape().len(), shape_tensor.shape().len());
 
-            let shape_dev_ptr = shape_tensor.try_dev_data_ptr()?;
-            let shape_view = shape_dev_ptr.data::<i64>();
+            let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
+            let input_view = input_dev_ptr.data::<T>();
 
-            let shape_on_host = scratch_alloc.allocate::<i64>(shape_view.len())?;
-            self.stream
-                .memcpy_dtoh(shape_view.as_ref(), shape_on_host)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            let shape =
-                scratch_alloc.allocate_and_convert_from_slice::<i64, usize>(shape_on_host)?;
+            let output_tensor = ctx.get_output(0)?;
 
-            let output_shape = scratch_alloc.allocate(rank)?;
+            let input_rank = if !input_tensor.is_scalar() {
+                input_tensor.shape().len()
+            } else {
+                1
+            };
 
-            if !utils::compute_broadcast_output_shape(input_tensor.shape(), shape, output_shape) {
-                let a_id = input_tensor.src_id();
-                let b_id = shape_tensor.src_id();
-                return Err(InternalError::IncompatibleShapesForBroadcast {
-                    shapes: [
-                        (a_id.into(), input_tensor.shape().to_vec()),
-                        (b_id.into(), shape_tensor.shape().to_vec()),
-                    ]
-                    .try_into()
-                    .expect("Small map so should succeed"),
-                }
-                .into());
+            let output_rank = output_tensor.shape().len();
+
+            let info = match (input_tensor.is_scalar(), output_tensor.is_scalar()) {
+                (false, false) => scratch_alloc.allocate(2 * input_rank + 2 * output_rank)?,
+                (true, true) => scratch_alloc.allocate(4)?,
+                (true, false) => scratch_alloc.allocate(2 + 2 * output_rank)?,
+                (false, true) => scratch_alloc.allocate(2 + 2 * input_rank)?,
+            };
+
+            if input_tensor.is_scalar() {
+                utils::write_info(&[1], &[1], info, 0);
+            } else {
+                utils::write_info(input_tensor.shape(), input_tensor.stride(), info, 0);
             }
 
-            output_shape
-        };
+            let start = if input_tensor.is_scalar() {
+                2
+            } else {
+                2 * input_rank
+            };
 
-        let output_tensor = ctx.get_output(0)?;
-        let dst_id = output_tensor.dst_id();
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(output_shape, dst_id)?;
+            let elem_count = output_tensor.shape().iter().product();
 
-        let output_tensor = ctx.get_output(0)?;
+            if output_tensor.is_scalar() {
+                utils::write_info(&[1], &[1], info, start);
+            } else {
+                utils::write_info(output_tensor.shape(), output_tensor.stride(), info, start);
+            }
 
-        debug!(
-            "[output][shape={:?}][stride={:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
+            let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;
+            let mut output_view = output_dev_ptr.data_mut::<T>();
 
-        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
-
-        let input_tensor = ctx.get_input(0)?;
-        let shape_tensor = ctx.get_input(1)?;
-
-        let rank = cmp::max(input_tensor.shape().len(), shape_tensor.shape().len());
-
-        let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
-        let input_view = input_dev_ptr.data::<T>();
-
-        let output_tensor = ctx.get_output(0)?;
-
-        let input_rank = input_tensor.shape().len();
-        let output_rank = output_tensor.shape().len();
-        let info = scratch_alloc.allocate(2 * input_rank + 2 * output_rank)?;
-        info[..input_rank].copy_from_slice(input_tensor.shape());
-        info[input_rank..2 * input_rank].copy_from_slice(input_tensor.stride());
-        info[2 * input_rank..2 * input_rank + output_rank].copy_from_slice(output_tensor.shape());
-        info[2 * input_rank + output_rank..].copy_from_slice(output_tensor.stride());
-
-        let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_dev_ptr.data_mut::<T>();
-
-        unsafe {
-            expand::compute(
-                self.stream.clone(),
-                func,
-                rank,
-                info,
-                input_view.as_ref(),
-                output_view.as_mut(),
-            )?;
+            unsafe {
+                expand::compute(
+                    self.stream.clone(),
+                    func,
+                    input_rank,
+                    output_rank,
+                    info,
+                    elem_count,
+                    input_view.as_ref(),
+                    output_view.as_mut(),
+                )?;
+            }
         }
+
+        common::write_results_binary::<T, i64, T>(
+            "debugging/expand",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

@@ -1,11 +1,12 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::binary;
+use crate::providers::cuda::backend::{binary, common};
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::sub;
 use rmlk_cuda::kernels::sub::SubKernel;
@@ -33,6 +34,8 @@ impl SubBackend {
             _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         sub::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
@@ -41,7 +44,21 @@ impl SubBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { binary::compute::<D, D, D>("sub", self.stream, func, ctx) }
+        unsafe {
+            binary::compute::<D, D, D>("sub", self.stream.clone(), func, ctx)?;
+        }
+        common::write_results_binary::<D, D, D>(
+            "debugging/sub",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+
+        Ok(())
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {

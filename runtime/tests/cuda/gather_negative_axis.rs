@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "gather(data, indices)",
         "dtype": "float",
-        "shape": [2, 4]
+        "shape": [3, 2]
       }
     },
     {

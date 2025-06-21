@@ -1,10 +1,13 @@
 mod cuda {
+    mod add_all_scalars;
+    mod add_broadcast;
+    mod add_broadcast_diff_len_shapes;
+    mod add_left_scalar;
+    mod add_one_elem_tensor;
+    mod add_right_scalar;
     mod add_three_inputs;
     mod add_two_inputs;
     mod add_with_constants;
-
-    mod add_broadcast;
-    mod add_broadcast_diff_len_shapes;
     mod cast_float_int32;
     mod concat_rank2_axis0;
     mod concat_rank2_axis1;
@@ -23,9 +26,11 @@ mod cuda {
     mod div_basic;
     mod equal_basic;
     mod expand_basic;
+    mod expand_scalar;
     mod gather_higher_dim;
     mod gather_higher_dim_indices;
     mod gather_negative_axis;
+    mod gather_scalar;
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;
@@ -39,21 +44,36 @@ mod cuda {
     mod matmul_3d_1d;
     mod matmul_3d_2d;
     mod matmul_3d_3d;
+    mod matmul_4d;
     mod matmul_broadcast_batch;
+    mod matmul_large;
+    mod mul_basic;
     mod neg_basic;
     mod pow_basic;
     mod range_basic;
+    mod reduce_mean_axes_in_attrs;
+    mod reduce_mean_scalar_no_axes;
+    mod reduce_mean_scalar_noop_empty_axes;
+    mod reduce_mean_scalar_with_axes;
     mod reduce_mean_simple;
     mod relu_basic;
+    mod reshape_basic;
+    mod reshape_scalar_to_1d;
+    mod reshape_to_scalar;
+    mod reshape_with_neg_one;
+    mod reshape_with_zero_copy;
     mod scatter_nd_basic;
     mod shape_axis;
+    mod shape_scalar;
     mod shape_simple;
+    mod sigmoid_3d;
     mod sigmoid_basic;
     mod sin_basic;
     mod slice_basic_2d;
     mod slice_basic_3d;
     mod slice_basic_3d_neg;
     mod slice_basic_empty_output;
+    mod slice_large;
     mod softmax_chan_axis_4d;
     mod softmax_large;
     mod softmax_last_axis_2d;
@@ -63,9 +83,11 @@ mod cuda {
     mod softmax_two_head_uneq_logits;
     mod sqrt_basic;
     mod sub_basic;
+    mod transpose_scalar;
     mod transpose_validate_data;
     mod transpose_validate_shape;
     mod trilu_k_zero_lower;
+    mod trilu_large;
     mod trilu_no_attribute;
     mod trilu_no_k;
     mod trilu_one_k_upper;
@@ -75,8 +97,12 @@ mod cuda {
     mod unsqueeze_multiple;
     mod unsqueeze_negative_axes;
     mod unsqueeze_start;
+    mod unsqueeze_validate_data;
+    mod where_all_scalars;
     mod where_broadcast_diff_shape_len;
+    mod where_one_scalar;
     mod where_two_inputs;
+    mod where_x_y_scalars;
 }
 
 mod common;

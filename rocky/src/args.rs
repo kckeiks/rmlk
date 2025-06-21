@@ -21,4 +21,7 @@ pub enum Command {
         path: PathBuf,
         output: Option<String>,
     },
+    List {
+        path: PathBuf,
+    },
 }

@@ -22,15 +22,24 @@ where
     Y: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     O: DataTypeMap + ValidAsZeroBits + DeviceRepr,
 {
-    // The output should have the same dimensions.
     // We do it now to avoid lifetime errors.
-    process_shapes(ctx)?;
+    compute_output_shape(ctx)?;
 
     let a = ctx.get_input(0)?;
     let b = ctx.get_input(1)?;
 
-    debug!("[a][{op}][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-    debug!("[b][{op}][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
+    debug!(
+        "[a][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
+        a.dtype(),
+        a.shape(),
+        a.stride()
+    );
+    debug!(
+        "[b][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
+        b.dtype(),
+        b.shape(),
+        b.stride()
+    );
 
     let a_dev_data_ref = a.try_dev_data_ptr()?;
     let a_dev_data = a_dev_data_ref.data::<X>();
@@ -41,23 +50,42 @@ where
     let c_tensor = ctx.get_output(0)?;
 
     debug!(
-        "[c][{op}][shape={:?}][stride=[{:?}]",
+        "[c][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
+        c_tensor.dtype(),
         c_tensor.shape(),
         c_tensor.stride()
     );
 
     common::init_tensor_device_data::<O>(&stream, c_tensor)?;
 
-    let stride_buf_len = cmp::max(a.shape().len(), b.shape().len());
+    let (a_shape, a_stride) = if a.is_scalar() {
+        ([1].as_ref(), [1].as_ref())
+    } else {
+        (a.shape(), a.stride())
+    };
+
+    let (b_shape, b_stride) = if b.is_scalar() {
+        ([1].as_ref(), [1].as_ref())
+    } else {
+        (b.shape(), b.stride())
+    };
+
+    let stride_buf_len = cmp::max(a_shape.len(), b_shape.len());
     let strides = ctx
         .execution_state()
         .scratch_alloc()
         .allocate_fill::<usize>(2 * stride_buf_len, 0)?;
-    utils::compute_broadcast_stride(a.shape(), b.shape(), a.stride(), b.stride(), strides);
+    utils::compute_broadcast_stride(a_shape, b_shape, a_stride, b_stride, strides);
     let (a_stride, b_stride) = strides.split_at(stride_buf_len);
 
-    debug!("[a][{op}][broadcast][stride={:?}]", a_stride);
-    debug!("[b][{op}][broadcast][stride={:?}]", b_stride);
+    debug!(
+        "[a][{op}][broadcast][shape={:?}][stride={:?}]",
+        a_shape, a_stride
+    );
+    debug!(
+        "[b][{op}][broadcast][shape={:?}][stride={:?}]",
+        b_shape, b_stride
+    );
 
     // The device data should exist so we will execute the kernel
     // and update the destination device data with the result.
@@ -68,10 +96,16 @@ where
         .expect("we already checked that it initialized")
         .data_mut::<O>();
 
-    let rank = c.shape().len();
+    let c_shape = if a.is_scalar() && b.is_scalar() {
+        [1].as_ref()
+    } else {
+        c.shape()
+    };
+
+    let rank = c_shape.len();
 
     let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * rank)?;
-    info_buffer[..rank].copy_from_slice(c.shape());
+    info_buffer[..rank].copy_from_slice(c_shape);
     info_buffer[rank..2 * rank].copy_from_slice(a_stride);
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
@@ -88,7 +122,7 @@ where
     Ok(())
 }
 
-fn process_shapes(ctx: &mut Context<Cuda>) -> Result<()> {
+fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
     let a = ctx.get_input(0)?;
     let b = ctx.get_input(1)?;
 

@@ -1,5 +1,6 @@
 mod args;
 mod find;
+mod list;
 mod list_ops;
 mod transform;
 mod traverse;
@@ -11,6 +12,7 @@ use rmlk_schema::onnx::ModelProto;
 use std::collections::HashSet;
 use std::fs;
 
+use crate::list::List;
 use crate::list_ops::ListOps;
 use crate::transform::graph_from_onnx_proto;
 use args::{Args, Command};
@@ -41,6 +43,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Transform { path, output } => {
             let base_url = path.parent().map(|p| p.to_path_buf());
+            println!("base_url: {:?}", base_url);
             let model = fs::read(path.clone())?;
             let mut reader = BytesReader::from_bytes(&model);
             let model_proto = ModelProto::from_reader(&mut reader, &model)?;
@@ -72,6 +75,23 @@ fn main() -> anyhow::Result<()> {
             )
             .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
             println!("{:?}", traverser.ops);
+        }
+        Command::List { path } => {
+            let model = fs::read(path)?;
+            let mut reader = BytesReader::from_bytes(&model);
+            let model_proto = ModelProto::from_reader(&mut reader, &model)?;
+            let mut traverser = List { node: vec![] };
+            traverse::visit_onnx(
+                model_proto
+                    .graph
+                    .ok_or(anyhow!("the model does not have a graph"))?,
+                &mut traverser,
+            )
+            .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
+            for node in traverser.node {
+                println!("{:?}", node);
+            }
+            // println!("{:?}", traverser.node.len());
         }
     }
 

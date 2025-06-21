@@ -29,6 +29,7 @@ const GRAPH_DEFINITION: &str = r#"
                   "int64_data": [],
                   "double_data": [],
                   "uint64_data": [],
+                  "bool_data": [],
                   "raw_data": [1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]
                 }
             }

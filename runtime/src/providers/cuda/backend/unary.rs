@@ -30,7 +30,8 @@ where
     let input = ctx.get_input(0)?;
 
     debug!(
-        "[input][{op}][shape={:?}][stride=[{:?}]",
+        "[input][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
+        input.dtype(),
         input.shape(),
         input.stride()
     );
@@ -38,7 +39,8 @@ where
     let output_tensor = ctx.get_output(0)?;
 
     debug!(
-        "[output][{op}][shape={:?}][stride=[{:?}]",
+        "[output][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
+        output_tensor.dtype(),
         output_tensor.shape(),
         output_tensor.stride()
     );

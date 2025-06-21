@@ -2,12 +2,13 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use crate::utils;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
-use num_traits::Num;
+use num_traits::{Num, ToPrimitive};
 use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
@@ -37,44 +38,84 @@ impl ActivationBackend {
         I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         K: ActivationKernel,
     {
-        self.compute_output_shape(ctx)?;
+        {
+            self.compute_output_shape(ctx)?;
 
-        let x = ctx.get_input(0)?;
-        debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+            let x = ctx.get_input(0)?;
+            debug!(
+                "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
+                I::data_type(),
+                x.shape(),
+                x.stride()
+            );
 
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
-        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
-        let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
+            let scratch_alloc = ctx.execution_state().scratch_alloc();
+            let (x_shape, x_stride) = if x.is_scalar() {
+                (
+                    scratch_alloc.allocate_from_slice(&[1])?,
+                    scratch_alloc.allocate_from_slice(&[1])?,
+                )
+            } else if x.shape().len() < 4 {
+                let shape_tmp = scratch_alloc.allocate_fill::<i32>(4, 1)?;
+                let stride_tmp = scratch_alloc.allocate_fill::<i32>(4, 0)?;
+                let start = 4 - x.shape().len();
+                for i in 0..x.shape().len() {
+                    shape_tmp[start + i] = x.shape()[i]
+                        .to_i32()
+                        .ok_or(InternalError::UnableToConvertValue)?;
+                }
+                utils::compute_stride(shape_tmp, stride_tmp);
+                (shape_tmp, stride_tmp)
+            } else {
+                (
+                    scratch_alloc.allocate_and_convert_from_slice(&x.shape())?,
+                    scratch_alloc.allocate_and_convert_from_slice(&x.stride())?,
+                )
+            };
 
-        let x_dev_data_ref = x.try_dev_data_ptr()?;
-        let x_dev_data = x_dev_data_ref.data::<I>();
+            let x_dev_data_ref = x.try_dev_data_ptr()?;
+            let x_dev_data = x_dev_data_ref.data::<I>();
 
-        let y_tensor = ctx.get_output(0)?;
+            let y_tensor = ctx.get_output(0)?;
 
-        debug!(
-            "[y][shape={:?}][stride=[{:?}]",
-            y_tensor.shape(),
-            y_tensor.stride()
-        );
+            debug!(
+                "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
+                I::data_type(),
+                y_tensor.shape(),
+                y_tensor.stride()
+            );
 
-        common::init_tensor_device_data::<I>(&self.stream, y_tensor)?;
+            common::init_tensor_device_data::<I>(&self.stream, y_tensor)?;
 
-        let y_tensor = ctx.get_output(0)?;
-        let mut y_ptr = y_tensor.dev_data_ptr_mut();
-        let mut y_view = y_ptr
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
+            let y_tensor = ctx.get_output(0)?;
+            let mut y_ptr = y_tensor.dev_data_ptr_mut();
+            let mut y_view = y_ptr
+                .as_mut()
+                .expect("we already checked that it initialized")
+                .data_mut();
 
-        K::execute::<I>(
-            &self.stream,
-            I::one(),
-            I::zero(),
-            &x_dev_data,
-            x_shape,
-            x_stride,
-            &mut y_view,
-        )?;
+            K::execute::<I>(
+                &self.stream,
+                I::one(),
+                I::zero(),
+                &x_dev_data,
+                x_shape,
+                x_stride,
+                &mut y_view,
+            )?;
+        }
+
+        common::write_results_unary::<I, I>(
+            "debugging/activation",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

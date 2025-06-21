@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = DIV;
 
+#[derive(Debug)]
 pub enum DivKernel {
     DivFwdF16,
     DivFwdF32,

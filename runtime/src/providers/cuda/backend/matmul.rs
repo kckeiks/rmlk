@@ -119,30 +119,37 @@ impl MatMulBackend {
         let y = ctx.get_output(0)?;
         let y_index = y.dst_id();
 
-        let add_batch = {
+        let (add_batch, max_rank) = {
             let a = ctx.get_input(0)?;
             let b = ctx.get_input(1)?;
 
-            if a.shape().len() >= 3 || b.shape().len() >= 3 {
+            let add_batch = if a.shape().len() >= 3 || b.shape().len() >= 3 {
                 true
             } else {
                 false
-            }
+            };
+
+            (add_batch, cmp::max(a.shape().len(), b.shape().len()))
         };
 
         match params.promoted {
             None => {
                 if add_batch {
-                    ctx.execution_state_mut().copy_shape_from_slice(
-                        &[params.gemm.b, params.gemm.m, params.gemm.n],
-                        y_index,
-                    )?;
+                    let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+                    let output_shape = scratch_alloc.allocate_fill(max_rank, 1)?;
+                    output_shape[max_rank - 3] = params.gemm.b;
+                    output_shape[max_rank - 2] = params.gemm.m;
+                    output_shape[max_rank - 1] = params.gemm.n;
+
+                    ctx.execution_state_mut()
+                        .copy_shape_from_slice(output_shape, y_index)?;
                 } else {
                     ctx.execution_state_mut()
                         .copy_shape_from_slice(&[params.gemm.m, params.gemm.n], y_index)?;
                 }
             }
             Some(Promoted::Both) => {
+                // Todo: handle scalars.
                 ctx.execution_state_mut()
                     .copy_shape_from_slice(&[], y_index)?;
             }
@@ -152,7 +159,7 @@ impl MatMulBackend {
                         .copy_shape_from_slice(&[params.gemm.b, params.gemm.n], y_index)?;
                 } else {
                     ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.b, params.gemm.n], y_index)?;
+                        .copy_shape_from_slice(&[params.gemm.n], y_index)?;
                 }
             }
             Some(Promoted::Right) => {
@@ -161,7 +168,7 @@ impl MatMulBackend {
                         .copy_shape_from_slice(&[params.gemm.b, params.gemm.m], y_index)?;
                 } else {
                     ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.b, params.gemm.m], y_index)?;
+                        .copy_shape_from_slice(&[params.gemm.m], y_index)?;
                 }
             }
         }
@@ -190,9 +197,24 @@ impl MatMulBackend {
         let b = ctx.get_input(1)?;
         let y = ctx.get_output(0)?;
 
-        debug!("[a][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-        debug!("[b][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-        debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!(
+            "[a][dtype={:?}][shape={:?}][stride=[{:?}]",
+            a.dtype(),
+            a.shape(),
+            a.stride()
+        );
+        debug!(
+            "[b][dtype={:?}][shape={:?}][stride=[{:?}]",
+            b.dtype(),
+            b.shape(),
+            b.stride()
+        );
+        debug!(
+            "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
+            y.dtype(),
+            y.shape(),
+            y.stride()
+        );
 
         let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
         let a_size = a.shape().iter().product::<usize>();
@@ -304,6 +326,10 @@ impl MatMulBackend {
             }
         }
 
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+
         Ok(())
     }
 
@@ -319,6 +345,14 @@ impl MatMulBackend {
     {
         let params = self.prepare_gemm_params(ctx)?;
         self.compute_multiplication::<D>(&params, ctx)?;
+
+        // common::write_results_binary::<D, D, D>(
+        //     "debugging/matmul",
+        //     self.stream.clone(),
+        //     ctx,
+        //     Default::default(),
+        // )
+        // .unwrap();
 
         Ok(())
     }

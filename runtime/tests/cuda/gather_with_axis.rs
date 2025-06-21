@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "gather(data, indices)",
         "dtype": "float",
-        "shape": [2, 4]
+        "shape": [3, 2]
       }
     },
     {
@@ -71,5 +71,5 @@ fn test_run() {
         .unwrap()
         .try_into()
         .unwrap();
-    assert_eq!(data, vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0,]);
+    assert_eq!(data, vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
 }

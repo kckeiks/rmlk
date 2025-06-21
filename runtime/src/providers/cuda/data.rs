@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct CudaData {
     stream: Arc<CudaStream>,
     ptr: CUdeviceptr,
@@ -194,5 +195,9 @@ impl<'a, T> Drop for DataViewMut<'a, T> {
 impl DeviceData for CudaData {
     fn dtype(&self) -> DataType {
         self.dtype
+    }
+
+    fn len(&self) -> usize {
+        self.len
     }
 }

@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "matmul(a,b)",
         "dtype": "float",
-        "shape": [4]
+        "shape": [2, 4]
       }
     },
     {

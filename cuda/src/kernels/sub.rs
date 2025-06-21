@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = SUB;
 
+#[derive(Debug)]
 pub enum SubKernel {
     SubFwdF16,
     SubFwdF32,

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = SIN;
 
+#[derive(Debug)]
 pub enum SinKernel {
     SinFwdF16,
     SinFwdF32,

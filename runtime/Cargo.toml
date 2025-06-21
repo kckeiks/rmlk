@@ -20,8 +20,12 @@ rmlk-graph = { path = "../graph" }
 rmlk-cuda = { path = "../cuda" }
 serde = { version = "1.0.203", features = ["derive"] }
 
+serde_json = "1.0"
+base64 = "0.22.1"
+
 [dev-dependencies]
 approx = "0.5"
+env_logger = "0.11"
 image = "0.24"
 serde_json = "1.0"
 tokenizers = "0.21"

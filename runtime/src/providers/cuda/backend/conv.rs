@@ -12,6 +12,7 @@ use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::conv::BiasInput;
 use rmlk_schema::{DataType, DataTypeMap};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ConvolutionBackend {
@@ -31,9 +32,7 @@ impl ConvolutionBackend {
         let filter_dims = match x.shape().len() {
             4 => 2,
             5 => 3,
-            _ => {
-                unreachable!("we already checked the dimensions of x for the supported dimensions")
-            }
+            rank => return Err(ConvError::InvalidInputRank { rank }.into()),
         };
 
         let attrs = ctx
@@ -49,6 +48,11 @@ impl ConvolutionBackend {
         let mut y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
 
         let w = ctx.get_input(1)?;
+
+        if w.is_scalar() {
+            return Err(ConvError::InvalidInputRank { rank: 0 }.into());
+        }
+
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
 
         // Todo: update this function so we dont have to do all this work with
@@ -81,7 +85,12 @@ impl ConvolutionBackend {
 
         let x = ctx.get_input(0)?;
 
-        debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
+        debug!(
+            "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
+            x.dtype(),
+            x.shape(),
+            x.stride()
+        );
 
         let filter_dims = match x.shape().len() {
             4 => 2,
@@ -101,7 +110,12 @@ impl ConvolutionBackend {
 
         let w = ctx.get_input(1)?;
 
-        debug!("[w][shape={:?}][stride=[{:?}]", w.shape(), w.stride());
+        debug!(
+            "[w][dtype={:?}][shape={:?}][stride=[{:?}]",
+            w.dtype(),
+            w.shape(),
+            w.stride()
+        );
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
@@ -121,10 +135,15 @@ impl ConvolutionBackend {
         let bias = match bias.as_ref() {
             Some(bias_tensor) => {
                 debug!(
-                    "[bias][shape={:?}][stride=[{:?}]",
+                    "[bias][dtype={:?}][shape={:?}][stride=[{:?}]",
+                    bias_tensor.dtype(),
                     bias_tensor.shape(),
                     bias_tensor.stride()
                 );
+
+                if bias_tensor.is_scalar() {
+                    return Err(ConvError::InvalidInputRank { rank: 0 }.into());
+                }
 
                 let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
                 // Todo: Urgent. We need to make this generic.
@@ -152,7 +171,12 @@ impl ConvolutionBackend {
 
         let y = ctx.get_output(0)?;
 
-        debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!(
+            "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
+            D::data_type(),
+            y.shape(),
+            y.stride()
+        );
 
         common::init_tensor_device_data::<D>(&self.stream, y)?;
 
@@ -234,3 +258,20 @@ struct BiasArg<'a, T> {
     shape: &'a [i32],
     stride: &'a [i32],
 }
+
+#[derive(Debug)]
+pub enum ConvError {
+    InvalidInputRank { rank: usize },
+}
+
+impl Display for ConvError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConvError::InvalidInputRank { rank } => {
+                write!(f, "Invalid input rank: {}", rank)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConvError {}

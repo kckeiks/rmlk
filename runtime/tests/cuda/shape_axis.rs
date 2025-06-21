@@ -18,7 +18,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "shape(data)",
         "dtype": "int64",
-        "shape": [3]
+        "shape": [2]
       }
     },
     {
@@ -72,7 +72,7 @@ const GRAPH_DEFINITION_NEGATIVE_AXIS: &str = r#"
         "type": "value",
         "name": "shape(data)",
         "dtype": "int64",
-        "shape": [3]
+        "shape": [1]
       }
     },
     {
@@ -116,7 +116,7 @@ const GRAPH_DEFINITION_NEGATIVE_AXIS_2: &str = r#"
         "type": "value",
         "name": "shape(data)",
         "dtype": "int64",
-        "shape": [3]
+        "shape": [2]
       }
     },
     {
@@ -156,7 +156,7 @@ const GRAPH_DEFINITION_NEGATIVE_AXIS_3: &str = r#"
         "type": "value",
         "name": "shape(data)",
         "dtype": "int64",
-        "shape": [3]
+        "shape": [2]
       }
     },
     {

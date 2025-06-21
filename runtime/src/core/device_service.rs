@@ -1,6 +1,8 @@
 use crate::core::backend::OperationBackend;
 use anyhow::Result;
+use half::f16;
 use rmlk_schema::{DataType, Op};
+use std::fmt::Debug;
 
 /// Services for using an accelerator device's resources.
 pub trait DeviceService: Sized {
@@ -12,8 +14,11 @@ pub trait DeviceService: Sized {
     /// Get the backend for an operation.
     fn get_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend>;
     /// Copies `f32` data from host to device.
+    fn htod_float16(&self, data: Vec<f16>) -> Result<Self::Data>;
     fn htod_float(&self, data: Vec<f32>) -> Result<Self::Data>;
+    fn htod_double(&self, data: Vec<f64>) -> Result<Self::Data>;
     /// Copies `f32` data from device to host.
+    fn dtoh_float16(&self, data: &Self::Data) -> Result<Vec<f16>>;
     fn dtoh_float(&self, data: &Self::Data) -> Result<Vec<f32>>;
     fn dtoh_i32(&self, data: &Self::Data) -> Result<Vec<i32>>;
     fn dtoh_i64(&self, data: &Self::Data) -> Result<Vec<i64>>;
@@ -26,6 +31,7 @@ pub trait DeviceService: Sized {
     fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data>;
 }
 
-pub trait DeviceData {
+pub trait DeviceData: Debug {
     fn dtype(&self) -> DataType;
+    fn len(&self) -> usize;
 }

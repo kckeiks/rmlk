@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = GREATER;
 
+#[derive(Debug)]
 pub enum GreaterKernel {
     GreaterFwdF16,
     GreaterFwdF32,
@@ -33,7 +34,7 @@ pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: GreaterKernel) -> Result<
 #[cfg(test)]
 mod test {
     use crate::kernels::binary::{compute_with_diff_output, create_info_buffer};
-    use crate::kernels::greater::{GreaterKernel, PTX_SRC};
+    use crate::kernels::greater::GreaterKernel;
     use crate::utils;
     use cudarc::driver::CudaContext;
 
@@ -52,7 +53,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel_v2(&ctx, PTX_SRC, GreaterKernel::GreaterFwdF32.into()).unwrap();
+        let f = super::load_kernel(ctx.clone(), GreaterKernel::GreaterFwdF32.into()).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

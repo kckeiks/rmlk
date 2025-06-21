@@ -10,7 +10,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "output",
         "dtype": "float",
-        "shape": [1]
+        "shape": []
       }
     },
     {

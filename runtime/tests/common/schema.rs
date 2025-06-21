@@ -68,14 +68,32 @@ pub struct TensorDef {
 pub enum Data {
     Float(Vec<f32>),
     Double(Vec<f64>),
+    Bool(Vec<bool>),
 }
 
 impl Data {
-    pub fn float(self) -> Vec<f32> {
-        let Data::Float(values) = self else {
-            panic!("data was not a float");
-        };
-        values
+    pub fn float(&self) -> Vec<f32> {
+        if let Data::Float(values) = self {
+            values.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn double(&self) -> Vec<f64> {
+        if let Data::Double(values) = self {
+            values.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn bool(&self) -> Vec<bool> {
+        if let Data::Bool(values) = self {
+            values.clone()
+        } else {
+            Vec::new()
+        }
     }
 }
 

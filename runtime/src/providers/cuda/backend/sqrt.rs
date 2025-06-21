@@ -1,33 +1,62 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::unary;
+use crate::providers::cuda::backend::{common, unary};
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
+use rmlk_cuda::kernels::sqrt::SqrtKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct SqrtBackend {
     stream: Arc<CudaStream>,
-    kernel: CudaFunction,
 }
 
 impl SqrtBackend {
-    pub fn new(stream: &Arc<CudaStream>, kernel: CudaFunction) -> Self {
+    pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
             stream: stream.clone(),
-            kernel,
         }
+    }
+
+    fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
+        let kernel_name = match dtype {
+            DataType::Float16 => SqrtKernel::FwdF16,
+            DataType::Float => SqrtKernel::FwdF32,
+            DataType::Double => SqrtKernel::FwdF64,
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+        };
+
+        debug!("[kernel={:?}]", kernel_name);
+
+        rmlk_cuda::kernels::sqrt::load_kernel(self.stream.context().clone(), kernel_name)
+            .map_err(Into::into)
     }
 
     fn compute_sqrt<I>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        unsafe { unary::compute::<I>("sqrt", self.stream.clone(), self.kernel, ctx) }
+        let kernel = self.load_cuda_function(I::data_type())?;
+        unsafe {
+            unary::compute::<I>("sqrt", self.stream.clone(), kernel, ctx)?;
+        }
+        common::write_results_unary::<I, I>(
+            "debugging/sqrt",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+
+        Ok(())
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {

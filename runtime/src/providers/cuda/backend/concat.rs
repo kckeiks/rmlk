@@ -1,8 +1,8 @@
-use crate::attributes;
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
+use crate::{attributes, utils};
 use anyhow::Result;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
@@ -24,9 +24,11 @@ impl ConcatBackend {
     }
 
     fn compute_output_shape(&mut self, ctx: &mut Context<Cuda>, target_axis: usize) -> Result<()> {
-        let input_tensor = ctx.get_input(0)?;
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+        let input_tensor = ctx.get_input(0)?;
         let base_shape = scratch_alloc.allocate_from_slice(input_tensor.shape())?;
+
         let mut shape_on_axis = 0;
         for i in 0..usize::MAX {
             match ctx.get_input(i) {
@@ -76,84 +78,101 @@ impl ConcatBackend {
     where
         I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let attrs = ctx
-            .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
-            .map_err(Box::new)?;
+        {
+            let attrs = ctx
+                .get_attributes()
+                .ok_or(InternalError::MissingAttributes)
+                .map_err(Box::new)?;
 
-        debug!("[attributes={:?}]", attrs);
+            debug!("[attributes={:?}]", attrs);
 
-        // Todo: validate axis.
-        let axis = usize::try_from(attributes::concat::get_axis(&attrs).ok_or_else(|| {
-            Box::new(InternalError::MissingAttribute {
-                name: "`axis` is missing".to_string(),
-            })
-        })?)
-        .map_err(|_| InternalError::UnableToConvertValue)?;
-
-        self.compute_output_shape(ctx, axis)?;
-
-        let output_tensor = ctx.get_output(0)?;
-
-        debug!(
-            "[output][0][shape={:?}][stride=[{:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
-
-        common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
-
-        let output_tensor = ctx.get_output(0)?;
-        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_data = output_ptr.data_mut::<I>();
-
-        let input = ctx.get_input(0)?;
-
-        debug!(
-            "[input][0][shape={:?}][stride=[{:?}]",
-            input.shape(),
-            input.stride()
-        );
-
-        let outer_dims = input.shape()[..axis].iter().product::<usize>();
-        let mut axis_offset = 0;
-        for i in 0..usize::MAX {
-            match ctx.get_input(i) {
-                Ok(input) => {
-                    debug!(
-                        "[input][{i}][shape={:?}][stride=[{:?}]",
-                        input.shape(),
-                        input.stride()
-                    );
-
-                    let dim = input.shape()[axis];
-                    let step = input.stride()[axis];
-                    let outer_block_size = step * dim;
-                    let output_outer_block_size = output_tensor.shape()[axis] * step;
-
-                    let input_ptr = input.try_dev_data_ptr()?;
-                    let input_data = input_ptr.data::<I>();
-                    for outer_i in 0..outer_dims {
-                        for j in 0..dim {
-                            let output_offset =
-                                (outer_i * output_outer_block_size) + (axis_offset + j) * step;
-
-                            self.stream
-                                .memcpy_dtod(
-                                    &input_data.slice(
-                                        (outer_i * outer_block_size) + (j * step)
-                                            ..(outer_i * outer_block_size) + (j * step) + step,
-                                    ),
-                                    &mut output_data.slice_mut(output_offset..output_offset + step),
-                                )
-                                .map_err(|e| InternalError::Device { error: e.into() })?;
-                        }
-                    }
-                    axis_offset += dim;
+            // Todo: validate axis.
+            let raw_axis = attributes::concat::get_axis(&attrs).ok_or_else(|| {
+                InternalError::MissingAttribute {
+                    name: "`axis` is missing".to_string(),
                 }
-                _ => break,
+            })?;
+
+            let input_tensor = ctx.get_input(0)?;
+
+            if input_tensor.is_scalar() {
+                return Err(ConcatError::ScalarsAreNotAllowed.into());
             }
+
+            let axis = utils::normalize_index(raw_axis as i64, input_tensor.shape().len())?;
+
+            self.compute_output_shape(ctx, axis)?;
+
+            let output_tensor = ctx.get_output(0)?;
+
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
+
+            common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
+
+            let output_tensor = ctx.get_output(0)?;
+            let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
+            let mut output_data = output_ptr.data_mut::<I>();
+
+            let input = ctx.get_input(0)?;
+
+            let outer_dims = input.shape()[..axis].iter().product::<usize>();
+            let mut axis_offset = 0;
+            for i in 0..usize::MAX {
+                match ctx.get_input(i) {
+                    Ok(input) => {
+                        debug!(
+                            "[input][{i}][dtype={:?}][shape={:?}][stride=[{:?}]",
+                            input.dtype(),
+                            input.shape(),
+                            input.stride()
+                        );
+
+                        let dim = input.shape()[axis];
+                        let step = input.stride()[axis];
+                        let outer_block_size = step * dim;
+                        let output_outer_block_size = output_tensor.shape()[axis] * step;
+
+                        let input_ptr = input.try_dev_data_ptr()?;
+                        let input_data = input_ptr.data::<I>();
+                        for outer_i in 0..outer_dims {
+                            for j in 0..dim {
+                                let output_offset =
+                                    (outer_i * output_outer_block_size) + (axis_offset + j) * step;
+
+                                self.stream
+                                    .memcpy_dtod(
+                                        &input_data.slice(
+                                            (outer_i * outer_block_size) + (j * step)
+                                                ..(outer_i * outer_block_size) + (j * step) + step,
+                                        ),
+                                        &mut output_data
+                                            .slice_mut(output_offset..output_offset + step),
+                                    )
+                                    .map_err(|e| InternalError::Device { error: e.into() })?;
+                            }
+                        }
+                        axis_offset += dim;
+                    }
+                    _ => break,
+                }
+            }
+
+            assert_eq!(
+                output_data.len(),
+                output_tensor.shape().iter().product::<usize>()
+            );
         }
+
+        common::write_results_concat::<I>("debugging/concat", self.stream.clone(), ctx)?;
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -186,6 +205,7 @@ pub enum ConcatError {
         dim: usize,
         expected_dim: usize,
     },
+    ScalarsAreNotAllowed,
 }
 
 impl Display for ConcatError {
@@ -193,6 +213,7 @@ impl Display for ConcatError {
         match self {
             ConcatError::ShapeMismatch { index, base_rank, found_rank } => write!(f, "shape mismatch for input {index}: base rank {base_rank} and found rank {found_rank}"),
             ConcatError::DimensionMismatch { axis, dim, expected_dim } => write!(f, "dimension mismatch for input {axis} and input dim {dim} expected dim {expected_dim}"),
+            ConcatError::ScalarsAreNotAllowed => write!(f, "scalars are not allowed"),
         }
     }
 }

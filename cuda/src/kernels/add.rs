@@ -1,26 +1,50 @@
 use crate::ptx::ADD;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
-pub const MODULE_NAME: &str = "add";
-pub const FWD_FN_NAMES: [&'static str; 5] = [
-    "add_fwd_f16",
-    "add_fwd_f32",
-    "add_fwd_f64",
-    "add_fwd_i32",
-    "add_fwd_i64",
-];
-pub const FWD_FN_NAMES_ALPHA_BETA_INPLACE: [&'static str; 3] = [
-    "add_alpha_beta_inplace_fwd_f16",
-    "add_alpha_beta_inplace_fwd_f32",
-    "add_alpha_beta_inplace_fwd_f64",
-];
 pub const PTX_SRC: &str = ADD;
+
+#[derive(Debug)]
+pub enum AddKernel {
+    FwdF16,
+    FwdF32,
+    FwdF64,
+    FwdI32,
+    FwdI64,
+    FwdAlphaBetaF16,
+    FwdAlphaBetaF32,
+    FwdAlphaBetaF64,
+}
+
+impl From<AddKernel> for &'static str {
+    fn from(value: AddKernel) -> Self {
+        match value {
+            AddKernel::FwdF16 => "add_fwd_f16",
+            AddKernel::FwdF32 => "add_fwd_f32",
+            AddKernel::FwdF64 => "add_fwd_f64",
+            AddKernel::FwdI32 => "add_fwd_i32",
+            AddKernel::FwdI64 => "add_fwd_i64",
+            AddKernel::FwdAlphaBetaF16 => "add_alpha_beta_inplace_fwd_f16",
+            AddKernel::FwdAlphaBetaF32 => "add_alpha_beta_inplace_fwd_f32",
+            AddKernel::FwdAlphaBetaF64 => "add_alpha_beta_inplace_fwd_f64",
+        }
+    }
+}
+
+pub fn load_kernel(
+    ctx: Arc<CudaContext>,
+    kernel_name: AddKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
 
 #[cfg(test)]
 mod test {
+    use crate::kernels::add::AddKernel;
     use crate::kernels::binary::{compute, create_info_buffer};
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_f32() {
@@ -37,7 +61,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel(&ctx, Op::Add, DataType::Float).unwrap();
+        let f = super::load_kernel(ctx.clone(), AddKernel::FwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

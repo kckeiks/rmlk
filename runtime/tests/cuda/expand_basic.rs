@@ -18,7 +18,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "shape",
         "dtype": "float",
-        "shape": [2, 4, 3]
+        "shape": [3]
       }
     },
     {

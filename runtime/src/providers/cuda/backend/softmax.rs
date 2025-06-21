@@ -38,81 +38,101 @@ impl SoftmaxBackend {
     where
         T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let axis = ctx
-            .get_attributes()
-            .map(|attrs| attributes::softmax::get_axis(&attrs))
-            .unwrap_or(-1);
-        let rank = ctx.get_input(0)?.shape().len();
+        {
+            let axis = ctx
+                .get_attributes()
+                .map(|attrs| attributes::softmax::get_axis(&attrs))
+                .unwrap_or(-1);
 
-        // We only support these two axis options.
-        if !(axis == -1 || (axis == 1 && rank == 4)) {
-            return Err(InternalError::UnsupportedInputValues {
-                message: format!("unsupported inputs axis `{axis}` and rank `{rank}"),
+            debug!("[attributes][axis={}]", axis);
+
+            let rank = ctx.get_input(0)?.shape().len();
+
+            // We only support these two axis options.
+            if !(axis == -1 || (axis == 1 && rank == 4)) {
+                return Err(InternalError::UnsupportedInputValues {
+                    message: format!("unsupported inputs axis `{axis}` and rank `{rank}"),
+                }
+                .into());
             }
-            .into());
+
+            // This initializes the output shape.
+            self.compute_output_shape(ctx)?;
+
+            let input_tensor = ctx.get_input(0)?;
+
+            debug!(
+                "[input][dtype={:?}][shape={:?}][stride=[{:?}]",
+                input_tensor.dtype(),
+                input_tensor.shape(),
+                input_tensor.stride()
+            );
+
+            let scratch_alloc = ctx.execution_state().scratch_alloc();
+
+            // Notice that the tensor will never be updated with this shape.
+            // These are only needed for the duration of this computation and then thrown away.
+            let (input_shape, input_stride) = match axis == -1 {
+                true => {
+                    let shape = scratch_alloc.allocate_fill(4usize, 1i32)?;
+                    let stride = scratch_alloc.allocate(4usize)?;
+                    flatten_to_softmax_channel_shape(input_tensor.shape(), shape)?;
+                    utils::compute_stride(shape, stride);
+                    (shape, stride)
+                }
+                false => {
+                    let shape =
+                        scratch_alloc.allocate_and_convert_from_slice(&input_tensor.shape())?;
+                    let stride =
+                        scratch_alloc.allocate_and_convert_from_slice(&input_tensor.stride())?;
+                    (shape, stride)
+                }
+            };
+
+            debug!(
+                "[input][processed][shape={:?}][stride=[{:?}]",
+                input_shape, input_stride
+            );
+
+            let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
+            let input_data_view = input_dev_ptr.data::<T>();
+
+            let output_tensor = ctx.get_output(0)?;
+
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
+
+            common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
+
+            let output_tensor = ctx.get_output(0)?;
+            let mut output_dev_ptr = output_tensor.dev_data_ptr_mut();
+            let mut output_data_view = output_dev_ptr
+                .as_mut()
+                .expect("we already checked that it initialized")
+                .data_mut();
+
+            rmlk_cuda::kernels::softmax::compute::<T>(
+                &self.stream,
+                (T::one(), T::zero()),
+                &input_data_view,
+                input_shape,
+                input_stride,
+                &mut output_data_view,
+                cudarc::cudnn::sys::cudnnSoftmaxMode_t::CUDNN_SOFTMAX_MODE_CHANNEL,
+                cudarc::cudnn::sys::cudnnSoftmaxAlgorithm_t::CUDNN_SOFTMAX_FAST,
+            )?;
         }
 
-        // This initializes the output shape.
-        self.compute_output_shape(ctx)?;
+        common::write_results_softmax::<T, T>("debugging/softmax", self.stream.clone(), ctx)
+            .unwrap();
 
-        let input_tensor = ctx.get_input(0)?;
-
-        debug!(
-            "[input][shape={:?}][stride=[{:?}]",
-            input_tensor.shape(),
-            input_tensor.stride()
-        );
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc();
-
-        // Notice that the tensor will never be updated with this shape.
-        // These are only needed for the duration of this computation and then thrown away.
-        let (input_shape, input_stride) = match axis == -1 {
-            true => {
-                let shape = scratch_alloc.allocate_fill(4usize, 1i32)?;
-                let stride = scratch_alloc.allocate(4usize)?;
-                flatten_to_softmax_channel_shape(input_tensor.shape(), shape)?;
-                utils::compute_stride(shape, stride);
-                (shape, stride)
-            }
-            false => {
-                let shape = scratch_alloc.allocate_and_convert_from_slice(&input_tensor.shape())?;
-                let stride =
-                    scratch_alloc.allocate_and_convert_from_slice(&input_tensor.stride())?;
-                (shape, stride)
-            }
-        };
-
-        let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
-        let input_data_view = input_dev_ptr.data::<T>();
-
-        let output_tensor = ctx.get_output(0)?;
-
-        debug!(
-            "[output][shape={:?}][stride=[{:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
-
-        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
-
-        let output_tensor = ctx.get_output(0)?;
-        let mut output_dev_ptr = output_tensor.dev_data_ptr_mut();
-        let mut output_data_view = output_dev_ptr
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
-
-        rmlk_cuda::kernels::softmax::compute::<T>(
-            &self.stream,
-            (T::one(), T::zero()),
-            &input_data_view,
-            input_shape,
-            input_stride,
-            &mut output_data_view,
-            cudarc::cudnn::sys::cudnnSoftmaxMode_t::CUDNN_SOFTMAX_MODE_CHANNEL,
-            cudarc::cudnn::sys::cudnnSoftmaxAlgorithm_t::CUDNN_SOFTMAX_FAST,
-        )?;
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

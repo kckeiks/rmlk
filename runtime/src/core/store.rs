@@ -2,8 +2,10 @@ use crate::core::allocators::{BufferArena, ShapeBufArena, ShapeBufArenaMut};
 use crate::core::device_service::DeviceData;
 use crate::core::tensor_handle::TensorHandle;
 use crate::core::{device_service::DeviceService, Tensor};
-use crate::utils;
+use crate::utils::FromBytes;
 use anyhow::Result;
+use half::f16;
+use log::debug;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op};
 use std::cell::RefCell;
@@ -142,33 +144,147 @@ where
 
     fn load_initializers(&mut self) -> Result<()> {
         // Load initializers.
-        for (node_id, ir_tensor) in self
+        let mut initializers = self
             .initializers
             .take()
             .expect("call load_initializers only once")
-        {
+            .into_iter()
+            .collect::<Vec<_>>();
+        initializers.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+        for (node_id, ir_tensor) in initializers {
+            debug!(
+                "[node={node_id}][ir_tensor={}][dtype={:?}][shape={:?}]",
+                ir_tensor.name.as_deref().unwrap_or(""),
+                ir_tensor.data_type,
+                ir_tensor.dims
+            );
+
             debug_assert!(matches!(
                 self.graph.get_node(node_id).map(|n| n.value().op()),
                 // Todo: Fix this when we resolve the issue with Constants.
                 Some(Op::Const) | Some(Op::NoOp)
             ));
 
-            let on_host_data = match ir_tensor.float_data.is_empty() {
-                true => utils::to_float_vec(
-                    ir_tensor
-                        .raw_data
-                        .as_ref()
-                        .ok_or(StoreError::FailedToParseTensorRawData)?,
-                ),
-                false => {
-                    // Todo: remove allocation.
-                    ir_tensor.float_data
+            let data = match ir_tensor.data_type {
+                DataType::Float16 => {
+                    let on_host_data = f16::from_bytes(
+                        ir_tensor
+                            .raw_data
+                            .as_ref()
+                            .ok_or(StoreError::FailedToParseTensorRawData)?,
+                    )?;
+                    self.provider.htod_float16(on_host_data)?
+                }
+                DataType::Float => {
+                    let on_host_data = match ir_tensor.float_data.is_empty() {
+                        true => f32::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.float_data
+                        }
+                    };
+                    // let len = if on_host_data.len() >= 10 {
+                    //     10
+                    // } else {
+                    //     on_host_data.len()
+                    // };
+                    //debug!("RAW_DATA (len={}) = <{:?}>", on_host_data.len(), &on_host_data[..len]);
+
+                    self.provider.htod_float(on_host_data)?
+                }
+                DataType::Double => {
+                    let on_host_data = match ir_tensor.double_data.is_empty() {
+                        true => f64::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.double_data
+                        }
+                    };
+                    self.provider.htod_double(on_host_data)?
+                }
+                DataType::Int32 => {
+                    let on_host_data = match ir_tensor.int32_data.is_empty() {
+                        true => i32::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.int32_data
+                        }
+                    };
+                    self.provider.htod_i32(on_host_data)?
+                }
+                DataType::Int64 => {
+                    let on_host_data = match ir_tensor.int64_data.is_empty() {
+                        true => i64::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.int64_data
+                        }
+                    };
+                    let len = if on_host_data.len() >= 10 {
+                        10
+                    } else {
+                        on_host_data.len()
+                    };
+                    debug!(
+                        "RAW_DATA (len={}) = <{:?}>",
+                        on_host_data.len(),
+                        &on_host_data[..len]
+                    );
+
+                    self.provider.htod_i64(on_host_data)?
+                }
+                DataType::Bool => {
+                    let on_host_data = match ir_tensor.bool_data.is_empty() {
+                        true => bool::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.bool_data
+                        }
+                    };
+                    debug!("on_host_data = {:?}", on_host_data);
+
+                    self.provider.htod_bool(on_host_data)?
+                }
+                _ => {
+                    return Err(StoreError::DataTypeNotSupported {
+                        dtype: ir_tensor.data_type,
+                    }
+                    .into())
                 }
             };
-            let data = self.provider.htod_float(on_host_data)?;
 
-            let arena_id = ShapeBufArenaMut::new(&mut self.arena)
-                .alloc_from_shape_slice(ir_tensor.dims.as_slice())?;
+            let arena_id = if ir_tensor.dims.is_empty() && data.len() == 1 {
+                // Todo: handle scalars.
+                ShapeBufArenaMut::new(&mut self.arena).alloc_from_shape_slice(&[])?
+            } else {
+                ShapeBufArenaMut::new(&mut self.arena)
+                    .alloc_from_shape_slice(ir_tensor.dims.as_slice())?
+            };
 
             let tensor = TensorHandle::new(
                 ir_tensor.data_type,
@@ -289,6 +405,7 @@ pub enum StoreError {
     FailedToParseTensorRawData,
     DataTypeNotFound { node_id: usize },
     ShapeNotFound { node_id: usize },
+    DataTypeNotSupported { dtype: DataType },
 }
 
 impl Display for StoreError {
@@ -307,6 +424,9 @@ impl Display for StoreError {
             }
             StoreError::ShapeNotFound { node_id } => {
                 write!(f, "shape not found in node `{}`", node_id)
+            }
+            StoreError::DataTypeNotSupported { dtype } => {
+                write!(f, "dataType `{:?}` not supported for tensor", dtype)
             }
         }
     }

@@ -1,6 +1,7 @@
 use crate::core::allocators::ScratchAllocator;
 use crate::core::device_service::DeviceService;
 use crate::core::instance_state::ModelInstanceState;
+use crate::core::plan::Plan;
 use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
 use crate::core::tensor_handle::{DstTensorId, SrcTensorId};
@@ -118,6 +119,18 @@ where
     pub fn load_value(&mut self, node_id: usize, value: Value) -> Result<()> {
         // Todo: should we also return an error when a user tries to update a constant?
         match value.inner {
+            InnerValue::Float16(data) => {
+                let data = self
+                    .instance_state
+                    ._plan()
+                    .device(0)
+                    .expect("We always have one device")
+                    .htod_float16(data)?;
+                let mut tensor = self
+                    .get_tensor_from_node_id(node_id)
+                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                tensor.set_dev_data(data);
+            }
             InnerValue::Float32(data) => {
                 let data = self
                     .instance_state
@@ -190,17 +203,23 @@ where
         let shape_def = node
             .value()
             .shape()
-            .ok_or(ExecutionStateError::InputMissingShape)?;
+            .ok_or(ExecutionStateError::MissingShape)?;
 
         if shape.len() != shape_def.len() {
-            return Err(ExecutionStateError::InputAndDefRankMismatch.into());
+            println!(
+                "{} {:?} != {:?}",
+                node.value().name().unwrap(),
+                shape,
+                shape_def
+            );
+            return Err(ExecutionStateError::RankMismatch.into());
         }
 
         for (idx, &dim) in shape.iter().enumerate() {
             if shape_def[idx] != dim {
                 if shape_def[idx] != 0 || !(shape_def[idx] == 0 && node.value().has_dynamic_dims())
                 {
-                    return Err(ExecutionStateError::InputShapeAndDefShapeMismatch.into());
+                    return Err(ExecutionStateError::DimensionMismatch.into());
                 }
             }
         }
@@ -235,10 +254,10 @@ where
             .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
 
         match tensor.dtype() {
-            DataType::Float => Ok(provider.dtoh_float(&ptr)?.into()),
-            DataType::Int32 => Ok(provider.dtoh_i32(&ptr)?.into()),
-            DataType::Int64 => Ok(provider.dtoh_i64(&ptr)?.into()),
-            DataType::Bool => Ok(provider.dtoh_bool(&ptr)?.into()),
+            DataType::Float => Ok((provider.dtoh_float(&ptr)?, tensor.shape()).into()),
+            DataType::Int32 => Ok((provider.dtoh_i32(&ptr)?, tensor.shape()).into()),
+            DataType::Int64 => Ok((provider.dtoh_i64(&ptr)?, tensor.shape()).into()),
+            DataType::Bool => Ok((provider.dtoh_bool(&ptr)?, tensor.shape()).into()),
             _ => unimplemented!(),
         }
     }
@@ -286,9 +305,9 @@ pub enum ExecutionStateError {
     OutputTensorNotFound { id: usize },
     TensorNotFound { id: usize },
     ComparisonFailed { id: usize },
-    InputMissingShape,
-    InputAndDefRankMismatch,
-    InputShapeAndDefShapeMismatch,
+    MissingShape,
+    RankMismatch,
+    DimensionMismatch,
 }
 
 impl Display for ExecutionStateError {
@@ -303,14 +322,20 @@ impl Display for ExecutionStateError {
             ExecutionStateError::TensorNotFound { id } => {
                 write!(f, "Tensor not found: {}", id)
             }
-            ExecutionStateError::InputMissingShape => {
-                write!(f, "Input tensor missing shape")
+            ExecutionStateError::MissingShape => {
+                write!(f, "Tensor is missing shape")
             }
-            ExecutionStateError::InputAndDefRankMismatch => {
-                write!(f, "Input and definition rank mismatch")
+            ExecutionStateError::RankMismatch => {
+                write!(
+                    f,
+                    "the rank of argument does not match the rank defined for the tensor"
+                )
             }
-            ExecutionStateError::InputShapeAndDefShapeMismatch => {
-                write!(f, "Input and definition shape mismatch")
+            ExecutionStateError::DimensionMismatch => {
+                write!(
+                    f,
+                    "given shape does not match the shape defined for the tensor"
+                )
             }
             ExecutionStateError::ComparisonFailed { id } => {
                 write!(f, "Comparison failed for node `{}`", id)

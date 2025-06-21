@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = TRILU;
 
+#[derive(Debug)]
 pub enum TriluKernel {
     FwdF16,
     FwdF32,
@@ -45,6 +46,7 @@ pub unsafe fn compute<T>(
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
+    assert!(rank >= 3);
     assert_eq!(rank * 2, info_buffer.len());
     assert_eq!(input.len(), output.len());
 

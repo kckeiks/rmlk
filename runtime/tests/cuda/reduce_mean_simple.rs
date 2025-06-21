@@ -26,7 +26,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "reducemean(input, axes)",
         "dtype": "float",
-        "shape": [1]
+        "shape": [1, 3]
       }
     },
     {

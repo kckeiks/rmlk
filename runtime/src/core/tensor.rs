@@ -100,6 +100,10 @@ where
         self.shape.as_ref().unwrap()
     }
 
+    pub fn is_scalar(&self) -> bool {
+        self.shape().is_empty() && self.data.borrow().as_ref().map(|d| d.len()).unwrap_or(0) == 1
+    }
+
     pub fn stride(&self) -> &[usize] {
         self.stride.as_ref().unwrap()
     }

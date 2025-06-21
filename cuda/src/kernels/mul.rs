@@ -1,15 +1,42 @@
+use crate::error::Result;
 use crate::ptx::MUL;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
-pub const MODULE_NAME: &str = "mul";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["mul_fwd_f16", "mul_fwd_f32", "mul_fwd_f64"];
 pub const PTX_SRC: &str = MUL;
+
+#[derive(Debug)]
+pub enum MulKernel {
+    FwdF16,
+    FwdF32,
+    FwdF64,
+    FwdI32,
+    FwdI64,
+}
+
+impl From<MulKernel> for &'static str {
+    fn from(value: MulKernel) -> &'static str {
+        match value {
+            MulKernel::FwdF16 => "mul_fwd_f16",
+            MulKernel::FwdF32 => "mul_fwd_f32",
+            MulKernel::FwdF64 => "mul_fwd_f64",
+            MulKernel::FwdI32 => "mul_fwd_i32",
+            MulKernel::FwdI64 => "mul_fwd_i64",
+        }
+    }
+}
+
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: MulKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
 
 #[cfg(test)]
 mod test {
     use crate::kernels::binary::{compute, create_info_buffer};
+    use crate::kernels::mul::{load_kernel, MulKernel};
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataType, Op};
 
     #[test]
     fn test_f32() {
@@ -26,7 +53,7 @@ mod test {
         utils::calculate_stride(&y_shape, &mut y_stride);
         let y_dev_ptr = stream.memcpy_stod(&vec![2.0, 2.0, 2.0, 4.0]).unwrap();
 
-        let f = utils::load_kernel(&ctx.clone(), Op::Mul, DataType::Float).unwrap();
+        let f = load_kernel(ctx.clone(), MulKernel::FwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let output_len = output_shape.iter().copied().product();

@@ -79,7 +79,6 @@ impl Node {
         self.attribute = Some(attrs);
     }
 
-    #[cfg(debug_assertions)]
     pub fn set_name(&mut self, name: String) {
         self.name = Some(name);
     }

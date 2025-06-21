@@ -5,6 +5,7 @@ use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::cos;
 use rmlk_cuda::kernels::cos::CosKernel;
@@ -30,6 +31,8 @@ impl CosBackend {
             _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         cos::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
@@ -38,7 +41,20 @@ impl CosBackend {
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { unary::compute::<D>("cos", self.stream, func, ctx) }
+        unsafe {
+            unary::compute::<D>("cos", self.stream.clone(), func, ctx)?;
+        }
+        super::common::write_results_unary::<D, D>(
+            "debugging/cos",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )?;
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+
+        Ok(())
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {

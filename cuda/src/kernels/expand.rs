@@ -5,15 +5,9 @@ use cudarc::driver::{
 };
 use std::sync::Arc;
 
-pub const MODULE_NAME: &str = "expand";
-pub const FWD_FN_NAMES: &[&'static str] = &[
-    "expand_fwd_f16",
-    "expand_fwd_f32",
-    "expand_fwd_f64",
-    "expand_fwd_i32",
-];
 pub const PTX_SRC: &str = EXPAND;
 
+#[derive(Debug)]
 pub enum ExpandKernel {
     FwdF16,
     FwdF32,
@@ -41,24 +35,24 @@ impl From<ExpandKernel> for &'static str {
 pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
-    rank: usize,
+    input_rank: usize,
+    output_rank: usize,
     info_buffer: &[usize],
+    elem_count: usize,
     input: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
 ) -> crate::error::Result<()>
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
-    assert_eq!(rank * 4, info_buffer.len());
-
-    let mut info_dev_ptr = unsafe { stream.alloc(info_buffer.len())? };
-    stream.memcpy_htod(info_buffer, &mut info_dev_ptr)?;
-
-    let elem_count: usize = info_buffer[2 * rank..3 * rank].iter().product();
-
     if elem_count == 0 {
         return Ok(());
     }
+
+    assert!(info_buffer.len() >= 4);
+
+    let mut info_dev_ptr = unsafe { stream.alloc(info_buffer.len())? };
+    stream.memcpy_htod(info_buffer, &mut info_dev_ptr)?;
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -73,7 +67,8 @@ where
         stream
             .launch_builder(&func)
             .arg(&elem_count)
-            .arg(&rank)
+            .arg(&input_rank)
+            .arg(&output_rank)
             .arg(&info_dev_ptr)
             .arg(input)
             .arg(output)
@@ -93,13 +88,18 @@ pub fn load_kernel(
 
 #[cfg(test)]
 mod test {
-    use crate::kernels::expand::compute;
+    use crate::kernels::expand::{compute, ExpandKernel};
     use crate::utils;
     use cudarc::cudnn::CudnnDataType;
     use cudarc::driver::{CudaContext, DeviceRepr, ValidAsZeroBits};
-    use rmlk_schema::{DataTypeMap, Op};
+    use rmlk_schema::DataTypeMap;
 
-    fn launch_expand_test<T>(input: &[T], input_shape: &[usize], output_shape: &[usize]) -> Vec<T>
+    fn launch_expand_test<T>(
+        input: &[T],
+        input_shape: &[usize],
+        output_shape: &[usize],
+        kernel_type: ExpandKernel,
+    ) -> Vec<T>
     where
         T: CudnnDataType
             + ValidAsZeroBits
@@ -110,18 +110,18 @@ mod test {
             + PartialEq
             + Default,
     {
-        assert_eq!(input_shape.len(), output_shape.len());
-        let rank = input_shape.len();
+        let input_rank = input_shape.len();
+        let output_rank = output_shape.len();
 
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
 
-        let func = utils::load_kernel(&ctx, Op::Expand, T::data_type()).unwrap();
+        let func = super::load_kernel(&ctx, kernel_type).unwrap();
 
-        let mut input_strides = vec![0; rank];
+        let mut input_strides = vec![0; input_rank];
         utils::calculate_stride(input_shape, &mut input_strides);
 
-        let mut output_strides = vec![0; rank];
+        let mut output_strides = vec![0; output_rank];
         utils::calculate_stride(output_shape, &mut output_strides);
 
         let mut info_buffer = Vec::new();
@@ -139,8 +139,10 @@ mod test {
             compute(
                 stream.clone(),
                 func,
-                rank,
+                input_rank,
+                output_rank,
                 &info_buffer,
+                output_len,
                 &input_dev_ptr,
                 &mut output_dev_ptr,
             )
@@ -156,18 +158,18 @@ mod test {
         let input_shape = &[1, 3];
         let output_shape = &[4, 3];
 
-        let result = launch_expand_test(&input, input_shape, output_shape);
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdF32);
         let expected = vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
         assert_eq!(result, expected);
     }
 
     #[test]
-    fn test_expand_scalar() {
+    fn test_expand_broadcast_all_dims() {
         let input = vec![7i32];
         let input_shape = &[1, 1, 1];
         let output_shape = &[2, 3, 4];
 
-        let result = launch_expand_test(&input, input_shape, output_shape);
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdI32);
         assert_eq!(result, vec![7; 2 * 3 * 4]);
     }
 
@@ -177,7 +179,7 @@ mod test {
         let input_shape = &[1, 3, 1];
         let output_shape = &[2, 3, 4];
 
-        let result = launch_expand_test(&input, input_shape, output_shape);
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdF64);
         let mut expected = Vec::new();
         for _ in 0..2 {
             for &v in &[1.0, 2.0, 3.0] {
@@ -194,7 +196,7 @@ mod test {
         let input = vec![1.0f32, 2.0, 3.0, 4.0];
         let input_shape = &[2, 2];
         let output_shape = &[2, 2];
-        let result = launch_expand_test(&input, input_shape, output_shape);
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdF32);
         assert_eq!(result, input);
     }
 
@@ -204,7 +206,7 @@ mod test {
         let input_shape = &[2, 1, 4];
         let output_shape = &[2, 3, 4];
 
-        let result = launch_expand_test(&input, input_shape, output_shape);
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdI32);
 
         let expected = vec![
             1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
@@ -217,7 +219,32 @@ mod test {
         let input = vec![];
         let input_shape = &[1, 0, 1];
         let output_shape = &[2, 0, 3];
-        let result: Vec<f32> = launch_expand_test(&input, input_shape, output_shape);
+        let result: Vec<f32> =
+            launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdF32);
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_expand_promotion() {
+        let input = vec![10, 20, 30];
+        let input_shape = &[3];
+        let output_shape = &[2, 3];
+
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdI32);
+
+        let expected = vec![10, 20, 30, 10, 20, 30];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_expand_scalar() {
+        let input = vec![1.1];
+        let input_shape = &[1];
+        let output_shape = &[2, 3];
+
+        let result = launch_expand_test(&input, input_shape, output_shape, ExpandKernel::FwdF64);
+
+        let expected = vec![1.1, 1.1, 1.1, 1.1, 1.1, 1.1];
+        assert_eq!(result, expected);
     }
 }

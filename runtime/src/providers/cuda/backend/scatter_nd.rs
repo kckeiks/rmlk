@@ -78,129 +78,153 @@ impl ScatterNdBackend {
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        // Todo: can we preload the function when we need to read the attributes?
-        let func = self.load_cuda_function(ctx, T::data_type())?;
-
         {
+            // Todo: can we preload the function when we need to read the attributes?
+            let func = self.load_cuda_function(ctx, T::data_type())?;
+
+            {
+                let data_tensor = ctx.get_input(0)?;
+                let output_tensor = ctx.get_output(0)?;
+                let src_id = data_tensor.src_id();
+                let dst_id = output_tensor.dst_id();
+                ctx.execution_state_mut()
+                    .copy_shape_from_within(src_id, dst_id)?;
+
+                // We copy `data` into the output tensor.
+                let data_tensor = ctx.get_input(0)?;
+                let mut output_tensor = ctx.get_output(0)?;
+                common::copy_tensor_dev_data::<T>(&self.stream, &data_tensor, &mut output_tensor)?;
+            }
+
             let data_tensor = ctx.get_input(0)?;
+
+            debug!(
+                "[data][dtype={:?}][shape={:?}][stride={:?}]",
+                data_tensor.dtype(),
+                data_tensor.shape(),
+                data_tensor.stride()
+            );
+
+            if data_tensor.is_scalar() {
+                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+            }
+
+            let indices_tensor = ctx.get_input(1)?;
+
+            debug!(
+                "[indices][dtype={:?}][shape={:?}][stride={:?}]",
+                indices_tensor.dtype(),
+                indices_tensor.shape(),
+                indices_tensor.stride()
+            );
+
+            if indices_tensor.is_scalar() {
+                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+            }
+
+            let updates_tensor = ctx.get_input(2)?;
+
+            debug!(
+                "[updates][dtype={:?}][shape={:?}][stride={:?}]",
+                updates_tensor.dtype(),
+                updates_tensor.shape(),
+                updates_tensor.stride()
+            );
+
+            if updates_tensor.is_scalar() {
+                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+            }
+
+            let data_rank = data_tensor.shape().len();
+            let indices_rank = indices_tensor.shape().len();
+            let updates_rank = updates_tensor.shape().len();
+
+            let num_idx_tuples = if indices_rank == 1 {
+                // Todo: I think this can just be first().
+                indices_tensor.shape().iter().product()
+            } else {
+                indices_tensor.shape()[0..indices_rank - 1].iter().product()
+            };
+
+            let indices_dev_ptr = indices_tensor.try_dev_data_ptr()?;
+            let indices_view = indices_dev_ptr.data::<i64>();
+
+            let updates_dev_ptr = updates_tensor.try_dev_data_ptr()?;
+            let updates_view = updates_dev_ptr.data::<T>();
+
             let output_tensor = ctx.get_output(0)?;
-            let src_id = data_tensor.src_id();
-            let dst_id = output_tensor.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_within(src_id, dst_id)?;
 
-            // We copy `data` into the output tensor.
-            let data_tensor = ctx.get_input(0)?;
-            let mut output_tensor = ctx.get_output(0)?;
-            common::copy_tensor_dev_data::<T>(&self.stream, &data_tensor, &mut output_tensor)?;
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride={:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
+
+            let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;
+            let mut output_view = output_dev_ptr.data_mut::<T>();
+
+            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+            let info = scratch_alloc
+                .allocate::<usize>(2 * data_rank + 2 * indices_rank + 2 * updates_rank)?;
+
+            scatter_nd::create_info_buffer(
+                data_tensor.shape(),
+                data_tensor.stride(),
+                indices_tensor.shape(),
+                indices_tensor.stride(),
+                updates_tensor.shape(),
+                updates_tensor.stride(),
+                info,
+            );
+
+            // Todo: maybe we should preallocate this value since its size never changes.
+            let mut error = self
+                .stream
+                .alloc_zeros::<i32>(1)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
+
+            // debug!("num_idx_tuple={num_idx_tuples}");
+            // debug!("data_rank={data_rank}");
+            // debug!("indices_rank={indices_rank}");
+            // debug!("updates_rank={updates_rank}");
+            // debug!("info={info:?}");
+            // debug!("indices size={}", indices_view.len());
+            // debug!("updates size={}", updates_view.len());
+            // debug!("output size={}", output_view.len());
+
+            unsafe {
+                scatter_nd::compute(
+                    self.stream.clone(),
+                    func,
+                    num_idx_tuples,
+                    data_rank,
+                    indices_rank,
+                    updates_rank,
+                    &info,
+                    indices_view.as_ref(),
+                    updates_view.as_ref(),
+                    output_view.as_mut(),
+                    &mut error,
+                )?;
+            }
+
+            let error_buf = scratch_alloc.allocate::<i32>(1)?;
+            self.stream
+                .memcpy_dtoh(&error, error_buf)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
+
+            if error_buf[0] != 0 {
+                return Err(ScatterNdError::KernelFailed { code: error_buf[0] }.into());
+            }
         }
 
-        let data_tensor = ctx.get_input(0)?;
+        common::write_results_scatter_nd::<T>("debugging/scatter_nd", self.stream.clone(), ctx)?;
 
-        debug!(
-            "[data][shape={:?}][stride={:?}]",
-            data_tensor.shape(),
-            data_tensor.stride()
-        );
-
-        let indices_tensor = ctx.get_input(1)?;
-
-        debug!(
-            "[indices][shape={:?}][stride={:?}]",
-            indices_tensor.shape(),
-            indices_tensor.stride()
-        );
-
-        let updates_tensor = ctx.get_input(2)?;
-
-        debug!(
-            "[updates][shape={:?}][stride={:?}]",
-            updates_tensor.shape(),
-            updates_tensor.stride()
-        );
-
-        let data_rank = data_tensor.shape().len();
-        let indices_rank = indices_tensor.shape().len();
-        let updates_rank = updates_tensor.shape().len();
-
-        let num_idx_tuples = if indices_rank == 1 {
-            // Todo: I think this can just be first().
-            indices_tensor.shape().iter().product()
-        } else {
-            indices_tensor.shape()[0..indices_rank - 1].iter().product()
-        };
-
-        let indices_dev_ptr = indices_tensor.try_dev_data_ptr()?;
-        let indices_view = indices_dev_ptr.data::<i64>();
-
-        let updates_dev_ptr = updates_tensor.try_dev_data_ptr()?;
-        let updates_view = updates_dev_ptr.data::<T>();
-
-        let output_tensor = ctx.get_output(0)?;
-
-        debug!(
-            "[output][shape={:?}][stride={:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
-
-        let mut output_dev_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_dev_ptr.data_mut::<T>();
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-
-        let info =
-            scratch_alloc.allocate::<usize>(2 * data_rank + 2 * indices_rank + 2 * updates_rank)?;
-
-        scatter_nd::create_info_buffer(
-            data_tensor.shape(),
-            data_tensor.stride(),
-            indices_tensor.shape(),
-            indices_tensor.stride(),
-            updates_tensor.shape(),
-            updates_tensor.stride(),
-            info,
-        );
-
-        // Todo: maybe we should preallocate this value since its size never changes.
-        let mut error = self
-            .stream
-            .alloc_zeros::<i32>(1)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
-
-        debug!("num_idx_tuple={num_idx_tuples}");
-        debug!("data_rank={num_idx_tuples}");
-        debug!("indices_rank={indices_rank}");
-        debug!("updates_rank={updates_rank}");
-        debug!("info={info:?}");
-        debug!("indices size={}", indices_view.len());
-        debug!("updates size={}", updates_view.len());
-        debug!("output size={}", output_view.len());
-
-        unsafe {
-            scatter_nd::compute(
-                self.stream.clone(),
-                func,
-                num_idx_tuples,
-                data_rank,
-                indices_rank,
-                updates_rank,
-                &info,
-                indices_view.as_ref(),
-                updates_view.as_ref(),
-                output_view.as_mut(),
-                &mut error,
-            )?;
-        }
-
-        let error_buf = scratch_alloc.allocate::<i32>(1)?;
-        self.stream
-            .memcpy_dtoh(&error, error_buf)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
-
-        if error_buf[0] != 0 {
-            return Err(ScatterNdError::KernelFailed { code: error_buf[0] }.into());
-        }
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

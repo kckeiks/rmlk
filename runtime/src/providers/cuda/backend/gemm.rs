@@ -10,8 +10,9 @@ use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
 use num_traits::Num;
+use rmlk_cuda::kernels::add::AddKernel;
 use rmlk_cuda::kernels::gemm::GemmParams;
-use rmlk_cuda::kernels::{binary, gemm};
+use rmlk_cuda::kernels::{add, binary, gemm};
 use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::cmp;
@@ -20,16 +21,26 @@ use std::sync::Arc;
 
 pub struct GemmBackend {
     stream: Arc<CudaStream>,
-    func: CudaFunction,
 }
 
 impl GemmBackend {
-    pub fn new(stream: Arc<CudaStream>, func: CudaFunction) -> Self {
-        Self { stream, func }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
     }
 }
 
 impl GemmBackend {
+    fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
+        let kernel_name = match dtype {
+            DataType::Float16 => AddKernel::FwdAlphaBetaF16,
+            DataType::Float => AddKernel::FwdAlphaBetaF32,
+            DataType::Double => AddKernel::FwdAlphaBetaF64,
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+        };
+
+        add::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+    }
+
     fn prepare_gemm_params(
         &self,
         attrs: &GemmAttributes,
@@ -88,6 +99,8 @@ impl GemmBackend {
     where
         D: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
+        let func = self.load_cuda_function(<D as DataTypeMap>::data_type())?;
+
         // The device data should exist so we will execute the kernel
         // and update the destination device data with the result.
         let c = ctx.get_input(2)?;
@@ -114,7 +127,7 @@ impl GemmBackend {
         unsafe {
             binary::compute_alpha_beta_inplace(
                 &self.stream,
-                self.func,
+                func,
                 beta,
                 D::one(),
                 rank,
@@ -143,9 +156,24 @@ impl GemmBackend {
         let b = ctx.get_input(1)?;
         let y = ctx.get_output(0)?;
 
-        debug!("[a][shape={:?}][stride=[{:?}]", a.shape(), a.stride());
-        debug!("[b][shape={:?}][stride=[{:?}]", b.shape(), b.stride());
-        debug!("[c][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!(
+            "[a][dtype={:?}][shape={:?}][stride=[{:?}]",
+            a.dtype(),
+            a.shape(),
+            a.stride()
+        );
+        debug!(
+            "[b][dtype={:?}][shape={:?}][stride=[{:?}]",
+            b.dtype(),
+            b.shape(),
+            b.stride()
+        );
+        debug!(
+            "[c][dtype={:?}][shape={:?}][stride=[{:?}]",
+            y.dtype(),
+            y.shape(),
+            y.stride()
+        );
 
         let a_dev_data_ref = a.try_dev_data_ptr()?;
         let a_dev_data = a_dev_data_ref.data::<D>();

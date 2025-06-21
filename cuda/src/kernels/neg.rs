@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = NEG;
 
+#[derive(Debug)]
 pub enum NegKernel {
     NegFwdF16,
     NegFwdF32,

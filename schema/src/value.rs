@@ -47,6 +47,7 @@ impl TypeValue {
                             })?);
                         }
                         tensor_shape_proto::mod_Dimension::OneOfvalue::dim_param(_) => {
+                            dims.push(0);
                             has_dynamic_dims = true;
                         }
                         _ => {

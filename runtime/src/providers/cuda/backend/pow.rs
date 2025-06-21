@@ -1,10 +1,11 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+use crate::providers::cuda::backend::{binary, common};
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::pow;
 use rmlk_cuda::kernels::pow::PowKernel;
@@ -86,6 +87,8 @@ impl PowBackend {
             (_, dtype2) => return Err(InternalError::UnsupportedDataType { dtype: dtype2 }.into()),
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         pow::load_kernel(&self.stream.context(), kernel_name).map_err(Into::into)
     }
 
@@ -96,49 +99,20 @@ impl PowBackend {
     {
         let func = self.load_cuda_function(X::data_type(), Y::data_type())?;
 
-        {
-            let x_tensor = ctx.get_input(0)?;
-            let z_tensor = ctx.get_output(0)?;
-            let src_id = x_tensor.src_id();
-            let dst_id = z_tensor.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_within(src_id, dst_id)?;
-        }
-
-        let x_tensor = ctx.get_input(0)?;
-        let rank = x_tensor.shape().len();
-        let x_ptr = x_tensor.try_dev_data_ptr()?;
-        let x_view = x_ptr.data::<X>();
-
-        let y_tensor = ctx.get_input(1)?;
-        let y_ptr = y_tensor.try_dev_data_ptr()?;
-        let y_view = y_ptr.data::<Y>();
-
-        let z_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<X>(&self.stream, z_tensor)?;
-
-        let z_tensor = ctx.get_output(0)?;
-        let mut z_ptr = z_tensor.try_dev_data_ptr_mut()?;
-        let mut z_view = z_ptr.data_mut::<X>();
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let info = scratch_alloc.allocate(3 * rank)?;
-
-        info[..rank].copy_from_slice(x_tensor.shape());
-        info[rank..2 * rank].copy_from_slice(x_tensor.stride());
-        info[2 * rank..].copy_from_slice(y_tensor.stride());
-
         unsafe {
-            pow::compute::<X, Y>(
-                self.stream.clone(),
-                func,
-                rank,
-                info,
-                x_view.as_ref(),
-                y_view.as_ref(),
-                z_view.as_mut(),
-            )?;
+            binary::compute::<X, Y, X>("pow", self.stream.clone(), func, ctx)?;
         }
+
+        common::write_results_binary::<X, Y, X>(
+            "debugging/pow",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

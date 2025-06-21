@@ -8,6 +8,14 @@ const GRAPH_DEFINITION: &str = r#"
     {
       "info": {
         "type": "value",
+        "name": "condition",
+        "dtype": "bool",
+        "shape": [2, 2]
+      }
+    },
+    {
+      "info": {
+        "type": "value",
         "name": "x",
         "dtype": "float",
         "shape": [2, 2]
@@ -21,18 +29,10 @@ const GRAPH_DEFINITION: &str = r#"
         "shape": [2, 2]
       }
     },
-        {
-      "info": {
-        "type": "value",
-        "name": "z",
-        "dtype": "float",
-        "shape": [2, 2]
-      }
-    },
     {
       "info": {
         "type": "value",
-        "name": "x{where(z)}y",
+        "name": "x{where(condition)}y",
         "dtype": "float",
         "shape": [2, 2]
       }
@@ -42,12 +42,12 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "op",
         "name": "where"
       },
-      "input": ["x", "y", "z"],
-      "output": ["x{where(z)}y"]
+      "input": ["condition", "x", "y"],
+      "output": ["x{where(condition)}y"]
     }
   ],
-  "inputs": ["x", "y", "z"],
-  "outputs": ["x{where(z)}y"],
+  "inputs": ["condition", "x", "y"],
+  "outputs": ["x{where(condition)}y"],
   "tensors": []
 }
 "#;
@@ -65,12 +65,16 @@ fn test_run() {
             vec![1.0, 2.0, 3.0, 4.0].try_into().unwrap(),
         ),
         (
-            "z".to_string(),
-            vec![1.0, 0.0, 1.0, 0.0].try_into().unwrap(),
+            "condition".to_string(),
+            vec![true, false, true, false].try_into().unwrap(),
         ),
     ]
     .into();
     let mut output = instance.run(input).unwrap();
-    let data: Vec<f32> = output.remove("x{where(z)}y").unwrap().try_into().unwrap();
+    let data: Vec<f32> = output
+        .remove("x{where(condition)}y")
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(data, vec![11.0, 2.0, 33.0, 4.0]);
 }

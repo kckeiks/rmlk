@@ -7,7 +7,6 @@ use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
-use num_traits::Num;
 use rmlk_cuda::kernels::cast::CastKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
@@ -60,10 +59,13 @@ impl CastBackend {
             (DataType::Uint64, DataType::Float) => CastKernel::U64ToF32,
             (DataType::Uint64, DataType::Double) => CastKernel::U64ToF64,
             (DataType::Uint64, DataType::Uint32) => CastKernel::U64ToU32,
+            (DataType::Bool, DataType::Float) => CastKernel::BoolToF32,
             _ => return Err(CastError::UnsupportedCast { src, dst }.into()),
         };
 
-        rmlk_cuda::load_cast_kernel(self.stream.context(), kernel).map_err(Into::into)
+        debug!("[kernel={:?}]", kernel);
+
+        rmlk_cuda::kernels::cast::load_kernel(self.stream.context(), kernel).map_err(Into::into)
     }
 
     fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
@@ -78,63 +80,68 @@ impl CastBackend {
 
     pub fn compute_cast<I, O>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
-        O: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+        I: DataTypeMap + ValidAsZeroBits + DeviceRepr,
+        O: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     {
-        self.compute_output_shape(ctx)?;
+        {
+            self.compute_output_shape(ctx)?;
 
-        let kernel = self.load_cuda_function(I::data_type(), O::data_type())?;
+            let kernel = self.load_cuda_function(I::data_type(), O::data_type())?;
 
-        let output_tensor = ctx.get_output(0)?;
+            let output_tensor = ctx.get_output(0)?;
 
-        debug!(
-            "[output][shape={:?}][stride=[{:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
 
-        common::init_tensor_device_data::<O>(&self.stream, output_tensor)?;
+            common::init_tensor_device_data::<O>(&self.stream, output_tensor)?;
 
-        let input = ctx.get_input(0)?;
+            let input = ctx.get_input(0)?;
+            let input_dev_data_ref = input.try_dev_data_ptr()?;
+            let input_dev_data = input_dev_data_ref.data::<I>();
 
-        debug!(
-            "[input][shape={:?}][stride=[{:?}]",
-            input.shape(),
-            input.stride()
-        );
+            // The device data should exist so we will execute the kernel
+            // and update the destination device data with the result.
+            let output = ctx.get_output(0)?;
+            let mut output_dev_data_ref = output.dev_data_ptr_mut();
+            let mut output_dev_data = output_dev_data_ref
+                .as_mut()
+                .expect("we already checked that it initialized")
+                .data_mut();
 
-        let input_dev_data_ref = input.try_dev_data_ptr()?;
-        let input_dev_data = input_dev_data_ref.data::<I>();
-
-        // The device data should exist so we will execute the kernel
-        // and update the destination device data with the result.
-        let output = ctx.get_output(0)?;
-        let mut output_dev_data_ref = output.dev_data_ptr_mut();
-        let mut output_dev_data = output_dev_data_ref
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
-
-        let rank = output.shape().len();
-
-        let info_buffer = ctx.execution_state().scratch_alloc().allocate(2 * rank)?;
-        info_buffer[..rank].copy_from_slice(output.shape());
-        info_buffer[rank..2 * rank].copy_from_slice(input.stride());
-
-        unsafe {
-            rmlk_cuda::kernels::unary::explicit_io_types_compute::<I, O>(
-                &self.stream,
-                kernel,
-                &input_dev_data,
-                &mut output_dev_data,
-            )?;
+            unsafe {
+                rmlk_cuda::kernels::unary::explicit_io_types_compute::<I, O>(
+                    &self.stream,
+                    kernel,
+                    &input_dev_data,
+                    &mut output_dev_data,
+                )?;
+            }
         }
+
+        common::write_results_cast::<I, O>("debugging/cast", self.stream.clone(), ctx)?;
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
 
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let in_dtype = ctx.get_input(0)?.dtype();
+        let input = ctx.get_input(0)?;
+
+        debug!(
+            "[input][dtype={:?}][shape={:?}][stride=[{:?}]",
+            input.dtype(),
+            input.shape(),
+            input.stride()
+        );
+
+        let in_dtype = input.dtype();
         let out_dtype = ctx
             .get_attributes()
             .map(|attrs| cast::get_value(&attrs))
@@ -179,6 +186,7 @@ impl CastBackend {
             (DataType::Uint64, DataType::Float) => self.compute_cast::<u64, f32>(ctx),
             (DataType::Uint64, DataType::Double) => self.compute_cast::<u64, f64>(ctx),
             (DataType::Uint64, DataType::Uint32) => self.compute_cast::<u64, u32>(ctx),
+            (DataType::Bool, DataType::Float) => self.compute_cast::<bool, f32>(ctx),
             _ => Err(CastError::UnsupportedCast {
                 src: in_dtype,
                 dst: out_dtype,

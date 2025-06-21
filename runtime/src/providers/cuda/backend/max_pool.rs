@@ -26,6 +26,13 @@ impl MaxPoolBackend {
     fn comput_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
+        debug!(
+            "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
+            x.dtype(),
+            x.shape(),
+            x.stride()
+        );
+
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
 
@@ -50,10 +57,10 @@ impl MaxPoolBackend {
         )?;
 
         let y = ctx.get_output(0)?;
-        let y_index = y.dst_id();
+        let dst_id = y.dst_id();
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
         ctx.execution_state_mut()
-            .copy_shape_from_slice(shape, y_index)?;
+            .copy_shape_from_slice(shape, dst_id)?;
 
         Ok(())
     }
@@ -67,8 +74,12 @@ impl MaxPoolBackend {
         let x = ctx.get_input(0)?;
         let y = ctx.get_output(0)?;
 
-        debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-        debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+        debug!(
+            "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
+            y.dtype(),
+            y.shape(),
+            y.stride()
+        );
 
         let attrs = ctx
             .get_attributes()

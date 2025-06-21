@@ -33,7 +33,7 @@ const GRAPH_DEFINITION: &str = r#"
       "info": {
         "type": "value",
         "name": "constantofshape(a+b)",
-        "shape": [2]
+        "shape": [3, 4]
       }
     },
     {
@@ -50,7 +50,7 @@ const GRAPH_DEFINITION: &str = r#"
         "type": "value",
         "name": "constantofshape(a+b)+const1",
         "dtype": "float",
-        "shape": [2]
+        "shape": [3, 4]
       }
     },
     {

@@ -1,12 +1,12 @@
-#define LONG_TERNARY_OP(TYPENAME, FORWARD, FUNC) \
+#define LONG_TERNARY_OP_WITH_TYPES(TYPENAME_X, TYPENAME_Y, TYPENAME_Z, TYPENAME_OUT, FORWARD, FUNC) \
 extern "C" __global__ void FORWARD( \
     const size_t num_elems,        /* The number of elements in the output.     */\
     const size_t rank,             /* The rank of input tensor (must be > 0).   */\
     const size_t *info,            /* The shape and stride of the input.        */\
-    const TYPENAME *x_data,        /* The input tensor data.                    */\
-    const TYPENAME *y_data,        /* The input tensor data.                    */\
-    const TYPENAME *z_data,        /* The input tensor data.                    */\
-    TYPENAME *out                  /* The output data.                          */\
+    const TYPENAME_X *x_data,      /* The input tensor data.                    */\
+    const TYPENAME_Y *y_data,      /* The input tensor data.                    */\
+    const TYPENAME_Z *z_data,      /* The input tensor data.                    */\
+    TYPENAME_OUT *out              /* The output data.                          */\
 ) { \
     const size_t *dims = info; \
     const size_t *x_strides = info + rank; \
@@ -24,14 +24,17 @@ extern "C" __global__ void FORWARD( \
             z_i += i_dim * z_strides[d]; \
             tmp_i /= dims[d]; \
         } \
-        TYPENAME x = x_data ? x_data[x_i] : out[i]; \
-        TYPENAME y = y_data ? y_data[y_i] : out[i]; \
-        TYPENAME z = z_data ? z_data[z_i] : out[i]; \
-        TYPENAME fx; \
+        TYPENAME_X x = x_data[x_i]; \
+        TYPENAME_Y y = y_data[y_i]; \
+        TYPENAME_Z z = z_data[z_i]; \
+        TYPENAME_OUT fx; \
         FUNC\
         out[i] = fx; \
     } \
 } \
 
 #define TERNARY_OP(TYPENAME, FORWARD, FUNC) \
-    LONG_TERNARY_OP(TYPENAME, FORWARD, fx = (FUNC);)
+    LONG_TERNARY_OP_WITH_TYPES(TYPENAME, TYPENAME, TYPENAME, TYPENAME, FORWARD, fx = (FUNC);)
+
+#define TERNARY_OP_WITH_TYPENAME_Z(TYPENAME, TYPENAME_Z, FORWARD, FUNC) \
+    LONG_TERNARY_OP_WITH_TYPES(TYPENAME, TYPENAME, TYPENAME_Z, TYPENAME, FORWARD, fx = (FUNC);)

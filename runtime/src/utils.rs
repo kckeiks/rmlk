@@ -27,8 +27,6 @@ pub fn compute_broadcast_stride(
     b_stride: &[usize],
     strides: &mut [usize],
 ) {
-    assert!(a_shape.len() > 0 || b_shape.len() > 0);
-
     let mid = cmp::max(a_shape.len(), b_shape.len());
 
     assert_eq!(mid, strides.len() / 2);
@@ -83,7 +81,7 @@ pub fn compute_broadcast_stride_from_output_shape(
 pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize]) -> bool {
     let ndims = dst.len();
 
-    debug_assert_eq!(ndims, cmp::max(a.len(), b.len()));
+    debug_assert!(ndims >= cmp::max(a.len(), b.len()));
 
     // Compute offsets for aligning shorter arrays with the destination.
     let a_offset = ndims - a.len();
@@ -233,14 +231,6 @@ where
     Ok(())
 }
 
-// Todo: Move to utils after refactor.
-// Todo: What should we do if the chunk_size does not divide the length of the input?
-pub fn to_float_vec(data: &[u8]) -> Vec<f32> {
-    data.chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-        .collect()
-}
-
 pub trait FromBytes: Sized {
     fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>>;
 }
@@ -364,6 +354,14 @@ impl FromBytes for u64 {
     }
 }
 
+impl FromBytes for bool {
+    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
+        // Each byte is one boolean.
+        let vec = bytes.iter().map(|&b| b != 0).collect();
+        Ok(vec)
+    }
+}
+
 pub trait FromF32 {
     fn from_f32(value: f32) -> Self;
 }
@@ -380,9 +378,32 @@ impl FromF32 for f16 {
     }
 }
 
+pub fn write_info<T>(shape: &[T], stride: &[T], dst: &mut [T], start: usize)
+where
+    T: Copy,
+{
+    dst[start..start + shape.len()].copy_from_slice(shape);
+    dst[start + shape.len()..start + shape.len() + stride.len()].copy_from_slice(stride);
+}
+
+pub fn create_3d_shape_and_stride(shape: &[usize]) -> ([usize; 3], [usize; 3]) {
+    match shape.len() {
+        0 => ([1, 1, 1], [1, 1, 1]),
+        1 => ([1, 1, shape[0]], [shape[0], shape[0], 1]),
+        2 => ([1, shape[0], shape[1]], [shape[0] * shape[1], shape[1], 1]),
+        rank => {
+            let batch = shape[..rank - 2].iter().product::<usize>();
+            (
+                [batch, shape[rank - 2], shape[rank - 1]],
+                [shape[rank - 2] * shape[rank - 1], shape[rank - 1], 1],
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::utils::derive_range;
+    use crate::utils::{compute_broadcast_output_shape, derive_range};
     use num_traits::ToPrimitive;
 
     #[test]
@@ -420,5 +441,85 @@ mod test {
         assert_eq!(end, 0);
 
         assert!(derive_range(-1, -2, input.len()).is_err());
+    }
+
+    #[test]
+    fn test_scalar_and_tensor() {
+        let a: &[usize] = &[]; // scalar
+        let b: &[usize] = &[3, 4]; // tensor
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [3, 4]);
+    }
+
+    #[test]
+    fn test_tensor_and_scalar() {
+        let a: &[usize] = &[3, 4];
+        let b: &[usize] = &[]; // scalar
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [3, 4]);
+    }
+
+    #[test]
+    fn test_equal_shapes() {
+        let a = &[2, 5];
+        let b = &[2, 5];
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [2, 5]);
+    }
+
+    #[test]
+    fn test_broadcastable_shapes() {
+        let a = &[1, 5];
+        let b = &[3, 1];
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [3, 5]);
+    }
+
+    #[test]
+    fn test_incompatible_shapes() {
+        let a = &[2, 3];
+        let b = &[3, 2];
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_high_dimensional() {
+        let a = &[1, 1, 10, 1];
+        let b = &[4, 3, 1, 5];
+        let mut dst = [0; 4];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [4, 3, 10, 5]);
+    }
+
+    #[test]
+    fn test_one_dim_vs_two_dim() {
+        let a = &[5];
+        let b = &[3, 1];
+        let mut dst = [0; 2];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, [3, 5]);
+    }
+
+    #[test]
+    fn test_scalar_and_scalar() {
+        let a: &[usize] = &[];
+        let b: &[usize] = &[];
+        let mut dst = [];
+        let expected: [usize; 0] = [];
+        let result = compute_broadcast_output_shape(a, b, &mut dst);
+        assert!(result);
+        assert_eq!(dst, expected);
     }
 }

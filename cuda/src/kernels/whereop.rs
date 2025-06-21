@@ -1,12 +1,39 @@
+use crate::error::Result;
 use crate::ptx::WHERE;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "where";
 pub const FWD_FN_NAMES: [&'static str; 3] = ["where_fwd_f16", "where_fwd_f32", "where_fwd_f64"];
 pub const PTX_SRC: &str = WHERE;
+
+pub enum WhereKernel {
+    WhereFwdF16,
+    WhereFwdF32,
+    WhereFwdF64,
+    WhereFwdI32,
+    WhereFwdI64,
+}
+
+impl From<WhereKernel> for &'static str {
+    fn from(value: WhereKernel) -> Self {
+        match value {
+            WhereKernel::WhereFwdF16 => "where_fwd_f16",
+            WhereKernel::WhereFwdF32 => "where_fwd_f32",
+            WhereKernel::WhereFwdF64 => "where_fwd_f64",
+            WhereKernel::WhereFwdI32 => "where_fwd_i32",
+            WhereKernel::WhereFwdI64 => "where_fwd_i64",
+        }
+    }
+}
+
+pub fn load_kernel(ctx: Arc<CudaContext>, kernel_name: WhereKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
 
 /// Launches a CUDA kernel that performs an element-wise conditional selection (`where` operation).
 ///
@@ -34,9 +61,9 @@ pub unsafe fn compute<T>(
     info_buffer: &[usize],
     x_data: &CudaSlice<T>,
     y_data: &CudaSlice<T>,
-    z_data: &CudaSlice<T>,
+    z_data: &CudaSlice<bool>,
     output_data: &mut CudaSlice<T>,
-) -> crate::error::Result<()>
+) -> Result<()>
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
@@ -76,10 +103,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::kernels::whereop::compute;
+    use crate::kernels::whereop::{compute, load_kernel, WhereKernel};
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataType, Op};
 
     fn create_info_buffer(
         output_shape: &[usize],
@@ -116,9 +142,9 @@ mod test {
         let z_shape = vec![2, 2];
         let mut z_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&z_shape, &mut z_stride);
-        let z_data = stream.memcpy_stod(&vec![1.0, 0.0, 0.0, 1.0]).unwrap();
+        let z_data = stream.memcpy_stod(&vec![true, false, false, true]).unwrap();
 
-        let f = utils::load_kernel(&ctx, Op::Where, DataType::Float).unwrap();
+        let f = load_kernel(ctx.clone(), WhereKernel::WhereFwdF32).unwrap();
 
         let output_shape = vec![2, 2];
         let mut out_data = stream

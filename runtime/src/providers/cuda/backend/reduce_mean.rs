@@ -8,19 +8,38 @@ use crate::utils;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
+use rmlk_cuda::kernels::reduce_mean::ReduceKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ReduceMeanBackend {
     stream: Arc<CudaStream>,
-    kernel: CudaFunction,
 }
 
 impl ReduceMeanBackend {
-    pub fn new(stream: Arc<CudaStream>, kernel: CudaFunction) -> Self {
-        Self { stream, kernel }
+    pub fn new(stream: Arc<CudaStream>) -> Self {
+        Self { stream }
+    }
+
+    fn load_cuda_function(&self, dtype: DataType) -> Result<CudaFunction> {
+        let kernel = match dtype {
+            DataType::Float16 => ReduceKernel::FwdF16,
+            DataType::Float => ReduceKernel::FwdF32,
+            DataType::Double => ReduceKernel::FwdF64,
+            DataType::Int32 => ReduceKernel::FwdI32,
+            DataType::Int64 => ReduceKernel::FwdI64,
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+        };
+
+        debug!("[kernel={:?}]", kernel);
+
+        Ok(rmlk_cuda::kernels::reduce_mean::load_kernel(
+            self.stream.context().clone(),
+            kernel,
+        )?)
     }
 
     fn compute_output_shape(&mut self, axes: &[usize], ctx: &mut Context<Cuda>) -> Result<()> {
@@ -30,16 +49,19 @@ impl ReduceMeanBackend {
         let alloc = ctx.execution_state().scratch_alloc().clone();
         let reduced = alloc.allocate::<bool>(rank)?;
 
-        for axis in axes.iter().copied() {
-            if axis > rank {
-                return Err(ReduceMeanError::AxisOutOfBounds.into());
-            }
+        // Todo: this if was added to handle scalars. Revisit.
+        if rank > 0 {
+            for axis in axes.iter().copied() {
+                if axis > rank {
+                    return Err(ReduceMeanError::AxisOutOfBounds.into());
+                }
 
-            if reduced[axis] {
-                return Err(ReduceMeanError::DuplicateAxis.into());
-            }
+                if reduced[axis] {
+                    return Err(ReduceMeanError::DuplicateAxis.into());
+                }
 
-            reduced[axis] = true;
+                reduced[axis] = true;
+            }
         }
 
         let keep_dims = ctx
@@ -107,11 +129,28 @@ impl ReduceMeanBackend {
     where
         I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        let rank = ctx.get_input(0)?.shape().len();
+        let func = self.load_cuda_function(I::data_type())?;
+
+        let input = ctx.get_input(0)?;
+
+        debug!(
+            "[input][dtype={:?}][shape={:?}][stride={:?}]",
+            input.dtype(),
+            input.shape(),
+            input.stride()
+        );
+
+        let rank = if input.is_scalar() {
+            1
+        } else {
+            input.shape().len()
+        };
+
         let alloc = ctx.execution_state().scratch_alloc().clone();
 
-        let noop_with_empty_axes = ctx
-            .get_attributes()
+        let attrs = ctx.get_attributes();
+        let noop_with_empty_axes = attrs
+            .as_ref()
             .map(|attrs| reduce_mean::get_noop_with_empty_axes(&attrs))
             .unwrap_or(false);
 
@@ -119,10 +158,17 @@ impl ReduceMeanBackend {
         let axes = {
             match ctx.get_input(1).ok() {
                 Some(tensor) => {
+                    debug!(
+                        "[axes][dtype={:?}][shape={:?}][stride={:?}]",
+                        tensor.dtype(),
+                        tensor.shape(),
+                        tensor.stride()
+                    );
+
                     let axes_dev_ptr = tensor.try_dev_data_ptr()?;
                     let axes_dev_data = axes_dev_ptr.data::<i64>();
 
-                    if axes_dev_data.len() > 0 {
+                    if !axes_dev_data.is_empty() {
                         let raw_axes = alloc.allocate::<i64>(axes_dev_data.len())?;
                         self.stream
                             .memcpy_dtoh(axes_dev_data.as_ref(), raw_axes)
@@ -130,14 +176,31 @@ impl ReduceMeanBackend {
                         let axes = alloc.allocate::<usize>(axes_dev_data.len())?;
                         utils::normalize_indices(raw_axes, axes, rank)?;
                         Some(axes)
-                    } else {
+                    } else if !tensor.is_scalar() {
                         None
+                    } else {
+                        return Err(ReduceMeanError::ScalarAxisNotAllowed.into());
                     }
                 }
                 None => {
-                    let buf = alloc.allocate::<usize>(rank)?;
-                    utils::write_increasing_sequence(buf)?;
-                    Some(buf)
+                    if let Some(raw_axes) =
+                        attrs.as_ref().and_then(|attr| reduce_mean::get_axes(&attr))
+                    {
+                        if !raw_axes.is_empty() {
+                            let raw_axes =
+                                alloc.allocate_and_convert_from_slice::<i32, i64>(raw_axes)?;
+                            let axes = alloc.allocate::<usize>(raw_axes.len())?;
+                            utils::normalize_indices(raw_axes, axes, rank)?;
+                            Some(axes)
+                        } else {
+                            None
+                        }
+                    } else {
+                        debug!("[no `AXES` tensor]");
+                        let buf = alloc.allocate::<usize>(rank)?;
+                        utils::write_increasing_sequence(buf)?;
+                        Some(buf)
+                    }
                 }
             }
         };
@@ -155,15 +218,20 @@ impl ReduceMeanBackend {
             self.compute_output_shape(&axes, ctx)?;
 
             let input = ctx.get_input(0)?;
+            let (input_shape, input_stride) = if input.is_scalar() {
+                ([1].as_ref(), [1].as_ref())
+            } else {
+                (input.shape(), input.stride())
+            };
 
             let mut reduced_dim_prod = 1;
             for axis in axes.iter().copied() {
-                reduced_dim_prod *= input.shape()[axis]
+                reduced_dim_prod *= input_shape[axis]
             }
 
             let info = alloc.allocate(2 * rank)?;
-            info[..rank].copy_from_slice(input.shape());
-            info[rank..2 * rank].copy_from_slice(input.stride());
+            info[..rank].copy_from_slice(input_shape);
+            info[rank..2 * rank].copy_from_slice(input_stride);
 
             let input_dev_ptr = input.try_dev_data_ptr()?;
             let input_dev_data = input_dev_ptr.data::<I>();
@@ -171,13 +239,21 @@ impl ReduceMeanBackend {
             common::init_tensor_device_data::<I>(&self.stream, ctx.get_output(0)?)?;
 
             let output = ctx.get_output(0)?;
+
+            debug!(
+                "[output][dtype={:?}][shape={:?}][stride={:?}]",
+                output.dtype(),
+                output.shape(),
+                output.stride()
+            );
+
             let mut output_dev_ptr = output.try_dev_data_ptr_mut()?;
             let mut output_dev_data = output_dev_ptr.data_mut::<I>();
 
             unsafe {
                 rmlk_cuda::kernels::reduce_mean::compute(
                     self.stream.clone(),
-                    self.kernel,
+                    func,
                     reduced_dim_prod,
                     axes,
                     rank,
@@ -189,6 +265,16 @@ impl ReduceMeanBackend {
         } else {
             self.copy_input_to_output::<I>(ctx)?;
         }
+
+        common::write_results_reduce_mean::<I, i64>(
+            "debugging/reduce_mean",
+            self.stream.clone(),
+            ctx,
+        )?;
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -212,6 +298,7 @@ pub enum ReduceMeanError {
     AxisOutOfBounds,
     DuplicateAxis,
     AxesLargerThanRank,
+    ScalarAxisNotAllowed,
 }
 
 impl Display for ReduceMeanError {

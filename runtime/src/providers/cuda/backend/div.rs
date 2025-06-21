@@ -5,6 +5,7 @@ use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
+use log::debug;
 use num_traits::Num;
 use rmlk_cuda::kernels::div;
 use rmlk_cuda::kernels::div::DivKernel;
@@ -34,6 +35,8 @@ impl DivBackend {
             }
         };
 
+        debug!("[kernel={:?}]", kernel_name);
+
         div::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
@@ -42,7 +45,21 @@ impl DivBackend {
         D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         let func = self.load_cuda_function(D::data_type())?;
-        unsafe { binary::compute::<D, D, D>("div", self.stream, func, ctx) }
+        unsafe {
+            binary::compute::<D, D, D>("div", self.stream.clone(), func, ctx)?;
+        }
+        super::common::write_results_binary::<D, D, D>(
+            "debugging/div",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )
+        .unwrap();
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+
+        Ok(())
     }
 
     pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {

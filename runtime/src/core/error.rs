@@ -154,6 +154,7 @@ pub enum InternalError {
     UnsupportedInputValues {
         message: String,
     },
+    ScalarInputsAreNotAllowed,
 }
 
 impl InternalError {
@@ -270,6 +271,9 @@ impl Display for InternalError {
             }
             InternalError::UnsupportedInputValues { message } => {
                 write!(f, "unsupported input values `{message}`")
+            }
+            InternalError::ScalarInputsAreNotAllowed => {
+                write!(f, "scalar inputs are not allowed")
             }
         }
     }

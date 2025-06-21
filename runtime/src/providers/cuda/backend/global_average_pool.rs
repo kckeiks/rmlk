@@ -25,6 +25,13 @@ impl GlobalAverageBackend {
     fn comput_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
+        debug!(
+            "[x][dtype={:?}][global_avg_pool][shape={:?}][stride=[{:?}]",
+            x.dtype(),
+            x.shape(),
+            x.stride()
+        );
+
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
         let y_shape_original = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
@@ -50,17 +57,11 @@ impl GlobalAverageBackend {
         self.comput_output_shape(ctx)?;
 
         let x = ctx.get_input(0)?;
-
-        debug!(
-            "[x][global_avg_pool][shape={:?}][stride=[{:?}]",
-            x.shape(),
-            x.stride()
-        );
-
         let y = ctx.get_output(0)?;
 
         debug!(
-            "[y][global_avg_pool][shape={:?}][stride=[{:?}]",
+            "[y][dtype={:?}][global_avg_pool][shape={:?}][stride=[{:?}]",
+            y.dtype(),
             y.shape(),
             y.stride()
         );

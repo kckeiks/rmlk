@@ -17,11 +17,13 @@ pub mod global_average_pool;
 pub mod greater;
 pub mod matmul;
 pub mod max_pool;
+pub mod mul;
 pub mod neg;
 pub mod pow;
 pub mod range;
 pub mod reduce_mean;
 mod relu;
+pub mod reshape;
 pub mod scatter_nd;
 pub mod shape;
 pub mod sigmoid;
@@ -48,6 +50,7 @@ use crate::providers::cuda::backend::equal::EqualBackend;
 use crate::providers::cuda::backend::gather::GatherBackend;
 use crate::providers::cuda::backend::greater::GreaterBackend;
 use crate::providers::cuda::backend::matmul::MatMulBackend;
+use crate::providers::cuda::backend::reshape::ReshapeBackend;
 use crate::providers::cuda::backend::scatter_nd::ScatterNdBackend;
 use crate::providers::cuda::backend::shape::ShapeBackend;
 use crate::providers::cuda::backend::sqrt::SqrtBackend;
@@ -60,6 +63,7 @@ use crate::providers::cuda::expand::ExpandBackend;
 use crate::providers::cuda::gemm::GemmBackend;
 use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::mul::MulBackend;
 use crate::providers::cuda::neg::NegBackend;
 use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
@@ -92,12 +96,14 @@ pub enum CudaKernel {
     GlobalAveragePool(GlobalAverageBackend),
     Greater(GreaterBackend),
     MaxPool(MaxPoolBackend),
+    Mul(MulBackend),
     Neg(NegBackend),
     Flatten(FlattenTemplate), // Todo: How will we handle Flatten, for example?
     MatMul(MatMulBackend),
     Pow(PowBackend),
     Range(RangeBackend),
     ReduceMean(ReduceMeanBackend),
+    Reshape(ReshapeBackend),
     ScatterNd(ScatterNdBackend),
     Shape(ShapeBackend),
     Sigmoid(ActivationBackend),
@@ -132,11 +138,13 @@ impl OperationBackend<Cuda> for CudaKernel {
             CudaKernel::Greater(kernel) => kernel.compute(ctx),
             CudaKernel::MatMul(kernel) => kernel.compute(ctx),
             CudaKernel::MaxPool(kernel) => kernel.compute(ctx),
+            CudaKernel::Mul(kernel) => kernel.compute(ctx),
             CudaKernel::Flatten(kernel) => kernel.compute(ctx),
             CudaKernel::Neg(kernel) => kernel.compute(ctx),
             CudaKernel::Pow(kernel) => kernel.compute(ctx),
             CudaKernel::Range(backend) => backend.compute(ctx),
             CudaKernel::ReduceMean(backend) => backend.compute(ctx),
+            CudaKernel::Reshape(backend) => backend.compute(ctx),
             CudaKernel::ScatterNd(kernel) => kernel.compute(ctx),
             CudaKernel::Shape(kernel) => kernel.compute(ctx),
             CudaKernel::Sigmoid(kernel) => kernel.compute::<SigmoidKernel>(ctx),

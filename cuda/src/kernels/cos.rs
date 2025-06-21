@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub const PTX_SRC: &str = COS;
 
+#[derive(Debug)]
 pub enum CosKernel {
     CosFwdF16,
     CosFwdF32,

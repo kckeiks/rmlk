@@ -45,7 +45,8 @@ pub fn build(test_def: &str) -> Builder {
                 if let Some(shape) = shape {
                     schema_node.set_type_value(TypeValue::Tensor {
                         dims: shape,
-                        ty: dtype.unwrap_or(DataType::Float) as i32,
+                        ty: dtype.unwrap_or(DataType::Float).into(),
+                        has_dynamic_dims: false,
                     })
                 }
             }
@@ -106,11 +107,12 @@ pub fn build(test_def: &str) -> Builder {
             int32_data: vec![],
             string_data: vec![],
             int64_data: vec![],
-            name: None,
+            name: Some(tensor.name.clone()),
             doc_string: None,
             raw_data: None,
-            double_data: vec![],
+            double_data: tensor.content.double(),
             uint64_data: vec![],
+            bool_data: tensor.content.bool(),
         };
 
         initializers.insert(*id, tensor);

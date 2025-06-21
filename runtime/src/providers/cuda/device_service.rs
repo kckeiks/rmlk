@@ -19,10 +19,12 @@ use crate::providers::cuda::global_average_pool::GlobalAverageBackend;
 use crate::providers::cuda::greater::GreaterBackend;
 use crate::providers::cuda::matmul::MatMulBackend;
 use crate::providers::cuda::max_pool::MaxPoolBackend;
+use crate::providers::cuda::mul::MulBackend;
 use crate::providers::cuda::neg::NegBackend;
 use crate::providers::cuda::pow::PowBackend;
 use crate::providers::cuda::range::RangeBackend;
 use crate::providers::cuda::reduce_mean::ReduceMeanBackend;
+use crate::providers::cuda::reshape::ReshapeBackend;
 use crate::providers::cuda::scatter_nd::ScatterNdBackend;
 use crate::providers::cuda::shape::ShapeBackend;
 use crate::providers::cuda::sin::SinBackend;
@@ -36,7 +38,8 @@ use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
 use crate::providers::cuda::CudaKernel;
 use anyhow::{anyhow, Result};
-use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr};
+use cudarc::driver::{CudaStream, DeviceRepr};
+use half::f16;
 use rmlk_schema::{DataType, DataTypeMap, Op};
 use std::sync::Arc;
 
@@ -47,10 +50,6 @@ pub struct Cuda {
 impl Cuda {
     pub fn new(stream: Arc<CudaStream>) -> Self {
         Self { stream }
-    }
-
-    fn load_kernel(&self, op: Op, dtype: DataType) -> Result<CudaFunction> {
-        Ok(rmlk_cuda::load_kernel(self.stream.context(), op, dtype)?)
     }
 
     pub fn htod<T>(&self, data: Vec<T>) -> Result<CudaData>
@@ -80,13 +79,9 @@ impl DeviceService for Cuda {
     type Data = CudaData;
     type Backend = CudaKernel;
 
-    fn get_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend> {
+    fn get_backend(&self, op: Op, _dtype: DataType) -> Result<Self::Backend> {
         let kernel = match op {
-            Op::Add => {
-                // Todo: At what point should we load the kernel on device?
-                let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Add(AdditionBackend::new(self.stream.clone(), f))
-            }
+            Op::Add => CudaKernel::Add(AdditionBackend::new(self.stream.clone())),
             Op::Cast => CudaKernel::Cast(CastBackend::new(&self.stream)),
             Op::Concat => CudaKernel::Concat(ConcatBackend::new(&self.stream)),
             Op::Constant => CudaKernel::Constant(ConstantBackend::new(&self.stream)),
@@ -98,11 +93,7 @@ impl DeviceService for Cuda {
             Op::Expand => CudaKernel::Expand(ExpandBackend::new(&self.stream)),
             Op::Equal => CudaKernel::Equal(EqualBackend::new(self.stream.clone())),
             Op::Gather => CudaKernel::Gather(GatherBackend::new(self.stream.clone())),
-            Op::Gemm => {
-                let f =
-                    rmlk_cuda::load_add_kernel_alpha_beta_inplace(self.stream.context(), dtype)?;
-                CudaKernel::Gemm(GemmBackend::new(self.stream.clone(), f))
-            }
+            Op::Gemm => CudaKernel::Gemm(GemmBackend::new(self.stream.clone())),
             Op::Greater => CudaKernel::Greater(GreaterBackend::new(self.stream.clone())),
             Op::Relu => CudaKernel::Relu(ActivationBackend::new(self.stream.clone())),
             Op::Conv => CudaKernel::Conv(ConvolutionBackend::new(self.stream.clone())),
@@ -110,33 +101,26 @@ impl DeviceService for Cuda {
                 CudaKernel::GlobalAveragePool(GlobalAverageBackend::new(self.stream.clone()))
             }
             Op::MaxPool => CudaKernel::MaxPool(MaxPoolBackend::new(self.stream.clone())),
+            Op::Mul => CudaKernel::Mul(MulBackend::new(self.stream.clone())),
             Op::Neg => CudaKernel::Neg(NegBackend::new(self.stream.clone())),
             Op::Flatten => CudaKernel::Flatten(FlattenTemplate::new()),
             Op::MatMul => CudaKernel::MatMul(MatMulBackend::new(&self.stream)),
             Op::Pow => CudaKernel::Pow(PowBackend::new(self.stream.clone())),
-            Op::ReduceMean => {
-                let f = self.load_kernel(op, dtype)?;
-                CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone(), f))
-            }
+            Op::ReduceMean => CudaKernel::ReduceMean(ReduceMeanBackend::new(self.stream.clone())),
             Op::Range => CudaKernel::Range(RangeBackend::new(&self.stream)),
+            Op::Reshape => CudaKernel::Reshape(ReshapeBackend::new(self.stream.clone())),
             Op::ScatterND => CudaKernel::ScatterNd(ScatterNdBackend::new(&self.stream)),
             Op::Shape => CudaKernel::Shape(ShapeBackend::new(&self.stream)),
             Op::Sin => CudaKernel::Sin(SinBackend::new(self.stream.clone())),
             Op::Sigmoid => CudaKernel::Sigmoid(ActivationBackend::new(self.stream.clone())),
             Op::Slice => CudaKernel::Slice(SliceBackend::new(&self.stream)),
             Op::Softmax => CudaKernel::Softmax(SoftmaxBackend::new(&self.stream)),
-            Op::Sqrt => {
-                let kernel = self.load_kernel(op, dtype)?;
-                CudaKernel::Sqrt(SqrtBackend::new(&self.stream, kernel))
-            }
+            Op::Sqrt => CudaKernel::Sqrt(SqrtBackend::new(&self.stream)),
             Op::Sub => CudaKernel::Sub(SubBackend::new(self.stream.clone())),
             Op::Transpose => CudaKernel::Transpose(TransposeBackend::new(self.stream.clone())),
             Op::Trilu => CudaKernel::Trilu(TriluBackend::new(&self.stream)),
             Op::Unsqueeze => CudaKernel::Unsqueeze(UnsqueezeBackend::new(&self.stream)),
-            Op::Where => {
-                let f = self.load_kernel(op, dtype)?;
-                CudaKernel::Where(WhereBackend::new(self.stream.clone(), f))
-            }
+            Op::Where => CudaKernel::Where(WhereBackend::new(self.stream.clone())),
             op => {
                 return Err(anyhow!("no backend for op `{op:?}`"));
             }
@@ -145,8 +129,20 @@ impl DeviceService for Cuda {
         Ok(kernel)
     }
 
+    fn htod_float16(&self, data: Vec<f16>) -> Result<Self::Data> {
+        self.htod(data)
+    }
+
     fn htod_float(&self, data: Vec<f32>) -> Result<CudaData> {
         self.htod(data)
+    }
+
+    fn htod_double(&self, data: Vec<f64>) -> Result<CudaData> {
+        self.htod(data)
+    }
+
+    fn dtoh_float16(&self, data: &Self::Data) -> Result<Vec<f16>> {
+        self.dtoh(data)
     }
 
     fn dtoh_float(&self, data: &CudaData) -> Result<Vec<f32>> {

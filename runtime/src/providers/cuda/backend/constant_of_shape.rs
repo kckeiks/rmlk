@@ -35,9 +35,9 @@ impl ConstantOfShapeBackend {
             let input = ctx.get_input(0)?;
 
             debug!(
-                "[input][shape={:?}][strides={:?}]",
+                "[input][dtype=i64][shape={:?}][strides={:?}]",
                 input.shape(),
-                input.shape()
+                input.stride()
             );
 
             let input_size = input.shape().iter().product();
@@ -65,9 +65,10 @@ impl ConstantOfShapeBackend {
         let output = ctx.get_output(0)?;
 
         debug!(
-            "[output][shape={:?}][strides={:?}]",
+            "[output][dtype={:?}][shape={:?}][strides={:?}]",
+            output.dtype(),
             output.shape(),
-            output.shape()
+            output.stride()
         );
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
@@ -80,6 +81,10 @@ impl ConstantOfShapeBackend {
         self.stream
             .memcpy_htod(on_host_data, output_data_view.as_mut())
             .map_err(|e| InternalError::Device { error: e.into() })?;
+
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

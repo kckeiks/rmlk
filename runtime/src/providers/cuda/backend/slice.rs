@@ -2,12 +2,13 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
-use crate::utils;
 use anyhow::Result;
-use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
+use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
 use num_traits::{Num, PrimInt, Signed, ToPrimitive};
+use rmlk_cuda::kernels::slice;
+use rmlk_cuda::kernels::slice::SliceKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
@@ -23,29 +24,156 @@ impl SliceBackend {
         }
     }
 
-    fn compute_output_shape<Tind>(
-        &mut self,
-        axes: &[usize],
-        starts: &[Tind],
-        ends: &[Tind],
-        steps: Option<&[Tind]>,
-        ctx: &mut Context<Cuda>,
-    ) -> Result<()>
+    fn load_cuda_function(&self, dtype: DataType, indices_dtype: DataType) -> Result<CudaFunction> {
+        let kernel_name = match (dtype, indices_dtype) {
+            (DataType::Float16, DataType::Int32) => SliceKernel::FwdF16WithIndexI32,
+            (DataType::Float16, DataType::Int64) => SliceKernel::FwdF16WithIndexI64,
+            (DataType::Float, DataType::Int32) => SliceKernel::FwdF32WithIndexI32,
+            (DataType::Float, DataType::Int64) => SliceKernel::FwdF32WithIndexI64,
+            (DataType::Double, DataType::Int32) => SliceKernel::FwdF64WithIndexI32,
+            (DataType::Double, DataType::Int64) => SliceKernel::FwdF64WithIndexI64,
+            (DataType::Int32, DataType::Int32) => SliceKernel::FwdI32WithIndexI32,
+            (DataType::Int32, DataType::Int64) => SliceKernel::FwdI32WithIndexI64,
+            (DataType::Int64, DataType::Int32) => SliceKernel::FwdI64WithIndexI32,
+            (DataType::Int64, DataType::Int64) => SliceKernel::FwdI64WithIndexI64,
+            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+        };
+
+        debug!("[kernel={:?}]", kernel_name);
+
+        slice::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+    }
+
+    fn compute_output_shape<Tind>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         Tind: DataTypeMap
             + ValidAsZeroBits
             + DeviceRepr
             + Num
+            + Default
             + Copy
             + Signed
-            + ToPrimitive
-            + PrimInt,
+            + PrimInt
+            + Debug
+            + TryFrom<usize>,
+        <Tind as TryFrom<usize>>::Error: Debug,
+        i64: From<Tind>,
     {
+        let input_tensor = ctx.get_input(0)?;
+
+        debug!(
+            "[input][dtype={:?}][shape={:?}][strides={:?}]",
+            input_tensor.dtype(),
+            input_tensor.shape(),
+            input_tensor.stride()
+        );
+
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+        let starts_data = {
+            let starts_tensor = ctx.get_input(1)?;
+
+            debug!(
+                "[starts][dtype={:?}][shape={:?}][strides={:?}]",
+                starts_tensor.dtype(),
+                starts_tensor.shape(),
+                starts_tensor.stride()
+            );
+
+            let starts_ptr = starts_tensor.try_dev_data_ptr()?;
+            let starts_view = starts_ptr.data::<Tind>();
+            let starts_len = starts_view.len();
+
+            let starts_data = scratch_alloc.allocate(starts_len)?;
+            self.stream
+                .memcpy_dtoh(starts_view.as_ref(), starts_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
+            starts_data
+        };
+
+        let ends_data = {
+            let ends_tensor = ctx.get_input(2)?;
+
+            debug!(
+                "[ends][dtype={:?}][shape={:?}][strides={:?}]",
+                ends_tensor.dtype(),
+                ends_tensor.shape(),
+                ends_tensor.stride()
+            );
+
+            let ends_ptr = ends_tensor.try_dev_data_ptr()?;
+            let ends_view = ends_ptr.data::<Tind>();
+            let ends_len = ends_view.len();
+
+            let ends_data = scratch_alloc.allocate(ends_len)?;
+            self.stream
+                .memcpy_dtoh(ends_view.as_ref(), ends_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
+
+            ends_data
+        };
+
+        let starts_len = starts_data.len();
+
+        let norm_axes;
+        match ctx.get_input(3) {
+            Ok(axes_tensor) => {
+                debug!(
+                    "[axes][dtype={:?}][shape={:?}][strides={:?}]",
+                    axes_tensor.dtype(),
+                    axes_tensor.shape(),
+                    axes_tensor.stride()
+                );
+                // Todo: maybe validate that this is 1D.
+                let axes_ptr = axes_tensor.try_dev_data_ptr()?;
+                let axes_view = axes_ptr.data::<Tind>();
+                let axes_len = axes_view.len();
+
+                let axes_data = scratch_alloc.allocate(axes_len)?;
+                self.stream
+                    .memcpy_dtoh(axes_view.as_ref(), axes_data)
+                    .map_err(|e| InternalError::Device { error: e.into() })?;
+                norm_axes = axes_data;
+            }
+            Err(_) => {
+                norm_axes = scratch_alloc.allocate(starts_len)?;
+                for i in 0..starts_len {
+                    norm_axes[i] = Tind::try_from(i).expect("MAX_RANK is 8");
+                }
+            }
+        }
+
+        let mut steps = None;
+        if let Ok(steps_tensor) = ctx.get_input(4) {
+            debug!(
+                "[steps][dtype={:?}][shape={:?}][strides={:?}]",
+                steps_tensor.dtype(),
+                steps_tensor.shape(),
+                steps_tensor.stride()
+            );
+
+            let steps_ptr = steps_tensor.try_dev_data_ptr()?;
+            let steps_view = steps_ptr.data::<Tind>();
+            let steps_len = steps_view.len();
+            let steps_data = scratch_alloc.allocate(steps_len)?;
+            self.stream
+                .memcpy_dtoh(steps_view.as_ref(), steps_data)
+                .map_err(|e| InternalError::Device { error: e.into() })?;
+            steps = Some(steps_data);
+        }
+
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let input = ctx.get_input(0)?;
         let output_shape = scratch_alloc.allocate_from_slice(input.shape())?;
 
-        compute_output_shape(input.shape(), axes, starts, ends, steps, output_shape)?;
+        compute_output_shape(
+            input.shape(),
+            norm_axes,
+            starts_data,
+            ends_data,
+            steps.as_deref(),
+            output_shape,
+        )?;
 
         let output_tensor = ctx.get_output(0)?;
         let dst_id = output_tensor.dst_id();
@@ -67,160 +195,170 @@ impl SliceBackend {
             + Copy
             + Signed
             + PrimInt
-            + Debug,
+            + Debug
+            + TryFrom<usize>,
+        <Tind as TryFrom<usize>>::Error: Debug,
         i64: From<Tind>,
     {
-        let rank = ctx.get_input(0)?.shape().len();
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+        {
+            let input_tensor = ctx.get_input(0)?;
 
-        let norm_axes;
-        match ctx.get_input(3) {
-            Ok(axes_tensor) => {
-                if axes_tensor.dtype() != ctx.get_input(1)?.dtype() {
-                    return Err(SliceError::TensorDataTypeMismatch.into());
-                }
-
-                // Todo: maybe validate that this is 1D.
-                let axes_ptr = axes_tensor.try_dev_data_ptr()?;
-                let axes_view = axes_ptr.data::<Tind>();
-                let axes_len = axes_view.len();
-
-                let axes_data = scratch_alloc.allocate(axes_len)?;
-                self.stream
-                    .memcpy_dtoh(axes_view.as_ref(), axes_data)
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
-
-                // Todo: how do we avoid this here? Maybe make the util function generic?
-                let axes_data = scratch_alloc.allocate_and_convert_from_slice(axes_data)?;
-
-                norm_axes = scratch_alloc.allocate(axes_len)?;
-                utils::normalize_indices(axes_data, norm_axes, rank)?;
-            }
-            Err(_) => {
-                norm_axes = scratch_alloc.allocate(rank)?;
-                for i in 0..rank {
-                    norm_axes[i] = i
-                }
-            }
-        }
-
-        let mut steps = None;
-        if let Ok(steps_tensor) = ctx.get_input(4) {
             debug!(
-                "[steps][shape={:?}][strides={:?}]",
-                steps_tensor.shape(),
-                steps_tensor.stride()
+                "[input][dtype={:?}][shape={:?}][strides={:?}]",
+                input_tensor.dtype(),
+                input_tensor.shape(),
+                input_tensor.stride()
             );
 
-            let steps_ptr = steps_tensor.try_dev_data_ptr()?;
-            let steps_view = steps_ptr.data::<Tind>();
-            let steps_len = steps_view.len();
-            let steps_data = scratch_alloc.allocate(steps_len)?;
-            self.stream
-                .memcpy_dtoh(steps_view.as_ref(), steps_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            steps = Some(steps_data);
-        }
+            self.compute_output_shape(ctx)?;
 
-        let starts_data = {
+            let output_tensor = ctx.get_output(0)?;
+
+            debug!(
+                "[output][dtype={:?}][shape={:?}][strides={:?}]",
+                output_tensor.dtype(),
+                output_tensor.shape(),
+                output_tensor.stride()
+            );
+
+            if output_tensor.shape().iter().any(|&d| d == 0) {
+                common::init_tensor_device_data_with_empty_slice::<T>(&self.stream, output_tensor)?;
+                return Ok(());
+            }
+
+            common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
+
+            let input_tensor = ctx.get_input(0)?;
+            let input_ptr = input_tensor.try_dev_data_ptr()?;
+            let input_view = input_ptr.data::<T>();
+
             let starts_tensor = ctx.get_input(1)?;
-
-            debug!(
-                "[starts][shape={:?}][strides={:?}]",
-                starts_tensor.shape(),
-                starts_tensor.stride()
-            );
-
             let starts_ptr = starts_tensor.try_dev_data_ptr()?;
             let starts_view = starts_ptr.data::<Tind>();
-            let starts_len = starts_view.len();
 
-            let starts_data = scratch_alloc.allocate(starts_len)?;
-            self.stream
-                .memcpy_dtoh(starts_view.as_ref(), starts_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-
-            starts_data
-        };
-
-        let ends_data = {
             let ends_tensor = ctx.get_input(2)?;
-
-            debug!(
-                "[ends][shape={:?}][strides={:?}]",
-                ends_tensor.shape(),
-                ends_tensor.stride()
-            );
-
             let ends_ptr = ends_tensor.try_dev_data_ptr()?;
             let ends_view = ends_ptr.data::<Tind>();
-            let ends_len = ends_view.len();
 
-            let ends_data = scratch_alloc.allocate(ends_len)?;
-            self.stream
-                .memcpy_dtoh(ends_view.as_ref(), ends_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
+            let output_tensor = ctx.get_output(0)?;
+            let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
+            let mut output_view = output_ptr.data_mut::<T>();
 
-            ends_data
-        };
+            let rank = input_tensor.shape().len();
+            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-        self.compute_output_shape(norm_axes, starts_data, ends_data, steps.as_deref(), ctx)?;
+            let info = scratch_alloc.allocate(4 * rank)?;
+            info[..rank].copy_from_slice(input_tensor.shape());
+            info[rank..2 * rank].copy_from_slice(input_tensor.stride());
+            info[2 * rank..3 * rank].copy_from_slice(output_tensor.shape());
+            info[3 * rank..].copy_from_slice(input_tensor.stride());
 
-        let output_tensor = ctx.get_output(0)?;
+            let func = self.load_cuda_function(T::data_type(), Tind::data_type())?;
 
-        debug!(
-            "[output][shape={:?}][strides={:?}]",
-            output_tensor.shape(),
-            output_tensor.stride()
-        );
+            match (ctx.get_input(3), ctx.get_input(4)) {
+                (Ok(axes), Ok(steps)) => {
+                    let axes_ptr = axes.try_dev_data_ptr()?;
+                    let axes_view = axes_ptr.data::<Tind>();
+                    let steps_ptr = steps.try_dev_data_ptr()?;
+                    let steps_view = steps_ptr.data::<Tind>();
 
-        if output_tensor.shape().iter().any(|&d| d == 0) {
-            common::init_tensor_device_data_with_empty_slice::<T>(&self.stream, output_tensor)?;
-            return Ok(());
-        } else {
-            common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
+                    unsafe {
+                        slice::compute(
+                            self.stream.clone(),
+                            func,
+                            rank,
+                            info,
+                            starts_view.as_ref(),
+                            ends_view.as_ref(),
+                            axes_view.as_ref(),
+                            steps_view.as_ref(),
+                            input_view.as_ref(),
+                            output_view.as_mut(),
+                        )?;
+                    }
+                }
+                (Err(_), Ok(steps)) => {
+                    let steps_ptr = steps.try_dev_data_ptr()?;
+                    let steps_view = steps_ptr.data::<Tind>();
+
+                    let null_axes = self
+                        .stream
+                        .null::<Tind>()
+                        .map_err(|e| InternalError::Device { error: e.into() })?;
+
+                    unsafe {
+                        slice::compute(
+                            self.stream.clone(),
+                            func,
+                            rank,
+                            info,
+                            starts_view.as_ref(),
+                            ends_view.as_ref(),
+                            &null_axes,
+                            steps_view.as_ref(),
+                            input_view.as_ref(),
+                            output_view.as_mut(),
+                        )?;
+                    }
+                }
+                (Ok(axes), Err(_)) => {
+                    let axes_ptr = axes.try_dev_data_ptr()?;
+                    let axes_view = axes_ptr.data::<Tind>();
+
+                    let null_steps = self
+                        .stream
+                        .null::<Tind>()
+                        .map_err(|e| InternalError::Device { error: e.into() })?;
+
+                    unsafe {
+                        slice::compute(
+                            self.stream.clone(),
+                            func,
+                            rank,
+                            info,
+                            starts_view.as_ref(),
+                            ends_view.as_ref(),
+                            axes_view.as_ref(),
+                            &null_steps,
+                            input_view.as_ref(),
+                            output_view.as_mut(),
+                        )?;
+                    }
+                }
+                (Err(_), Err(_)) => {
+                    let null_axes = self
+                        .stream
+                        .null::<Tind>()
+                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                    let null_steps = self
+                        .stream
+                        .null::<Tind>()
+                        .map_err(|e| InternalError::Device { error: e.into() })?;
+
+                    unsafe {
+                        slice::compute(
+                            self.stream.clone(),
+                            func,
+                            rank,
+                            info,
+                            starts_view.as_ref(),
+                            ends_view.as_ref(),
+                            &null_axes,
+                            &null_steps,
+                            input_view.as_ref(),
+                            output_view.as_mut(),
+                        )?;
+                    }
+                }
+            };
         }
 
-        let input_tensor = ctx.get_input(0)?;
+        common::write_results_slice::<T, Tind>("debugging/slice", self.stream.clone(), ctx)
+            .unwrap();
 
-        debug!(
-            "[input][shape={:?}][strides={:?}]",
-            input_tensor.shape(),
-            input_tensor.stride()
-        );
-
-        let input_ptr = input_tensor.try_dev_data_ptr()?;
-        let input_view = input_ptr.data::<T>();
-
-        let input_data = scratch_alloc.allocate::<T>(input_view.len())?;
-        self.stream
-            .memcpy_dtoh(input_view.as_ref(), input_data)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
-
-        let output_data =
-            scratch_alloc.allocate(ctx.get_output(0)?.shape().iter().product::<usize>())?;
-
-        let coords_buf = scratch_alloc.allocate(rank)?;
-
-        compute_slice(
-            input_data,
-            input_tensor.shape(),
-            input_tensor.stride(),
-            norm_axes,
-            starts_data,
-            ends_data,
-            steps.as_deref(),
-            coords_buf,
-            output_data,
-        )?;
-
-        let output_tensor = ctx.get_output(0)?;
-        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_ptr.data_mut::<T>();
-
-        self.stream
-            .memcpy_htod(output_data, output_view.as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        /*self.stream
+            .synchronize()
+            .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -250,181 +388,98 @@ impl SliceBackend {
     }
 }
 
-fn compute_slice<T, Tind>(
-    input: &[T],
-    shape: &[usize],
-    strides: &[usize],
-    axes: &[usize],
-    starts: &[Tind],
-    ends: &[Tind],
-    steps: Option<&[Tind]>,
-    coords: &mut [isize],
-    output: &mut [T],
-) -> Result<()>
-where
-    T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Copy + Debug,
-    Tind: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Copy + ToPrimitive + Debug,
-{
-    // Todo: assert output is the right size.
-    assert_eq!(axes.len(), starts.len());
-    assert_eq!(axes.len(), ends.len());
-    assert_eq!(axes.len(), steps.map(|s| s.len()).unwrap_or(axes.len()));
-
-    let rank = shape.len();
-
-    for dim in 0..rank {
-        if let Some(axis_slot) = pos_in_axes(dim, axes) {
-            coords[dim] = starts[axis_slot]
-                .to_isize()
-                .ok_or(InternalError::UnableToConvertValue)?;
-        }
-    }
-
-    debug!("[slice][input={:?}]", input);
-    debug!("[slice][shape={:?}]", shape);
-    debug!("[slice][strides={:?}]", strides);
-    debug!("[slice][axes={:?}]", axes);
-    debug!("[slice][starts={:?}]", starts);
-    debug!("[slice][ends={:?}]", ends);
-    debug!("[slice][steps={:?}]", steps);
-    debug!("[slice][coords={:?}]", coords);
-
-    let mut output_offset = 0;
-    loop {
-        let mut input_offset = 0;
-
-        for dim in 0..rank {
-            input_offset += coords[dim]
-                .to_usize()
-                .ok_or(InternalError::UnableToConvertValue)?
-                * strides[dim];
-        }
-
-        output[output_offset] = input[input_offset];
-        output_offset += 1;
-
-        let mut done = true;
-        for dim in (0..rank).rev() {
-            let mut step = 1isize;
-            let axis_slot = pos_in_axes(dim, axes);
-
-            if let Some(slot) = axis_slot {
-                if let Some(steps_sizes) = steps {
-                    step = steps_sizes[slot]
-                        .to_isize()
-                        .ok_or(InternalError::UnableToConvertValue)?;
-                    if step == 0 {
-                        panic!("todo: throw error when step==0")
-                    }
-                }
-            }
-
-            coords[dim] += step;
-
-            let end = match axis_slot {
-                None => shape[dim]
-                    .to_isize()
-                    .ok_or(InternalError::UnableToConvertValue)?,
-                Some(slot) => ends[slot]
-                    .to_isize()
-                    .ok_or(InternalError::UnableToConvertValue)?,
-            };
-
-            if (step > 0 && coords[dim] < end) || (step < 0 && coords[dim] > end) {
-                done = false;
-                break;
-            }
-
-            coords[dim] = match axis_slot {
-                None => 0,
-                Some(idx) => starts[idx]
-                    .to_isize()
-                    .ok_or(InternalError::UnableToConvertValue)?,
-            };
-        }
-
-        if done {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-fn pos_in_axes<T: Copy + PartialEq>(target: T, slice: &[T]) -> Option<usize> {
-    slice.iter().position(|x| *x == target)
-}
-
-/// Computes the shape of the output tensor after Slice.
-/// Requires axes, starts, ends (and steps, if present) to be the same length.
-/// Panics in debug if axis ≥ output_shape.len().
+// Assumes that `axes` has been normalized.
 fn compute_output_shape<T>(
     input_shape: &[usize],
-    axes: &[usize],
+    axes: &[T],
     starts: &[T],
     ends: &[T],
     steps: Option<&[T]>,
     output_shape: &mut [usize],
 ) -> Result<()>
 where
-    T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Copy + Signed + ToPrimitive + PrimInt,
+    T: DataTypeMap
+        + ValidAsZeroBits
+        + DeviceRepr
+        + Num
+        + Copy
+        + Signed
+        + ToPrimitive
+        + PrimInt
+        + Debug
+        + TryFrom<usize>,
 {
     debug_assert!(!axes.is_empty());
-    debug_assert!(starts.len() <= axes.len());
     debug_assert!(
-        output_shape.len() > *axes.iter().max().unwrap(),
-        "axis values must be within range"
+        starts.len() == ends.len(),
+        "indices must have the same length"
+    );
+    debug_assert!(
+        axes.len() == starts.len(),
+        "axes must have the same length as starts"
+    );
+    debug_assert!(
+        output_shape.len() == input_shape.len(),
+        "input and output must have the same rank"
     );
 
     if steps.map_or(false, |s| s.len() != axes.len()) {
         return Err(SliceError::StepsAndAxesLengthMismatch.into());
     }
 
-    for (slot, axis) in axes.iter().copied().enumerate() {
-        let step = steps.map(|s| s[slot]).unwrap_or_else(T::one);
+    for (axes_idx, raw_axis) in axes.iter().copied().enumerate() {
+        let axis = if raw_axis.is_negative() {
+            let rank =
+                T::try_from(input_shape.len()).map_err(|_| InternalError::UnableToConvertValue)?;
+            let diff = rank + raw_axis;
+            diff.to_usize().ok_or(InternalError::UnableToConvertValue)?
+        } else {
+            raw_axis
+                .to_usize()
+                .ok_or(InternalError::UnableToConvertValue)?
+        };
+
+        if axis >= input_shape.len() {
+            return Err(SliceError::AxisOutOfRange.into());
+        }
+
+        let step = steps.map(|s| s[axes_idx]).unwrap_or_else(T::one);
         if step.is_zero() {
             return Err(SliceError::ZeroStep.into());
         }
 
-        let start = starts[slot];
-        if step.is_positive() {
-            if start < T::zero()
-                || start
-                    .to_usize()
-                    .ok_or(InternalError::UnableToConvertValue)?
-                    > input_shape[axis]
-            {
-                return Err(SliceError::InvalidStepStartValue.into());
-            }
-        } else {
-            if start < T::zero()
-                || start
-                    .to_usize()
-                    .ok_or(InternalError::UnableToConvertValue)?
-                    >= input_shape[axis]
-            {
-                return Err(SliceError::InvalidStepStartValue.into());
-            }
+        // The downstream cuda kernel assumes that output_shape[d] <= i32::MAX, i64::MAX.
+        // This conversion is important and must not be removed carelessly.
+        let dim =
+            T::try_from(input_shape[axis]).map_err(|_| InternalError::UnableToConvertValue)?;
+
+        let mut start = starts[axes_idx];
+        if start.is_negative() {
+            start = start + dim;
+        }
+        if start.is_negative() {
+            start = T::zero();
+        }
+        if step.is_positive() && start > dim {
+            start = dim;
+        } else if step.is_negative() && start >= dim {
+            start = dim - T::one();
         }
 
-        let end = ends[slot];
-        if step.is_positive() {
-            if end < T::zero()
-                || end.to_usize().ok_or(InternalError::UnableToConvertValue)? > input_shape[axis]
-            {
-                return Err(SliceError::InvalidStepEndValue.into());
-            }
-        } else {
-            if !(end == T::one().neg()
-                || (end >= T::zero()
-                    && end.to_usize().ok_or(InternalError::UnableToConvertValue)?
-                        < input_shape[axis]))
-            {
-                return Err(SliceError::InvalidStepEndValue.into());
-            }
+        let mut end = ends[axes_idx];
+        if end.is_negative() {
+            end = end + dim;
+        }
+        if end < T::one().neg() {
+            end = T::one().neg()
+        }
+        if step.is_positive() && end > dim {
+            end = dim;
+        } else if step.is_negative() && end >= dim {
+            end = dim - T::one();
         }
 
-        if (step.is_negative() && start <= end) || (step.is_positive() && start >= end) {
+        if (step.is_negative() && start < end) || (step.is_positive() && start >= end) {
             output_shape[axis] = 0;
         } else {
             if step.is_positive() {
@@ -470,6 +525,8 @@ pub enum SliceError {
     InvalidDifference,
     StartAndEndDataTypeMismatch,
     TensorDataTypeMismatch,
+    DuplicateAxis,
+    AxisOutOfRange,
 }
 
 impl Display for SliceError {
@@ -483,17 +540,6 @@ impl std::error::Error for SliceError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ops::Neg;
-
-    fn range_tensor(len: usize) -> Vec<i32> {
-        (0..len as i32).collect()
-    }
-
-    fn strides_for(shape: &[usize]) -> Vec<usize> {
-        let mut s = vec![0; shape.len()];
-        utils::compute_stride::<usize>(shape, &mut s);
-        s
-    }
 
     #[test]
     fn pos_step_regular() {
@@ -524,7 +570,7 @@ mod tests {
         let shape = [5];
         let mut out = shape;
         compute_output_shape::<i64>(&shape, &[0], &[4], &[-1], Some(&[-1]), &mut out).unwrap();
-        assert_eq!(out, [5]);
+        assert_eq!(out, [0]);
     }
 
     #[test]
@@ -564,19 +610,16 @@ mod tests {
     #[test]
     fn pos_start_oob_error() {
         let shape = [5];
-        let mut out = shape;
-        let err = compute_output_shape::<i64>(&shape, &[0], &[6], &[6], Some(&[1]), &mut out)
-            .unwrap_err();
-        matches!(err.downcast(), Ok(InternalError::UnableToConvertValue));
+        let mut out = vec![0];
+        compute_output_shape::<i64>(&shape, &[0], &[6], &[6], Some(&[1]), &mut out).unwrap();
+        assert_eq!(out, vec![0]);
     }
 
     #[test]
-    fn neg_end_lt_minus1_error() {
+    fn neg_end_lt_minus1() {
         let shape = [5];
         let mut out = shape;
-        let err = compute_output_shape::<i64>(&shape, &[0], &[4], &[-2], Some(&[-1]), &mut out)
-            .unwrap_err();
-        matches!(err.downcast(), Ok(InternalError::UnableToConvertValue));
+        compute_output_shape::<i64>(&shape, &[0], &[4], &[-2], Some(&[-1]), &mut out).unwrap();
     }
 
     #[test]
@@ -585,7 +628,7 @@ mod tests {
         let mut out = shape;
         compute_output_shape::<i64>(&shape, &[0, 1], &[1, 4], &[5, -1], Some(&[2, -1]), &mut out)
             .unwrap();
-        assert_eq!(out, [2, 5]);
+        assert_eq!(out, [2, 0]);
     }
 
     #[test]
@@ -606,11 +649,12 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "axis values must be within range")]
     fn axis_out_of_range_error() {
         let shape = [4, 4];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[2], &[0], &[1], None, &mut out).unwrap();
+        let err =
+            compute_output_shape::<i64>(&shape, &[2], &[0], &[1], None, &mut out).unwrap_err();
+        matches!(err.downcast(), Ok(SliceError::AxisOutOfRange));
     }
 
     #[test]
@@ -623,12 +667,11 @@ mod tests {
     }
 
     #[test]
-    fn rank2_end_oob_positive_step_error() {
+    fn rank2_end_oob_positive_step_clamped() {
         let shape = [7, 3];
         let mut out = shape;
-        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[8], Some(&[1]), &mut out)
-            .unwrap_err();
-        matches!(err.downcast(), Ok(InternalError::UnableToConvertValue));
+        compute_output_shape::<i64>(&shape, &[0], &[0], &[8], Some(&[1]), &mut out).unwrap();
+        assert_eq!(out, [7, 3]);
     }
 
     #[test]
@@ -644,155 +687,15 @@ mod tests {
             &mut out,
         )
         .unwrap();
-        assert_eq!(out, [8, 3, 3]);
+        assert_eq!(out, [8, 0, 3]);
     }
 
     #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "index out of bounds")]
+    #[should_panic(expected = "axes must have the same length as starts")]
     fn rank3_starts_too_short_panics() {
         let shape = [4, 4, 4];
         let mut out = shape;
-        let _ = compute_output_shape::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out);
-    }
-
-    #[test]
-    fn rank1_step1() {
-        let shape = [10];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize];
-        let mut out = vec![0; 6];
-
-        compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[0],
-            &[2],
-            &[8],
-            None,
-            &mut coords,
-            &mut out,
-        )
-        .unwrap();
-
-        assert_eq!(&out, &[2, 3, 4, 5, 6, 7]);
-    }
-
-    #[test]
-    fn rank1_step2_neg() {
-        let shape = [10];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize];
-        let mut out = vec![0; 3];
-
-        compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[0],
-            &[7],
-            &[1],
-            Some(&[-2]),
-            &mut coords,
-            &mut out,
-        )
-        .unwrap();
-
-        assert_eq!(&out, &[7, 5, 3]);
-    }
-
-    #[test]
-    fn rank2_mixed_steps() {
-        let shape = [3, 4];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize; 2];
-        let mut out = vec![0; 4];
-
-        compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[0, 1],
-            &[1, 1],
-            &[3, 4],
-            Some(&[1, -2i64.neg()]),
-            &mut coords,
-            &mut out,
-        )
-        .unwrap();
-
-        assert_eq!(&out, &[5, 7, 9, 11]);
-    }
-
-    #[test]
-    fn rank3_slice_last_axis() {
-        let shape = [2, 2, 3];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize; 3];
-        let mut out = vec![0; 8];
-
-        compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[2],
-            &[1],
-            &[3],
-            None,
-            &mut coords,
-            &mut out,
-        )
-        .unwrap();
-
-        assert_eq!(&out, &[1, 2, 4, 5, 7, 8, 10, 11]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn step_zero_panics() {
-        let shape = [5];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize];
-        let mut out = vec![0; 1];
-
-        let _ = compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[0],
-            &[0],
-            &[5],
-            Some(&[0]),
-            &mut coords,
-            &mut out,
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn steps_len_mismatch_panics() {
-        let shape = [5];
-        let input = range_tensor(shape.iter().product());
-        let strides = strides_for(&shape);
-        let mut coords = [0isize];
-        let mut out = vec![0; 1];
-
-        let _ = compute_slice::<i32, i64>(
-            &input,
-            &shape,
-            &strides,
-            &[0],
-            &[0],
-            &[5],
-            Some(&[1, 2]),
-            &mut coords,
-            &mut out,
-        );
+        compute_output_shape::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out).unwrap();
     }
 }

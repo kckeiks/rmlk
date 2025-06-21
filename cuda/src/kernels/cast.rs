@@ -1,4 +1,7 @@
+use crate::error::Result;
 use crate::ptx::CAST;
+use cudarc::driver::{CudaContext, CudaFunction};
+use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "cast";
 pub const FWD_FN_NAMES: &[&str] = &[
@@ -316,6 +319,13 @@ impl CastKernel {
     }
 }
 
+pub fn load_kernel(ctx: &Arc<CudaContext>, kernel_name: CastKernel) -> Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module
+        .load_function(kernel_name.as_str())
+        .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod test {
     use crate::kernels::cast::CastKernel;
@@ -342,7 +352,7 @@ mod test {
                     let x_on_host = vec![$($input),*];
                     let x_dev_ptr = stream.memcpy_stod(&x_on_host).unwrap();
 
-                    let f = utils::load_cast_kernel(&ctx, $variant).unwrap();
+                    let f = super::load_kernel(&ctx, $variant).unwrap();
 
                     let output_shape = x_shape.clone();
                     let output_len = output_shape.iter().product::<usize>();
@@ -1384,7 +1394,7 @@ mod test {
             .memcpy_stod(&vec![1e40, -1e40, f64::NAN, -f64::NAN, 1.0])
             .unwrap();
 
-        let f = utils::load_cast_kernel(&ctx, CastKernel::F64ToF32).unwrap();
+        let f = super::load_kernel(&ctx, CastKernel::F64ToF32).unwrap();
 
         let output_shape = x_shape.clone();
         let mut out_data = stream

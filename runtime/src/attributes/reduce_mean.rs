@@ -16,3 +16,7 @@ pub fn get_noop_with_empty_axes(attrs: &HashMap<Box<str>, Attribute>) -> bool {
         .unwrap_or(0);
     value > 0
 }
+
+pub fn get_axes(attrs: &HashMap<Box<str>, Attribute>) -> Option<&[i32]> {
+    attrs.get("axes").and_then(|attr| attr.ints())
+}

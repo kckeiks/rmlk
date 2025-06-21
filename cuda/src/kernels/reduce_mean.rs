@@ -1,19 +1,40 @@
 use crate::ptx::REDUCE_MEAN;
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use std::sync::Arc;
 
-pub const MODULE_NAME: &str = "reduce_mean";
-pub const FWD_FN_NAMES: &[&str] = &[
-    "reduce_mean_fwd_f16",
-    "reduce_mean_fwd_f32",
-    "reduce_mean_fwd_f64",
-    "reduce_mean_fwd_u32",
-    "reduce_mean_fwd_u64",
-];
-
 pub const PTX_SRC: &str = REDUCE_MEAN;
+
+#[derive(Debug)]
+pub enum ReduceKernel {
+    FwdF16,
+    FwdF32,
+    FwdF64,
+    FwdI32,
+    FwdI64,
+}
+
+impl From<ReduceKernel> for &'static str {
+    fn from(value: ReduceKernel) -> Self {
+        match value {
+            ReduceKernel::FwdF16 => "reduce_mean_fwd_f16",
+            ReduceKernel::FwdF32 => "reduce_mean_fwd_f32",
+            ReduceKernel::FwdF64 => "reduce_mean_fwd_f64",
+            ReduceKernel::FwdI32 => "reduce_mean_fwd_u32",
+            ReduceKernel::FwdI64 => "reduce_mean_fwd_u64",
+        }
+    }
+}
+
+pub fn load_kernel(
+    ctx: Arc<CudaContext>,
+    kernel_name: ReduceKernel,
+) -> crate::error::Result<CudaFunction> {
+    let module = ctx.load_module(PTX_SRC.into())?;
+    module.load_function(kernel_name.into()).map_err(Into::into)
+}
 
 /// Launches a CUDA kernel that performs the reduce mean operation.
 pub unsafe fn compute<T>(
@@ -74,10 +95,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::kernels::reduce_mean::compute;
+    use crate::kernels::reduce_mean::{compute, ReduceKernel};
     use crate::utils;
     use cudarc::driver::CudaContext;
-    use rmlk_schema::{DataType, Op};
 
     pub fn create_info_buffer(shape: &[usize], stride: &[usize]) -> Vec<usize> {
         let rank = shape.len();
@@ -99,7 +119,7 @@ mod tests {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
 
-        let f = utils::load_kernel(&ctx, Op::ReduceMean, DataType::Float).unwrap();
+        let f = super::load_kernel(ctx, ReduceKernel::FwdF32).unwrap();
 
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);

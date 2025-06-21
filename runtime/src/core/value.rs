@@ -1,4 +1,5 @@
 use crate::core::error::Error;
+use half::f16;
 
 #[derive(Debug)]
 pub struct Value {
@@ -9,10 +10,22 @@ pub struct Value {
 #[allow(unused)]
 #[derive(Debug)]
 pub(crate) enum InnerValue {
+    Float16(Vec<f16>),
     Int32(Vec<i32>),
     Int64(Vec<i64>),
     Float32(Vec<f32>),
     Bool(Vec<bool>),
+}
+
+impl TryFrom<Value> for Vec<f16> {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value.inner {
+            InnerValue::Float16(data) => Ok(data),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 impl TryFrom<Value> for Vec<f32> {
@@ -23,6 +36,20 @@ impl TryFrom<Value> for Vec<f32> {
             InnerValue::Float32(data) => Ok(data),
             _ => unimplemented!(),
         }
+    }
+}
+
+impl<T> TryFrom<Value> for (Vec<T>, Vec<usize>)
+where
+    Vec<T>: TryFrom<Value, Error = Error>,
+{
+    type Error = Error;
+
+    fn try_from(mut value: Value) -> Result<Self, Self::Error> {
+        // It's ok to take here because value gets dropped after this.
+        let shape = value.shape.take().unwrap_or_default();
+        let data = Vec::<T>::try_from(value)?;
+        Ok((data, shape))
     }
 }
 
@@ -59,6 +86,15 @@ impl TryFrom<Value> for Vec<bool> {
     }
 }
 
+impl<'a, I> From<(Vec<I>, &'a [usize])> for Value
+where
+    Value: From<Vec<I>>,
+{
+    fn from(value: (Vec<I>, &'a [usize])) -> Self {
+        (value.0, value.1.to_vec()).into()
+    }
+}
+
 impl<I> From<(Vec<I>, Vec<usize>)> for Value
 where
     Value: From<Vec<I>>,
@@ -67,6 +103,15 @@ where
         let mut res: Value = value.0.into();
         res.shape = Some(value.1);
         res
+    }
+}
+
+impl From<Vec<f16>> for Value {
+    fn from(value: Vec<f16>) -> Self {
+        Self {
+            inner: InnerValue::Float16(value),
+            shape: None,
+        }
     }
 }
 

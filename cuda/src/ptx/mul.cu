@@ -19,3 +19,7 @@ BINARY_OP(__half, mul_fwd_f16, x * y)
 BINARY_OP(float, mul_fwd_f32, x * y)
 
 BINARY_OP(double, mul_fwd_f64, x * y)
+
+BINARY_OP(int32_t, mul_fwd_i32, x * y)
+
+BINARY_OP(int64_t, mul_fwd_i64, x * y)

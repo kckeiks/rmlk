@@ -18,11 +18,12 @@ impl FlattenTemplate {
 pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
     let x = ctx.get_input(0)?;
 
-    debug!("[x][shape={:?}][stride=[{:?}]", x.shape(), x.stride());
-
-    if x.shape().len() == 0 {
-        return Err(FlattenError::InvalidInputShape.into());
-    }
+    debug!(
+        "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
+        x.dtype(),
+        x.shape(),
+        x.stride()
+    );
 
     let mut y_shape = [0; 2];
     let axis = ctx
@@ -33,9 +34,16 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         .and_then(|attr| attr.int())
         .unwrap_or(1);
     match axis {
+        0 if x.is_scalar() => {
+            y_shape[0] = 1;
+            y_shape[1] = 1;
+        }
         0 => {
             y_shape[0] = 1;
             y_shape[1] = x.shape().iter().product();
+        }
+        _axis if x.is_scalar() => {
+            return Err(FlattenError::InvalidInputShape.into());
         }
         axis if axis.unsigned_abs() as usize >= x.shape().len() => {
             return Err(FlattenError::AxisOutOfShape.into());
@@ -58,7 +66,12 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         .copy_shape_from_slice(&y_shape, index)?;
 
     let y = ctx.get_output(0)?;
-    debug!("[y][shape={:?}][stride=[{:?}]", y.shape(), y.stride());
+    debug!(
+        "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
+        y.dtype(),
+        y.shape(),
+        y.stride()
+    );
 
     Ok(())
 }

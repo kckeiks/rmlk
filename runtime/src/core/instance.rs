@@ -9,7 +9,7 @@ use crate::core::store::TensorStore;
 use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaContext;
-use log::{debug, trace};
+use log::debug;
 use rmlk_graph::Graph;
 use rmlk_schema::{DataType, Definition, Op, Tensor};
 use std::collections::HashMap;
@@ -91,6 +91,8 @@ impl Builder {
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
             .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
+        // ctx.set_blocking_synchronize()
+        //     .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
         // Todo: We don't always want to use the default stream.
         let provider = Cuda::new(ctx.default_stream());
         let values = TensorStore::new(&provider, &self.graph, self.initializers).map_err(|e| {
@@ -131,7 +133,10 @@ where
 {
     fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().inputs().count() {
-            debug!("user input: {input:?}");
+            debug!(
+                "user input: {input:?}: expected {:?}",
+                self.instance_state.graph().inputs().collect::<Vec<_>>()
+            );
             return Err(Error::InvalidUserInput { input });
         }
 
@@ -217,8 +222,42 @@ where
                     error: e.into_boxed_dyn_error(),
                 })?;
 
-            trace!(
-                "[node={id}][{op:?}][name={:?}][inputs={:?}][outputs={:?}]",
+            let input_node_names = node
+                .inputs()
+                .iter()
+                .map(|id| {
+                    (
+                        id,
+                        self.instance_state
+                            .graph()
+                            .get_node(*id)
+                            .unwrap()
+                            .value()
+                            .name()
+                            .unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            let output_node_names = node
+                .outputs()
+                .iter()
+                .map(|id| {
+                    (
+                        id,
+                        self.instance_state
+                            .graph()
+                            .get_node(*id)
+                            .unwrap()
+                            .value()
+                            .name()
+                            .unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            debug!(
+                "\n[node={id}][{op:?}][name={:?}][inputs={:?}][input names ={input_node_names:?}][outputs={:?}][output names={output_node_names:?}]\n",
                 node.value().name(),
                 node.inputs(),
                 node.outputs(),
@@ -243,11 +282,11 @@ where
                 })?
                 .compute(&mut ctx)
             {
-                Error::Computation {
+                return Err(Error::Computation {
                     op,
                     name: "".to_string(),
                     error: e.into_boxed_dyn_error(),
-                };
+                });
             }
         }
 

@@ -58,6 +58,8 @@ pub struct Tensor {
     // pub data_location: Option<DataLocation>,
     pub double_data: Vec<f64>,
     pub uint64_data: Vec<u64>,
+    // Todo: remove this and use int32_data.
+    pub bool_data: Vec<bool>,
 }
 
 impl Default for Tensor {
@@ -75,6 +77,7 @@ impl Default for Tensor {
             raw_data: None,
             double_data: vec![],
             uint64_data: vec![],
+            bool_data: vec![],
         }
     }
 }
@@ -196,6 +199,7 @@ pub fn tensor_from_onnx_tensor(
         raw_data: value.raw_data.map(|data| data.to_vec()),
         double_data: value.double_data.to_vec(),
         uint64_data: value.uint64_data,
+        bool_data: Vec::new(),
     };
 
     if let Some(data) = external_data {
@@ -235,6 +239,7 @@ pub fn tensor_from_onnx_tensor(
             }
             DataType::String => {}
             DataType::Bool => {
+                println!("loading bool");
                 res.int32_data = u8_to_i32_vec(data.as_slice())?;
             }
             DataType::Float16 => {
@@ -329,6 +334,36 @@ impl DataType {
             DataType::Float8E5M2FNUZ => false,
             DataType::Uint4 => true,
             DataType::Int4 => true,
+        }
+    }
+}
+
+impl From<DataType> for i32 {
+    fn from(dt: DataType) -> Self {
+        match dt {
+            DataType::Undefined => 0,
+            DataType::Float => 1,
+            DataType::Uint8 => 2,
+            DataType::Int8 => 3,
+            DataType::Uint16 => 4,
+            DataType::Int16 => 5,
+            DataType::Int32 => 6,
+            DataType::Int64 => 7,
+            DataType::String => 8,
+            DataType::Bool => 9,
+            DataType::Float16 => 10,
+            DataType::Double => 11,
+            DataType::Uint32 => 12,
+            DataType::Uint64 => 13,
+            DataType::Complex64 => 14,
+            DataType::Complex128 => 15,
+            DataType::Bfloat16 => 16,
+            DataType::Float8E4M3FN => 17,
+            DataType::Float8E4M3FNUZ => 18,
+            DataType::Float8E5M2 => 19,
+            DataType::Float8E5M2FNUZ => 20,
+            DataType::Uint4 => 21,
+            DataType::Int4 => 22,
         }
     }
 }
