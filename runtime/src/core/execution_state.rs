@@ -169,28 +169,7 @@ where
         }
 
         if let Some(shape) = value.shape {
-            let node = self
-                .get_node(node_id)
-                .expect("we already checked that it exists above");
-
-            let shape_def = node
-                .value()
-                .shape()
-                .ok_or(ExecutionStateError::InputMissingShape)?;
-
-            if shape.len() != shape_def.len() {
-                return Err(ExecutionStateError::InputAndDefRankMismatch.into());
-            }
-
-            for (idx, &dim) in shape.iter().enumerate() {
-                if shape_def[idx] != dim {
-                    if shape_def[idx] != 0
-                        || !(shape_def[idx] == 0 && node.value().has_dynamic_dims())
-                    {
-                        return Err(ExecutionStateError::InputShapeAndDefShapeMismatch.into());
-                    }
-                }
-            }
+            self.compare_shapes(&shape, node_id)?;
 
             let tensor = self
                 .get_tensor_from_node_id(node_id)
@@ -201,6 +180,39 @@ where
         }
 
         Ok(())
+    }
+
+    fn compare_shapes(&self, shape: &[usize], node_id: usize) -> Result<()> {
+        let node = self
+            .get_node(node_id)
+            .expect("we already checked that it exists above");
+
+        let shape_def = node
+            .value()
+            .shape()
+            .ok_or(ExecutionStateError::InputMissingShape)?;
+
+        if shape.len() != shape_def.len() {
+            return Err(ExecutionStateError::InputAndDefRankMismatch.into());
+        }
+
+        for (idx, &dim) in shape.iter().enumerate() {
+            if shape_def[idx] != dim {
+                if shape_def[idx] != 0 || !(shape_def[idx] == 0 && node.value().has_dynamic_dims())
+                {
+                    return Err(ExecutionStateError::InputShapeAndDefShapeMismatch.into());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn compare_value_and_def_shape(&self, node_id: usize) -> Result<()> {
+        let tensor = self
+            .get_tensor_from_node_id(node_id)
+            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
+        self.compare_shapes(tensor.shape(), node_id)
     }
 
     /// Gets a copy of the value from the device for the given node.
@@ -273,6 +285,7 @@ pub enum ExecutionStateError {
     InputTensorNotFound { id: usize },
     OutputTensorNotFound { id: usize },
     TensorNotFound { id: usize },
+    ComparisonFailed { id: usize },
     InputMissingShape,
     InputAndDefRankMismatch,
     InputShapeAndDefShapeMismatch,
@@ -298,6 +311,9 @@ impl Display for ExecutionStateError {
             }
             ExecutionStateError::InputShapeAndDefShapeMismatch => {
                 write!(f, "Input and definition shape mismatch")
+            }
+            ExecutionStateError::ComparisonFailed { id } => {
+                write!(f, "Comparison failed for node `{}`", id)
             }
         }
     }

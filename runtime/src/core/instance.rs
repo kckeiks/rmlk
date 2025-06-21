@@ -163,12 +163,19 @@ where
                     return Err(Error::NodeNotFound { id: output });
                 }
                 Some(node) => {
+                    self.execution_state
+                        .compare_value_and_def_shape(output)
+                        .map_err(|e| Error::Internal {
+                            error: e.into_boxed_dyn_error(),
+                        })?;
+
                     let value =
                         self.execution_state
                             .get_value(output)
                             .map_err(|e| Error::Internal {
                                 error: e.into_boxed_dyn_error(),
                             })?;
+
                     result.insert(
                         node.value()
                             .name()
