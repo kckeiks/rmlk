@@ -5,17 +5,29 @@ use log::debug;
 use rmlk_schema::onnx::{ModelProto, NodeProto, TensorProto, ValueInfoProto};
 use rmlk_schema::{Attribute, Node, Op, Tensor, TypeValue};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-#[derive(Default)]
 struct ModelFromOnnx {
     nodes: Vec<Node>,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     initializers: HashMap<usize, Tensor>,
     name_to_id: HashMap<String, usize>,
+    base_url: Option<PathBuf>,
 }
 
 impl ModelFromOnnx {
+    pub fn new(base_url: Option<PathBuf>) -> Self {
+        Self {
+            base_url,
+            nodes: Default::default(),
+            inputs: Default::default(),
+            outputs: Default::default(),
+            initializers: Default::default(),
+            name_to_id: Default::default(),
+        }
+    }
+
     pub fn create_and_get_node(&mut self) -> &mut Node {
         let id = self.nodes.len();
         let node = Node::new(id);
@@ -115,6 +127,8 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     }
 
     fn check_initializer(&mut self, initializer: TensorProto<'a>) -> traverse::Result<bool> {
+        let base_url = self.base_url.clone();
+
         let node = self.create_and_get_node();
         let node_id = node.id;
 
@@ -130,7 +144,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         node.set_name(name.to_string());
         node.set_op(Op::NoOp);
 
-        let tensor = Tensor::from_onnx_tensor(initializer).unwrap();
+        let tensor = rmlk_schema::tensor_from_onnx_tensor(initializer, base_url).unwrap();
 
         let type_value = TypeValue::Tensor {
             ty: tensor.data_type as i32,
@@ -217,8 +231,11 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     }
 }
 
-pub fn graph_from_onnx_proto(mut value: ModelProto) -> anyhow::Result<rmlk_schema::Graph> {
-    let mut traverser = ModelFromOnnx::default();
+pub fn graph_from_onnx_proto(
+    mut value: ModelProto,
+    base_url: Option<PathBuf>,
+) -> anyhow::Result<rmlk_schema::Graph> {
+    let mut traverser = ModelFromOnnx::new(base_url);
     let graph_name = value
         .graph
         .as_mut()

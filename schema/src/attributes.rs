@@ -107,11 +107,14 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .to_vec(),
             ),
-            onnx::attributte_proto::AttributeType::TENSOR => AttributeType::Tensor(
-                crate::Tensor::from_onnx_tensor(value.t.ok_or(Error::MissingField {
-                    name: "Attribute::t".to_string(),
-                })?)?,
-            ),
+            onnx::attributte_proto::AttributeType::TENSOR => {
+                AttributeType::Tensor(crate::tensor::tensor_from_onnx_tensor(
+                    value.t.ok_or(Error::MissingField {
+                        name: "Attribute::t".to_string(),
+                    })?,
+                    None,
+                )?)
+            }
             onnx::attributte_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
             // Todo: Address casting.
             onnx::attributte_proto::AttributeType::INTS => {
@@ -123,7 +126,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
             onnx::attributte_proto::AttributeType::TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.tensors.into_iter() {
-                    tensors.push(crate::Tensor::from_onnx_tensor(tensor_proto)?);
+                    tensors.push(crate::tensor::tensor_from_onnx_tensor(tensor_proto, None)?);
                 }
                 AttributeType::Tensors(tensors)
             }

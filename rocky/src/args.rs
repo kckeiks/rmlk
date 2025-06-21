@@ -10,7 +10,15 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum Command {
-    Find { path: PathBuf, target: String },
-    ListOps { path: PathBuf },
-    Transform { path: PathBuf },
+    Find {
+        path: PathBuf,
+        target: String,
+    },
+    ListOps {
+        path: PathBuf,
+    },
+    Transform {
+        path: PathBuf,
+        output: Option<String>,
+    },
 }

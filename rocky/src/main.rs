@@ -39,13 +39,23 @@ fn main() -> anyhow::Result<()> {
                 None => println!("we did not find a node with the name `{target}`"),
             }
         }
-        Command::Transform { path } => {
-            let model = fs::read(path)?;
+        Command::Transform { path, output } => {
+            let base_url = path.parent().map(|p| p.to_path_buf());
+            let model = fs::read(path.clone())?;
             let mut reader = BytesReader::from_bytes(&model);
             let model_proto = ModelProto::from_reader(&mut reader, &model)?;
-            let compute_graph = graph_from_onnx_proto(model_proto)?;
+            let compute_graph = graph_from_onnx_proto(model_proto, base_url)?;
             let serialized_model = bincode::serialize(&compute_graph)?;
-            fs::write("resnet34.rmlk", serialized_model)?;
+            if let Some(output) = output {
+                fs::write(format!("{output}.rmlk"), serialized_model)?;
+            } else {
+                let filename = path
+                    .file_stem()
+                    .expect("expecting a file stem")
+                    .to_string_lossy()
+                    .to_string();
+                fs::write(format!("{filename}.rmlk"), serialized_model)?;
+            }
         }
         Command::ListOps { path } => {
             let model = fs::read(path)?;

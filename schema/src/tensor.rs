@@ -3,12 +3,12 @@ use crate::onnx;
 use crate::onnx::dimension_proto::OneOfvalue;
 use crate::onnx::tensor_proto::DataLocation;
 use crate::onnx::{TensorProto, TensorShapeProto};
+use half::f16;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::os::unix::fs::FileExt;
-
-use half::f16;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Tensor {
@@ -79,191 +79,198 @@ impl Default for Tensor {
     }
 }
 
-impl Tensor {
-    pub fn from_onnx_tensor(value: TensorProto) -> Result<Self, Error> {
-        let external_data = match value.data_location {
-            None | Some(DataLocation::DEFAULT) => None,
-            Some(DataLocation::EXTERNAL) => {
-                let mut location = None;
-                let mut offset = None;
-                let mut length = None;
-                // Todo: Handle checksum.
-                let mut _checksum = None;
-                for entry in value.external_data {
-                    let key = entry.key.as_ref().ok_or(Error::MissingField {
-                        name: "Tensor::external_data::key".to_string(),
-                    })?;
-                    match key.as_ref() {
-                        "location" if location.is_none() => {
-                            location = Some(entry.value.ok_or(Error::InvalidValue {
-                                field: "location".to_string(),
-                                value: "None".to_string(),
-                            })?);
-                        }
-                        "offset" => {
-                            offset = Some(entry.value.ok_or(Error::InvalidValue {
-                                field: "offset".to_string(),
-                                value: "None".to_string(),
-                            })?);
-                        }
-                        "length" => {
-                            length = Some(entry.value.ok_or(Error::InvalidValue {
-                                field: "length".to_string(),
-                                value: "None".to_string(),
-                            })?);
-                        }
-                        "checksum" => {
-                            _checksum = Some(entry.value.ok_or(Error::InvalidValue {
-                                field: "checksum".to_string(),
-                                value: "None".to_string(),
-                            })?);
-                        }
-                        _ => todo!(),
-                    }
-                }
-
-                let location = location.ok_or(Error::InvalidValue {
-                    field: "location".to_string(),
-                    value: "None".to_string(),
+pub fn tensor_from_onnx_tensor(
+    value: TensorProto,
+    base_url: Option<PathBuf>,
+) -> Result<Tensor, Error> {
+    let external_data = match value.data_location {
+        None | Some(DataLocation::DEFAULT) => None,
+        Some(DataLocation::EXTERNAL) => {
+            let mut location = None;
+            let mut offset = None;
+            let mut length = None;
+            // Todo: Handle checksum.
+            let mut _checksum = None;
+            for entry in value.external_data {
+                let key = entry.key.as_ref().ok_or(Error::MissingField {
+                    name: "Tensor::external_data::key".to_string(),
                 })?;
-                let mut file = File::open(format!(
-                    "/Users/acadia/Repo/notebooks/resnet34/{}",
-                    location.as_ref()
-                ))
-                .map_err(|_| Error::Unknown)
-                .unwrap();
-
-                if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some())
-                {
-                    return Err(Error::Invalid);
-                }
-
-                if offset.is_some() && length.is_some() {
-                    let offset_str = offset.unwrap();
-                    let length_str = length.unwrap();
-                    let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
-                    let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
-                    let mut buf = vec![0; length];
-                    file.read_at(&mut buf, offset)
-                        .map_err(|_| Error::Unknown)
-                        .unwrap();
-                    Some(buf)
-                } else {
-                    let mut buf = Vec::new();
-                    file.read_to_end(&mut buf)
-                        .map_err(|_| Error::Unknown)
-                        .unwrap();
-                    Some(buf)
+                match key.as_ref() {
+                    "location" if location.is_none() => {
+                        location = Some(entry.value.ok_or(Error::InvalidValue {
+                            field: "location".to_string(),
+                            value: "None".to_string(),
+                        })?);
+                    }
+                    "offset" => {
+                        offset = Some(entry.value.ok_or(Error::InvalidValue {
+                            field: "offset".to_string(),
+                            value: "None".to_string(),
+                        })?);
+                    }
+                    "length" => {
+                        length = Some(entry.value.ok_or(Error::InvalidValue {
+                            field: "length".to_string(),
+                            value: "None".to_string(),
+                        })?);
+                    }
+                    "checksum" => {
+                        _checksum = Some(entry.value.ok_or(Error::InvalidValue {
+                            field: "checksum".to_string(),
+                            value: "None".to_string(),
+                        })?);
+                    }
+                    _ => todo!(),
                 }
             }
-        };
 
-        let data_type: DataType = value
-            .data_type
-            .ok_or(Error::MissingField {
-                name: "Tensor::data_type".to_string(),
-            })?
-            .try_into()?;
+            let location = location.ok_or(Error::InvalidValue {
+                field: "location".to_string(),
+                value: "None".to_string(),
+            })?;
 
-        if !data_type.is_supported() {
-            return Err(Error::NotSupportedD);
-        }
+            let mut file = match base_url {
+                None => File::open(format!("{}", location.as_ref()))
+                    .map_err(|_| Error::Unknown)
+                    .unwrap(),
+                Some(mut base) => {
+                    base.push(location.as_ref());
 
-        assert!(value.metadata_props.is_empty(), "this is not supported");
+                    File::open(format!("{}", base.as_os_str().to_string_lossy(),))
+                        .map_err(|_| Error::Unknown)
+                        .unwrap()
+                }
+            };
 
-        let mut res = Self {
-            dims: value.dims.into_iter().map(|d| d as usize).collect(),
-            data_type,
-            segment: None,
-            float_data: value.float_data.to_vec(),
-            int32_data: value.int32_data.to_vec(),
-            string_data: value
-                .string_data
-                .into_iter()
-                .map(|data| data.to_vec())
-                .collect(),
-            int64_data: value.int64_data.to_vec(),
-            name: value.name.map(|name| name.to_string()),
-            doc_string: value.doc_string.map(|doc| doc.to_string()),
-            raw_data: value.raw_data.map(|data| data.to_vec()),
-            double_data: value.double_data.to_vec(),
-            uint64_data: value.uint64_data,
-        };
+            if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
+                return Err(Error::Invalid);
+            }
 
-        if let Some(data) = external_data {
-            match res.data_type {
-                DataType::Undefined => {
-                    return Err(Error::Invalid);
-                }
-                DataType::Int8 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Float => {
-                    res.float_data = u8_to_f32_vec(data.as_slice())?;
-                }
-                DataType::Double => {
-                    res.double_data = u8_to_f64_vec(data.as_slice())?;
-                }
-                DataType::Uint8 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Uint16 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Int16 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Int32 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Uint32 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Int64 => {
-                    res.int64_data = u8_to_i64_vec(data.as_slice())?;
-                }
-                DataType::Uint64 => {
-                    res.uint64_data = u8_to_u64_vec(data.as_slice())?;
-                }
-                DataType::String => {}
-                DataType::Bool => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Float16 => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Bfloat16 => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Complex64 => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Complex128 => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Float8E4M3FN => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Float8E4M3FNUZ => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Float8E5M2 => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Float8E5M2FNUZ => {
-                    return Err(Error::NotSupportedD);
-                }
-                DataType::Uint4 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
-                DataType::Int4 => {
-                    res.int32_data = u8_to_i32_vec(data.as_slice())?;
-                }
+            if offset.is_some() && length.is_some() {
+                let offset_str = offset.unwrap();
+                let length_str = length.unwrap();
+                let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
+                let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
+                let mut buf = vec![0; length];
+                file.read_at(&mut buf, offset)
+                    .map_err(|_| Error::Unknown)
+                    .unwrap();
+                Some(buf)
+            } else {
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf)
+                    .map_err(|_| Error::Unknown)
+                    .unwrap();
+                Some(buf)
             }
         }
+    };
 
-        Ok(res)
+    let data_type: DataType = value
+        .data_type
+        .ok_or(Error::MissingField {
+            name: "Tensor::data_type".to_string(),
+        })?
+        .try_into()?;
+
+    if !data_type.is_supported() {
+        return Err(Error::NotSupportedD);
     }
+
+    assert!(value.metadata_props.is_empty(), "this is not supported");
+
+    let mut res = Tensor {
+        dims: value.dims.into_iter().map(|d| d as usize).collect(),
+        data_type,
+        segment: None,
+        float_data: value.float_data.to_vec(),
+        int32_data: value.int32_data.to_vec(),
+        string_data: value
+            .string_data
+            .into_iter()
+            .map(|data| data.to_vec())
+            .collect(),
+        int64_data: value.int64_data.to_vec(),
+        name: value.name.map(|name| name.to_string()),
+        doc_string: value.doc_string.map(|doc| doc.to_string()),
+        raw_data: value.raw_data.map(|data| data.to_vec()),
+        double_data: value.double_data.to_vec(),
+        uint64_data: value.uint64_data,
+    };
+
+    if let Some(data) = external_data {
+        match res.data_type {
+            DataType::Undefined => {
+                return Err(Error::Invalid);
+            }
+            DataType::Int8 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Float => {
+                res.float_data = u8_to_f32_vec(data.as_slice())?;
+            }
+            DataType::Double => {
+                res.double_data = u8_to_f64_vec(data.as_slice())?;
+            }
+            DataType::Uint8 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Uint16 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Int16 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Int32 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Uint32 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Int64 => {
+                res.int64_data = u8_to_i64_vec(data.as_slice())?;
+            }
+            DataType::Uint64 => {
+                res.uint64_data = u8_to_u64_vec(data.as_slice())?;
+            }
+            DataType::String => {}
+            DataType::Bool => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Float16 => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Bfloat16 => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Complex64 => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Complex128 => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Float8E4M3FN => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Float8E4M3FNUZ => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Float8E5M2 => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Float8E5M2FNUZ => {
+                return Err(Error::NotSupportedD);
+            }
+            DataType::Uint4 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+            DataType::Int4 => {
+                res.int32_data = u8_to_i32_vec(data.as_slice())?;
+            }
+        }
+    }
+
+    Ok(res)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -477,11 +484,11 @@ impl TryFrom<onnx::SparseTensorProto<'_>> for SparseTensor {
         Ok(SparseTensor {
             values: value
                 .values
-                .map(|t| Tensor::from_onnx_tensor(t))
+                .map(|t| tensor_from_onnx_tensor(t, None))
                 .transpose()?,
             indices: value
                 .indices
-                .map(|t| Tensor::from_onnx_tensor(t))
+                .map(|t| tensor_from_onnx_tensor(t, None))
                 .transpose()?,
             dims: value.dims,
         })
