@@ -149,6 +149,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         let type_value = TypeValue::Tensor {
             ty: tensor.data_type as i32,
             dims: tensor.dims.clone(),
+            has_dynamic_dims: false,
         };
         node.set_type_value(type_value);
 

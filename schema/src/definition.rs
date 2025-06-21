@@ -45,6 +45,13 @@ impl Definition {
             .map(|v| DataType::try_from(v.ty()).unwrap())
     }
 
+    pub fn has_dynamic_dims(&self) -> bool {
+        self.node
+            .value
+            .as_ref()
+            .map_or(false, |v| v.has_dynamic_dims())
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.node.name.as_ref().map(|name| name.as_str())
     }

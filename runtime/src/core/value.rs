@@ -2,6 +2,7 @@ use crate::core::error::Error;
 
 #[derive(Debug)]
 pub struct Value {
+    pub(crate) shape: Option<Vec<usize>>,
     pub(crate) inner: InnerValue,
 }
 
@@ -58,10 +59,22 @@ impl TryFrom<Value> for Vec<bool> {
     }
 }
 
+impl<I> From<(Vec<I>, Vec<usize>)> for Value
+where
+    Value: From<Vec<I>>,
+{
+    fn from(value: (Vec<I>, Vec<usize>)) -> Self {
+        let mut res: Value = value.0.into();
+        res.shape = Some(value.1);
+        res
+    }
+}
+
 impl From<Vec<f32>> for Value {
     fn from(value: Vec<f32>) -> Self {
         Self {
             inner: InnerValue::Float32(value),
+            shape: None,
         }
     }
 }
@@ -70,6 +83,7 @@ impl From<Vec<i32>> for Value {
     fn from(value: Vec<i32>) -> Self {
         Self {
             inner: InnerValue::Int32(value),
+            shape: None,
         }
     }
 }
@@ -78,6 +92,7 @@ impl From<Vec<i64>> for Value {
     fn from(value: Vec<i64>) -> Self {
         Self {
             inner: InnerValue::Int64(value),
+            shape: None,
         }
     }
 }
@@ -86,6 +101,7 @@ impl From<Vec<bool>> for Value {
     fn from(value: Vec<bool>) -> Self {
         Self {
             inner: InnerValue::Bool(value),
+            shape: None,
         }
     }
 }

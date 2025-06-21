@@ -6,7 +6,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum TypeValue {
-    Tensor { ty: i32, dims: Vec<usize> },
+    Tensor {
+        ty: i32,
+        dims: Vec<usize>,
+        has_dynamic_dims: bool,
+    },
 }
 
 impl TypeValue {
@@ -33,6 +37,7 @@ impl TypeValue {
                 }
 
                 let mut dims = Vec::new();
+                let mut has_dynamic_dims = false;
                 for s in &tensor.shape.ok_or(Error::Unknown)?.dim {
                     match &s.value {
                         tensor_shape_proto::mod_Dimension::OneOfvalue::dim_value(v) => {
@@ -42,6 +47,7 @@ impl TypeValue {
                             })?);
                         }
                         tensor_shape_proto::mod_Dimension::OneOfvalue::dim_param(_) => {
+                            has_dynamic_dims = true;
                         }
                         _ => {
                             // Todo: add support for other types here.
@@ -53,6 +59,7 @@ impl TypeValue {
                 Some(Self::Tensor {
                     ty: tensor.elem_type.unwrap(),
                     dims,
+                    has_dynamic_dims,
                 })
             }
             OneOfvalue::None => return Ok(None),
@@ -71,6 +78,14 @@ impl TypeValue {
     pub fn dims(&self) -> &Vec<usize> {
         match self {
             TypeValue::Tensor { dims, .. } => &dims,
+        }
+    }
+
+    pub fn has_dynamic_dims(&self) -> bool {
+        match self {
+            TypeValue::Tensor {
+                has_dynamic_dims, ..
+            } => *has_dynamic_dims,
         }
     }
 }

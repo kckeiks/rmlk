@@ -168,6 +168,38 @@ where
             }
         }
 
+        if let Some(shape) = value.shape {
+            let node = self
+                .get_node(node_id)
+                .expect("we already checked that it exists above");
+
+            let shape_def = node
+                .value()
+                .shape()
+                .ok_or(ExecutionStateError::InputMissingShape)?;
+
+            if shape.len() != shape_def.len() {
+                return Err(ExecutionStateError::InputAndDefRankMismatch.into());
+            }
+
+            for (idx, &dim) in shape.iter().enumerate() {
+                if shape_def[idx] != dim {
+                    if shape_def[idx] != 0
+                        || !(shape_def[idx] == 0 && node.value().has_dynamic_dims())
+                    {
+                        return Err(ExecutionStateError::InputShapeAndDefShapeMismatch.into());
+                    }
+                }
+            }
+
+            let tensor = self
+                .get_tensor_from_node_id(node_id)
+                .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+
+            let dst_id = tensor.dst_id();
+            self.copy_shape_from_slice(&shape, dst_id)?;
+        }
+
         Ok(())
     }
 
@@ -241,6 +273,9 @@ pub enum ExecutionStateError {
     InputTensorNotFound { id: usize },
     OutputTensorNotFound { id: usize },
     TensorNotFound { id: usize },
+    InputMissingShape,
+    InputAndDefRankMismatch,
+    InputShapeAndDefShapeMismatch,
 }
 
 impl Display for ExecutionStateError {
@@ -254,6 +289,15 @@ impl Display for ExecutionStateError {
             }
             ExecutionStateError::TensorNotFound { id } => {
                 write!(f, "Tensor not found: {}", id)
+            }
+            ExecutionStateError::InputMissingShape => {
+                write!(f, "Input tensor missing shape")
+            }
+            ExecutionStateError::InputAndDefRankMismatch => {
+                write!(f, "Input and definition rank mismatch")
+            }
+            ExecutionStateError::InputShapeAndDefShapeMismatch => {
+                write!(f, "Input and definition shape mismatch")
             }
         }
     }
