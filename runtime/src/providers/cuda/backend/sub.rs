@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::{binary, common};
+use crate::providers::cuda::backend::binary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -47,16 +49,16 @@ impl SubBackend {
         unsafe {
             binary::compute::<D, D, D>("sub", self.stream.clone(), func, ctx)?;
         }
-        common::write_results_binary::<D, D, D>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<D, D, D>(
             "debugging/sub",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

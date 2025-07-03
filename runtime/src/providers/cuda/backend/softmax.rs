@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
 use anyhow::Result;
@@ -127,12 +129,13 @@ impl SoftmaxBackend {
             )?;
         }
 
-        common::write_results_softmax::<T, T>("debugging/softmax", self.stream.clone(), ctx)
+        #[cfg(feature = "debugger")]
+        debug::write_results_softmax::<T, T>("debugging/softmax", self.stream.clone(), ctx)
             .unwrap();
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

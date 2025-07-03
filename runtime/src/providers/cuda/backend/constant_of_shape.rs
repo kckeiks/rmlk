@@ -83,8 +83,8 @@ impl ConstantOfShapeBackend {
             .map_err(|e| InternalError::Device { error: e.into() })?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

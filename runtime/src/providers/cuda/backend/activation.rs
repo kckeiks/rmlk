@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
@@ -105,17 +107,17 @@ impl ActivationBackend {
             )?;
         }
 
-        common::write_results_unary::<I, I>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_unary::<I, I>(
             "debugging/activation",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

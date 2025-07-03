@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test_utils;
+
 use anyhow::{anyhow, bail, Result};
 use half::f16;
 use num_traits::{Num, ToPrimitive};

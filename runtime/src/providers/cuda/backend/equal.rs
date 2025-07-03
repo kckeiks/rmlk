@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::{binary, common};
+use crate::providers::cuda::backend::binary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
@@ -48,15 +50,16 @@ impl EqualBackend {
         unsafe {
             binary::compute::<D, D, bool>("equal", self.stream.clone(), func, ctx)?;
         }
-        common::write_results_binary::<D, D, bool>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<D, D, bool>(
             "debugging/equal",
             self.stream.clone(),
             ctx,
             Default::default(),
         )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

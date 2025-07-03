@@ -3,6 +3,8 @@ use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
@@ -147,11 +149,12 @@ impl ReshapeBackend {
             common::copy_tensor_dev_data::<T>(&self.stream, &data_tensor, &mut reshaped_tensor)?;
         }
 
-        common::write_results_reshape::<T>("debugging/reshape", self.stream.clone(), ctx)?;
+        #[cfg(feature = "debugger")]
+        debug::write_results_reshape::<T>("debugging/reshape", self.stream.clone(), ctx)?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

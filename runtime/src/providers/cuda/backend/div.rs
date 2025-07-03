@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
@@ -48,16 +50,16 @@ impl DivBackend {
         unsafe {
             binary::compute::<D, D, D>("div", self.stream.clone(), func, ctx)?;
         }
-        super::common::write_results_binary::<D, D, D>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<D, D, D>(
             "debugging/div",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

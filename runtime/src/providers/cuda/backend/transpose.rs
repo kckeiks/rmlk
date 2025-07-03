@@ -2,6 +2,8 @@ use crate::attributes::transpose;
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -147,12 +149,13 @@ impl TransposeBackend {
             }
         }
 
-        common::write_results_transpose::<I>("debugging/transpose", self.stream.clone(), ctx)
+        #[cfg(feature = "debugger")]
+        debug::write_results_transpose::<I>("debugging/transpose", self.stream.clone(), ctx)
             .unwrap();
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

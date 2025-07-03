@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -46,16 +48,16 @@ impl NegBackend {
         unsafe {
             unary::compute::<D>("neg", self.stream.clone(), func, ctx)?;
         }
-        super::common::write_results_unary::<D, D>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_unary::<D, D>(
             "debugging/neg",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

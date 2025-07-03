@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils::DataIterator;
 use crate::{attributes, utils};
@@ -121,7 +123,8 @@ impl GatherBackend {
         match dtype {
             DataType::Int32 => {
                 self.perform_device_gather::<D, i32>(axis, ctx)?;
-                common::write_results_gather::<D, i32>(
+                #[cfg(feature = "debugger")]
+                debug::write_results_gather::<D, i32>(
                     "debugging/gather",
                     self.stream.clone(),
                     ctx,
@@ -129,7 +132,8 @@ impl GatherBackend {
             }
             DataType::Int64 => {
                 self.perform_device_gather::<D, i64>(axis, ctx)?;
-                common::write_results_gather::<D, i64>(
+                #[cfg(feature = "debugger")]
+                debug::write_results_gather::<D, i64>(
                     "debugging/gather",
                     self.stream.clone(),
                     ctx,
@@ -141,8 +145,8 @@ impl GatherBackend {
         }
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

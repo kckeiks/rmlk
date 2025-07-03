@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
@@ -11,7 +13,6 @@ use num_traits::Num;
 use rmlk_cuda::kernels::expand;
 use rmlk_cuda::kernels::expand::ExpandKernel;
 use rmlk_schema::{DataType, DataTypeMap};
-use std::cmp;
 use std::sync::Arc;
 
 pub struct ExpandBackend {
@@ -123,10 +124,6 @@ impl ExpandBackend {
             common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
 
             let input_tensor = ctx.get_input(0)?;
-            let shape_tensor = ctx.get_input(1)?;
-
-            // Todo: What is this unused?
-            let rank = cmp::max(input_tensor.shape().len(), shape_tensor.shape().len());
 
             let input_dev_ptr = input_tensor.try_dev_data_ptr()?;
             let input_view = input_dev_ptr.data::<T>();
@@ -185,17 +182,17 @@ impl ExpandBackend {
             }
         }
 
-        common::write_results_binary::<T, i64, T>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<T, i64, T>(
             "debugging/expand",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

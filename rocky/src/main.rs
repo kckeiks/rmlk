@@ -43,7 +43,6 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Transform { path, output } => {
             let base_url = path.parent().map(|p| p.to_path_buf());
-            println!("base_url: {:?}", base_url);
             let model = fs::read(path.clone())?;
             let mut reader = BytesReader::from_bytes(&model);
             let model_proto = ModelProto::from_reader(&mut reader, &model)?;

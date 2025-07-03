@@ -1,7 +1,5 @@
 use rmlk_runtime::{Builder, Value};
-use std::fs::File;
 use std::io::BufRead;
-use std::io::Write;
 use std::{collections::HashMap, fs};
 use tokenizers::Tokenizer;
 
@@ -39,13 +37,13 @@ fn main() {
     let mut input_ids: Vec<i64> = Vec::new();
 
     for line in std::io::stdin().lock().lines() {
-        let Ok(_user_input) = line else { continue };
+        let Ok(user_input) = line else { continue };
 
         let full_prompt = format!(
             "{BEGIN_OF_TEXT}{START_HEADER_ID}system{END_HEADER_ID}\n\
             You are a helpful assistant.{EOT_ID}\n\
             {START_HEADER_ID}user{END_HEADER_ID}\n\
-            what is a cat?{EOT_ID}\n\
+            {user_input}{EOT_ID}\n\
             {START_HEADER_ID}assistant{END_HEADER_ID}"
         );
 
@@ -85,9 +83,9 @@ fn main() {
 
             assert_eq!(input_tokens.len(), position_ids.len());
             assert_eq!(past_sequence_len + input_tokens.len(), attention_mask.len());
-            
+
             past_sequence_len += input_tokens.len();
-            
+
             feed.insert(
                 "input_ids".into(),
                 (input_tokens, input_tokens_shape.clone())

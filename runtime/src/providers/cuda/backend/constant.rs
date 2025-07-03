@@ -169,8 +169,8 @@ impl ConstantBackend {
         }
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Err(InternalError::MissingAttributes.into())
     }

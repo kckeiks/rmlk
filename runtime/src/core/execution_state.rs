@@ -1,7 +1,6 @@
 use crate::core::allocators::ScratchAllocator;
 use crate::core::device_service::DeviceService;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::plan::Plan;
 use crate::core::store::TensorStore;
 use crate::core::tensor::Tensor;
 use crate::core::tensor_handle::{DstTensorId, SrcTensorId};

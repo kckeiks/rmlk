@@ -3,6 +3,8 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
 use crate::providers::cuda::data::CudaData;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
@@ -266,15 +268,16 @@ impl ReduceMeanBackend {
             self.copy_input_to_output::<I>(ctx)?;
         }
 
-        common::write_results_reduce_mean::<I, i64>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_reduce_mean::<I, i64>(
             "debugging/reduce_mean",
             self.stream.clone(),
             ctx,
         )?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

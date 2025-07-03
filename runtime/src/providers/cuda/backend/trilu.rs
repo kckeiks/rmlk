@@ -1,7 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
 use crate::providers::cuda::data::CudaData;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::providers::TENSOR_3D_RANK;
 use crate::utils::FromBytes;
@@ -153,11 +154,12 @@ impl TriluBackend {
             }
         }
 
-        common::write_results_trilu::<T>("debugging/trilu", self.stream.clone(), ctx).unwrap();
+        #[cfg(feature = "debugger")]
+        debug::write_results_trilu::<T>("debugging/trilu", self.stream.clone(), ctx).unwrap();
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

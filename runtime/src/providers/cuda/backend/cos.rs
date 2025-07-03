@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -44,15 +46,17 @@ impl CosBackend {
         unsafe {
             unary::compute::<D>("cos", self.stream.clone(), func, ctx)?;
         }
-        super::common::write_results_unary::<D, D>(
+        #[cfg(feature = "debugger")]
+        #[cfg(feature = "debugger")]
+        debug::write_results_unary::<D, D>(
             "debugging/cos",
             self.stream.clone(),
             ctx,
             Default::default(),
         )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

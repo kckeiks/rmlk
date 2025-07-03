@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
@@ -353,12 +355,12 @@ impl SliceBackend {
             };
         }
 
-        common::write_results_slice::<T, Tind>("debugging/slice", self.stream.clone(), ctx)
-            .unwrap();
+        #[cfg(feature = "debugger")]
+        debug::write_results_slice::<T, Tind>("debugging/slice", self.stream.clone(), ctx).unwrap();
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -518,15 +520,11 @@ where
 
 #[derive(Debug)]
 pub enum SliceError {
-    StepsAndAxesLengthMismatch,
-    ZeroStep,
-    InvalidStepStartValue,
-    InvalidStepEndValue,
+    AxisOutOfRange,
     InvalidDifference,
     StartAndEndDataTypeMismatch,
-    TensorDataTypeMismatch,
-    DuplicateAxis,
-    AxisOutOfRange,
+    StepsAndAxesLengthMismatch,
+    ZeroStep,
 }
 
 impl Display for SliceError {

@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -134,16 +136,16 @@ impl RangeBackend {
                 .map_err(|e| InternalError::Device { error: e.into() })?;
         }
 
-        common::write_results_ternary::<I, I, I, I>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_ternary::<I, I, I, I>(
             "debugging/range",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

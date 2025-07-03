@@ -1,6 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::{common, unary};
+use crate::providers::cuda::backend::unary;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -45,16 +47,16 @@ impl SqrtBackend {
         unsafe {
             unary::compute::<I>("sqrt", self.stream.clone(), kernel, ctx)?;
         }
-        common::write_results_unary::<I, I>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_unary::<I, I>(
             "debugging/sqrt",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

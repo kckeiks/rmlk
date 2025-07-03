@@ -2,6 +2,8 @@ use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::common;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
@@ -114,17 +116,17 @@ impl UnsqueezeBackend {
             );
         }
 
-        common::write_results_binary::<T, i64, T>(
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<T, i64, T>(
             "debugging/unsqueeze",
             self.stream.clone(),
             ctx,
             Default::default(),
-        )
-        .unwrap();
+        )?;
 
         /*self.stream
-            .synchronize()
-            .map_err(|e| InternalError::Device { error: e.into() })?;*/
+        .synchronize()
+        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
