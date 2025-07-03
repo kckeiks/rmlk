@@ -1,8 +1,10 @@
-#[cfg(test)]
-mod test_utils;
+mod iterators;
+mod serialization;
+
+pub use iterators::*;
+pub use serialization::*;
 
 use anyhow::{anyhow, bail, Result};
-use half::f16;
 use num_traits::{Num, ToPrimitive};
 use std::cmp;
 use std::ops::AddAssign;
@@ -112,55 +114,6 @@ pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize
     true
 }
 
-#[derive(Clone)]
-pub struct DataIterator<'a, T> {
-    shape: &'a [usize],
-    stride: &'a [usize],
-    data: &'a [T],
-    current: usize,
-}
-
-impl<'a, T> DataIterator<'a, T> {
-    pub fn new(shape: &'a [usize], stride: &'a [usize], data: &'a [T]) -> Self {
-        debug_assert_eq!(shape.len(), stride.len());
-
-        Self {
-            shape,
-            stride,
-            data,
-            current: 0,
-        }
-    }
-}
-
-impl<'a, T> Iterator for DataIterator<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current >= self.data.len() {
-            return None;
-        }
-
-        let old_current = self.current;
-        self.current += 1;
-
-        match self.shape.len() {
-            0 => self.data.get(old_current),
-            _ => {
-                let mut i = 0;
-                let mut tmp_i = old_current;
-                for (d_i, dim) in self.shape.iter().enumerate().rev() {
-                    let norm_i = tmp_i % dim;
-                    i += norm_i * self.stride[d_i];
-                    tmp_i /= dim;
-                }
-
-                self.data.get(i)
-            }
-        }
-    }
-}
-
 pub fn normalize_indices(src: &[i64], dst: &mut [usize], size: usize) -> Result<()> {
     debug_assert_eq!(src.len(), dst.len());
 
@@ -232,153 +185,6 @@ where
         dst[i] = T::try_from(i)?;
     }
     Ok(())
-}
-
-pub trait FromBytes: Sized {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>>;
-}
-
-impl FromBytes for f16 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for f16", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for f32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for f32", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for f64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for f64", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for i32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for i32", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for u32 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for u32", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for i64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for i64", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for u64 {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        if bytes.len() % size_of::<Self>() != 0 {
-            bail!("invalid bytes length {} for u64", bytes.len())
-        }
-
-        let mut vec = Vec::with_capacity(bytes.len() / size_of::<Self>());
-        let mut chunks = bytes.chunks_exact(size_of::<Self>());
-        for chunk in &mut chunks {
-            let arr = chunk.try_into().unwrap();
-            vec.push(Self::from_le_bytes(arr));
-        }
-
-        Ok(vec)
-    }
-}
-
-impl FromBytes for bool {
-    fn from_bytes(bytes: &[u8]) -> Result<Vec<Self>> {
-        // Each byte is one boolean.
-        let vec = bytes.iter().map(|&b| b != 0).collect();
-        Ok(vec)
-    }
-}
-
-pub trait FromF32 {
-    fn from_f32(value: f32) -> Self;
-}
-
-impl FromF32 for f32 {
-    fn from_f32(value: f32) -> Self {
-        value
-    }
-}
-
-impl FromF32 for f16 {
-    fn from_f32(value: f32) -> Self {
-        f16::from_f32(value)
-    }
 }
 
 pub fn write_info<T>(shape: &[T], stride: &[T], dst: &mut [T], start: usize)
