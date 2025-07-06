@@ -13,6 +13,7 @@ pub struct CudaData {
     ptr: CUdeviceptr,
     len: usize,
     dtype: DataType,
+    forget: bool,
 }
 
 impl CudaData {
@@ -28,6 +29,7 @@ impl CudaData {
             ptr: dev_data.leak(),
             len,
             dtype: T::data_type(),
+            forget: false,
         }
     }
 
@@ -78,6 +80,10 @@ impl CudaData {
         self.dtype
     }
 
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub fn zero<T>(&mut self) -> Result<()>
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
@@ -88,10 +94,19 @@ impl CudaData {
             .map_err(|e| InternalError::Device { error: e.into() })?;
         Ok(())
     }
+
+    // Note: The underlying CudaSlice will not be deallocated.
+    pub fn forget(&mut self) {
+        self.forget = true;
+    }
 }
 
 impl Drop for CudaData {
     fn drop(&mut self) {
+        if self.forget {
+            return;
+        }
+
         unsafe {
             match self.dtype {
                 DataType::Float => {

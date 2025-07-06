@@ -442,6 +442,18 @@ pub trait DataTypeMap {
     fn data_type() -> DataType;
 }
 
+impl DataTypeMap for u8 {
+    fn data_type() -> DataType {
+        DataType::Uint8
+    }
+}
+
+impl DataTypeMap for u16 {
+    fn data_type() -> DataType {
+        DataType::Uint16
+    }
+}
+
 impl DataTypeMap for f16 {
     fn data_type() -> DataType {
         DataType::Float16
