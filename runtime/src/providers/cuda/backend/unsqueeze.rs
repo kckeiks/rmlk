@@ -15,13 +15,13 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct UnsqueezeBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl UnsqueezeBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            stream: stream.clone(),
+            _stream: stream.clone(),
         }
     }
 

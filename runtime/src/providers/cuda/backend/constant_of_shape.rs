@@ -13,13 +13,13 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ConstantOfShapeBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl ConstantOfShapeBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            stream: stream.clone(),
+            _stream: stream.clone(),
         }
     }
 

@@ -16,12 +16,12 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ReshapeBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl ReshapeBackend {
     pub fn new(stream: Arc<CudaStream>) -> Self {
-        Self { stream }
+        Self { _stream: stream }
     }
 
     fn compute_reshape<T>(&mut self, ctx: &Context<Cuda>) -> Result<()>

@@ -18,9 +18,6 @@ impl ShapeAllocator {
     }
 
     pub fn alloc(&self, len: usize) -> Shape {
-        //println!("Allocating from slice: {:?}", len);
-        //println!("our cur len: {:?}", self.cur_len.get());
-
         let mut inner = self.arena.borrow_mut();
 
         let cur_len = self.cur_len.get();
@@ -34,8 +31,6 @@ impl ShapeAllocator {
         let shape = cur_len..(cur_len + len);
         let stride = (cur_len + len)..(cur_len + 2 * len);
         self.cur_len.set(bytes_needed);
-
-        //println!("our cur len after: {:?}", self.cur_len.get());
 
         Shape {
             alloc: self.clone(),
@@ -103,9 +98,6 @@ impl Shape {
     }
 
     pub fn copy_shape(&self, shape: &Shape) {
-        //println!("self.shape: {:?}", self.shape.get());
-        //println!("src.shape: {:?}", shape.shape.get());
-
         let src_shape = shape.shape.get();
         let src_stride = shape.stride.get();
 
@@ -127,8 +119,6 @@ impl Shape {
 
             self.replace(new_shape);
         }
-
-        //println!("self.shape after: {:?}", self.shape.get());
     }
 
     pub fn copy_shape_from_slice(&self, src: &[usize]) {

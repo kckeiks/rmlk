@@ -277,9 +277,6 @@ pub enum ExecutionStateError {
     OutputTensorNotFound { id: usize },
     TensorNotFound { id: usize },
     ComparisonFailed { id: usize },
-    MissingShape,
-    RankMismatch,
-    DimensionMismatch,
 }
 
 impl Display for ExecutionStateError {
@@ -293,21 +290,6 @@ impl Display for ExecutionStateError {
             }
             ExecutionStateError::TensorNotFound { id } => {
                 write!(f, "Tensor not found: {}", id)
-            }
-            ExecutionStateError::MissingShape => {
-                write!(f, "Tensor is missing shape")
-            }
-            ExecutionStateError::RankMismatch => {
-                write!(
-                    f,
-                    "the rank of argument does not match the rank defined for the tensor"
-                )
-            }
-            ExecutionStateError::DimensionMismatch => {
-                write!(
-                    f,
-                    "given shape does not match the shape defined for the tensor"
-                )
             }
             ExecutionStateError::ComparisonFailed { id } => {
                 write!(f, "Comparison failed for node `{}`", id)

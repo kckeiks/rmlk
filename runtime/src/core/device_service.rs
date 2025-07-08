@@ -36,10 +36,7 @@ pub trait DeviceService: Sized {
     fn alloc_zeros_float(&self, len: usize) -> Result<<Self::Value as Value>::Data>;
 }
 
-pub trait DeviceData: Debug {
-    fn dtype(&self) -> DataType;
-    fn len(&self) -> usize;
-}
+pub trait DeviceData: Debug {}
 
 pub trait ValueStore {
     type Value: Value;

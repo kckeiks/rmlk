@@ -1,4 +1,3 @@
-use crate::core::allocators::ArenaId;
 use crate::core::instance::BuilderError;
 use crate::Value;
 use rmlk_schema::{DataType, Op};
@@ -142,9 +141,6 @@ pub enum InternalError {
     UnexpectedTensorDataType {
         expected: DataType,
     },
-    UnknownShapeBuffer {
-        index: ArenaId,
-    },
     UnsupportedDataType {
         dtype: DataType,
     },
@@ -266,9 +262,6 @@ impl Display for InternalError {
                     f,
                     "expected buffer of size `{expected}` instead of `{actual}`"
                 )
-            }
-            InternalError::UnknownShapeBuffer { index } => {
-                write!(f, "unknown buffer given index `{:?}`", index)
             }
             InternalError::UnsupportedInputValues { message } => {
                 write!(f, "unsupported input values `{message}`")

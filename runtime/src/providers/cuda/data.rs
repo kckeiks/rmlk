@@ -210,12 +210,4 @@ impl<'a, T> Drop for DataViewMut<'a, T> {
     }
 }
 
-impl DeviceData for CudaData {
-    fn dtype(&self) -> DataType {
-        self.dtype
-    }
-
-    fn len(&self) -> usize {
-        self.len
-    }
-}
+impl DeviceData for CudaData {}

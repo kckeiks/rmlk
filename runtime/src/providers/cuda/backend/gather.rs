@@ -238,7 +238,7 @@ where
             let norm_i = utils::normalize_index(i64::from(*dim_i), shape[axis])?;
             let start = batch_index * batch_offset + (norm_i * stride[axis]);
 
-            debug!("stack_size={batch_count}, stack_level={batch_index}, elem_count={batch_offset}, dim_i={dim_i:?}, norm_i={norm_i}, start={start}, slice_count={slice_count}, slice_size={batch_size}");
+            trace!("stack_size={batch_count}, stack_level={batch_index}, elem_count={batch_offset}, dim_i={dim_i:?}, norm_i={norm_i}, start={start}, slice_count={slice_count}, slice_size={batch_size}");
             // Slice the input.
             let subslice = data_dev_data.slice(start..start + batch_size);
 

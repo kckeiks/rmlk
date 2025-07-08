@@ -16,13 +16,13 @@ use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct ShapeBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl ShapeBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            stream: stream.clone(),
+            _stream: stream.clone(),
         }
     }
 

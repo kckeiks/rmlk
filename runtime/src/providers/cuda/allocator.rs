@@ -42,7 +42,7 @@ impl CudaBump {
     {
         let align = align_of::<T>() as u64;
 
-        debug_assert!(
+        assert!(
             align <= 256,
             "CudaBump currently only supports alignments up to 256 bytes (requested = {align})"
         );
@@ -94,6 +94,7 @@ impl CudaBump {
         Some(cuda_data)
     }
 
+    // Todo: mark as unsafe.
     pub fn alloc_with_fallback<T>(&self, len: usize) -> Option<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
@@ -102,20 +103,52 @@ impl CudaBump {
             Some(data) => data,
             None => {
                 // Todo: we should return an error from this.
-                self.alloc_fallback::<T>(len).unwrap()
+                unsafe { self.alloc_fallback::<T>(len).unwrap() }
             }
         };
 
         Some(cuda_data)
     }
 
-    fn alloc_fallback<T>(&self, len: usize) -> Result<CudaData>
+    pub fn alloc_with_fallback_zeroed<T>(&self, len: usize) -> Option<CudaData>
+    where
+        T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
+    {
+        let cuda_data = match self.alloc::<T>(len) {
+            Some(mut data) => {
+                // Todo: We should return an error.
+                self.stream
+                    .memset_zeros(data.data_mut::<T>().as_mut())
+                    .unwrap();
+                data
+            }
+            None => {
+                // Todo: we should return an error from this.
+                self.alloc_fallback_zeroed::<T>(len).unwrap()
+            }
+        };
+
+        Some(cuda_data)
+    }
+
+    fn alloc_fallback_zeroed<T>(&self, len: usize) -> Result<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
         let raw_cuda_slice = self
             .stream
             .alloc_zeros::<T>(len)
+            .map_err(|e| InternalError::Device { error: e.into() })?;
+        Ok(CudaData::new(raw_cuda_slice))
+    }
+
+    unsafe fn alloc_fallback<T>(&self, len: usize) -> Result<CudaData>
+    where
+        T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
+    {
+        let raw_cuda_slice = self
+            .stream
+            .alloc::<T>(len)
             .map_err(|e| InternalError::Device { error: e.into() })?;
         Ok(CudaData::new(raw_cuda_slice))
     }

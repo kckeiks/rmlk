@@ -15,13 +15,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub struct RangeBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl RangeBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            stream: stream.clone(),
+            _stream: stream.clone(),
         }
     }
 

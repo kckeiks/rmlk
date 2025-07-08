@@ -12,13 +12,13 @@ use rmlk_schema::{DataType, DataTypeMap};
 use std::sync::Arc;
 
 pub struct ConstantBackend {
-    stream: Arc<CudaStream>,
+    _stream: Arc<CudaStream>,
 }
 
 impl ConstantBackend {
     pub fn new(stream: &Arc<CudaStream>) -> Self {
         Self {
-            stream: stream.clone(),
+            _stream: stream.clone(),
         }
     }
 

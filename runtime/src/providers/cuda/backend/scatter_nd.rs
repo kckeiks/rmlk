@@ -180,7 +180,7 @@ impl ScatterNdBackend {
             let info_data = info.data::<usize>();
 
             let mut error = cuda_bump
-                .alloc_with_fallback::<i32>(1)
+                .alloc_with_fallback_zeroed::<i32>(1)
                 .ok_or(InternalError::CudaBumpAllocatorFailed)?;
             let mut error_data = error.data_mut::<i32>();
 

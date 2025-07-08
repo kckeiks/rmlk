@@ -437,12 +437,10 @@ impl Value for Tensor {
 
 #[derive(Debug)]
 pub enum StoreError {
-    TensorNotFound { id: usize },
     OutputNodeNotFound { output_id: usize, node_id: usize },
     UnknownOutputNode { id: usize },
     UnknownInputNode { id: usize },
     FailedToParseTensorRawData,
-    DataTypeNotFound { node_id: usize },
     ShapeNotFound { node_id: usize },
     DataTypeNotSupported { dtype: DataType },
 }
@@ -450,7 +448,6 @@ pub enum StoreError {
 impl Display for StoreError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            StoreError::TensorNotFound { id } => write!(f, "tensor not found: {}", id),
             StoreError::OutputNodeNotFound { output_id, node_id } => write!(
                 f,
                 "Output node `{output_id}` not found for node `{node_id}`"
@@ -458,9 +455,6 @@ impl Display for StoreError {
             StoreError::UnknownOutputNode { id } => write!(f, "Unknown output node `{id}`"),
             StoreError::UnknownInputNode { id } => write!(f, "Unknown input node `{id}`"),
             StoreError::FailedToParseTensorRawData => write!(f, "failed to parse tensor raw data"),
-            StoreError::DataTypeNotFound { node_id } => {
-                write!(f, "DataType not found in node `{}`", node_id)
-            }
             StoreError::ShapeNotFound { node_id } => {
                 write!(f, "shape not found in node `{}`", node_id)
             }
