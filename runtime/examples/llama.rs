@@ -177,6 +177,7 @@ fn main() {
         }
 
         println!();
+        println!("Type a prompt and hit <Enter>.");
         input_ids.clear();
     }
 }

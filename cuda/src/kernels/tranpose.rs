@@ -39,7 +39,7 @@ pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     rank: usize,
-    info: &[usize],
+    info: &CudaSlice<usize>,
     perm: &CudaSlice<usize>,
     input_data: &CudaSlice<T>,
     output_data: &mut CudaSlice<T>,
@@ -55,8 +55,6 @@ where
         return Ok(());
     }
 
-    let info_on_dev = stream.memcpy_stod(info)?;
-
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
 
@@ -71,7 +69,7 @@ where
             .launch_builder(&func)
             .arg(&elem_count)
             .arg(&rank)
-            .arg(&info_on_dev)
+            .arg(info)
             .arg(perm)
             .arg(input_data)
             .arg(output_data)
@@ -119,14 +117,15 @@ mod tests {
             utils::calculate_stride(&output_shape, &mut output_strides);
         }
 
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
+        let func = load_kernel(ctx, kernel_type).unwrap();
+
         let mut info_buffer = Vec::with_capacity(rank * 3);
         info_buffer.extend_from_slice(&output_shape);
         info_buffer.extend_from_slice(&input_strides);
         info_buffer.extend_from_slice(&output_strides);
-
-        let ctx = CudaContext::new(0).unwrap();
-        let stream = ctx.default_stream();
-        let func = load_kernel(ctx, kernel_type).unwrap();
+        let info = stream.memcpy_stod(&info_buffer).unwrap();
 
         let d_perm = stream.memcpy_stod(perm).unwrap();
         let d_input = stream.memcpy_stod(input).unwrap();
@@ -140,7 +139,7 @@ mod tests {
                 stream.clone(),
                 func,
                 rank,
-                &info_buffer,
+                &info,
                 &d_perm,
                 &d_input,
                 &mut d_output,

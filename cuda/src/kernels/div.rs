@@ -61,14 +61,15 @@ mod test {
         let output_len = output_shape.iter().copied().product();
         let mut out_data = stream.alloc_zeros(output_len).unwrap();
 
-        let mut info = create_info_buffer(&output_shape, &x_stride, &y_stride);
+        let info = create_info_buffer(&output_shape, &x_stride, &y_stride);
+        let info = stream.memcpy_stod(&info).unwrap();
 
         unsafe {
             compute::<f32>(
                 stream.clone(),
                 f,
                 output_shape.len(),
-                &mut info,
+                &info,
                 &x_on_dev,
                 &y_on_dev,
                 &mut out_data,

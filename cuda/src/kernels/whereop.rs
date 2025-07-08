@@ -58,7 +58,7 @@ pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     x_data: &CudaSlice<T>,
     y_data: &CudaSlice<T>,
     z_data: &CudaSlice<bool>,
@@ -67,14 +67,13 @@ pub unsafe fn compute<T>(
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
-    assert_eq!(4 * ndims, info_buffer.len());
+    assert_eq!(4 * ndims, info.len());
 
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = stream.memcpy_stod(info_buffer)?;
+    let elem_count = output_data.len();
 
-    let elem_count: usize = info_buffer[..ndims].iter().product();
-
-    assert_eq!(elem_count, output_data.len());
+    // Todo: we need to validate that shape is valid and that it's consistent with
+    // the length of the cuda slice.
+    //assert_eq!(elem_count, output_data.len());
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -90,7 +89,7 @@ where
             .launch_builder(&func)
             .arg(&elem_count)
             .arg(&ndims)
-            .arg(&info)
+            .arg(info)
             .arg(x_data)
             .arg(y_data)
             .arg(z_data)
@@ -151,14 +150,15 @@ mod test {
             .alloc_zeros(output_shape.iter().map(|d| *d).product())
             .unwrap();
 
-        let mut info = create_info_buffer(&output_shape, &x_stride, &y_stride, &z_stride);
+        let info = create_info_buffer(&output_shape, &x_stride, &y_stride, &z_stride);
+        let info = stream.memcpy_stod(&info).unwrap();
 
         unsafe {
             compute::<f32>(
                 stream.clone(),
                 f,
                 output_shape.len(),
-                &mut info,
+                &info,
                 &x_data,
                 &y_data,
                 &z_data,

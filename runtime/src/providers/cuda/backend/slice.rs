@@ -1,6 +1,6 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -46,146 +46,6 @@ impl SliceBackend {
         slice::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
-    fn compute_output_shape<Tind>(&self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        Tind: DataTypeMap
-            + ValidAsZeroBits
-            + DeviceRepr
-            + Num
-            + Default
-            + Copy
-            + Signed
-            + PrimInt
-            + Debug
-            + TryFrom<usize>,
-        <Tind as TryFrom<usize>>::Error: Debug,
-        i64: From<Tind>,
-    {
-        let input_tensor = ctx.get_input(0)?;
-
-        debug!(
-            "[input][dtype={:?}][shape={:?}][strides={:?}]",
-            input_tensor.dtype(),
-            input_tensor.shape(),
-            input_tensor.stride()
-        );
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-
-        let starts_data = {
-            let starts_tensor = ctx.get_input(1)?;
-
-            debug!(
-                "[starts][dtype={:?}][shape={:?}][strides={:?}]",
-                starts_tensor.dtype(),
-                starts_tensor.shape(),
-                starts_tensor.stride()
-            );
-
-            let starts_ptr = starts_tensor.try_dev_data_ptr()?;
-            let starts_view = starts_ptr.data::<Tind>();
-            let starts_len = starts_view.len();
-
-            let starts_data = scratch_alloc.allocate(starts_len)?;
-            self.stream
-                .memcpy_dtoh(starts_view.as_ref(), starts_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            starts_data
-        };
-
-        let ends_data = {
-            let ends_tensor = ctx.get_input(2)?;
-
-            debug!(
-                "[ends][dtype={:?}][shape={:?}][strides={:?}]",
-                ends_tensor.dtype(),
-                ends_tensor.shape(),
-                ends_tensor.stride()
-            );
-
-            let ends_ptr = ends_tensor.try_dev_data_ptr()?;
-            let ends_view = ends_ptr.data::<Tind>();
-            let ends_len = ends_view.len();
-
-            let ends_data = scratch_alloc.allocate(ends_len)?;
-            self.stream
-                .memcpy_dtoh(ends_view.as_ref(), ends_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-
-            ends_data
-        };
-
-        let starts_len = starts_data.len();
-
-        let norm_axes;
-        match ctx.get_input(3) {
-            Ok(axes_tensor) => {
-                debug!(
-                    "[axes][dtype={:?}][shape={:?}][strides={:?}]",
-                    axes_tensor.dtype(),
-                    axes_tensor.shape(),
-                    axes_tensor.stride()
-                );
-                // Todo: maybe validate that this is 1D.
-                let axes_ptr = axes_tensor.try_dev_data_ptr()?;
-                let axes_view = axes_ptr.data::<Tind>();
-                let axes_len = axes_view.len();
-
-                let axes_data = scratch_alloc.allocate(axes_len)?;
-                self.stream
-                    .memcpy_dtoh(axes_view.as_ref(), axes_data)
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
-                norm_axes = axes_data;
-            }
-            Err(_) => {
-                norm_axes = scratch_alloc.allocate(starts_len)?;
-                for i in 0..starts_len {
-                    norm_axes[i] = Tind::try_from(i).expect("MAX_RANK is 8");
-                }
-            }
-        }
-
-        let mut steps = None;
-        if let Ok(steps_tensor) = ctx.get_input(4) {
-            debug!(
-                "[steps][dtype={:?}][shape={:?}][strides={:?}]",
-                steps_tensor.dtype(),
-                steps_tensor.shape(),
-                steps_tensor.stride()
-            );
-
-            let steps_ptr = steps_tensor.try_dev_data_ptr()?;
-            let steps_view = steps_ptr.data::<Tind>();
-            let steps_len = steps_view.len();
-            let steps_data = scratch_alloc.allocate(steps_len)?;
-            self.stream
-                .memcpy_dtoh(steps_view.as_ref(), steps_data)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            steps = Some(steps_data);
-        }
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let input = ctx.get_input(0)?;
-        let output_shape = scratch_alloc.allocate_from_slice(input.shape())?;
-
-        compute_output_shape(
-            input.shape(),
-            norm_axes,
-            starts_data,
-            ends_data,
-            steps.as_deref(),
-            output_shape,
-        )?;
-
-        let output_tensor = ctx.get_output(0)?;
-        let dst_id = output_tensor.dst_id();
-
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(output_shape, dst_id)?;
-
-        Ok(())
-    }
-
     fn compute_slice<T, Tind>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Default + Copy + Debug,
@@ -212,9 +72,10 @@ impl SliceBackend {
                 input_tensor.stride()
             );
 
-            self.compute_output_shape(ctx)?;
+            compute_output_shape::<Tind>(ctx)?;
 
             let output_tensor = ctx.get_output(0)?;
+            output_tensor.init_payload::<T>()?;
 
             debug!(
                 "[output][dtype={:?}][shape={:?}][strides={:?}]",
@@ -223,65 +84,65 @@ impl SliceBackend {
                 output_tensor.stride()
             );
 
-            if output_tensor.shape().iter().any(|&d| d == 0) {
-                common::init_tensor_device_data_with_empty_slice::<T>(&self.stream, output_tensor)?;
-                return Ok(());
-            }
-
-            common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
-
             let input_tensor = ctx.get_input(0)?;
-            let input_ptr = input_tensor.try_dev_data_ptr()?;
-            let input_view = input_ptr.data::<T>();
+            let input_payload = input_tensor.payload();
+            let input_data = input_payload.data::<T>();
 
             let starts_tensor = ctx.get_input(1)?;
-            let starts_ptr = starts_tensor.try_dev_data_ptr()?;
-            let starts_view = starts_ptr.data::<Tind>();
+            let starts_payload = starts_tensor.payload();
+            let starts_data = starts_payload.data::<Tind>();
 
             let ends_tensor = ctx.get_input(2)?;
-            let ends_ptr = ends_tensor.try_dev_data_ptr()?;
-            let ends_view = ends_ptr.data::<Tind>();
+            let ends_payload = ends_tensor.payload();
+            let ends_data = ends_payload.data::<Tind>();
 
             let output_tensor = ctx.get_output(0)?;
-            let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-            let mut output_view = output_ptr.data_mut::<T>();
+            let mut output_payload = output_tensor.payload_mut();
+            let mut output_data = output_payload.data_mut::<T>();
 
             let rank = input_tensor.shape().len();
             let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-            let info = scratch_alloc.allocate(4 * rank)?;
-            info[..rank].copy_from_slice(input_tensor.shape());
-            info[rank..2 * rank].copy_from_slice(input_tensor.stride());
-            info[2 * rank..3 * rank].copy_from_slice(output_tensor.shape());
-            info[3 * rank..].copy_from_slice(input_tensor.stride());
+            let info_on_host = scratch_alloc.allocate(4 * rank)?;
+            info_on_host[..rank].copy_from_slice(&input_tensor.shape());
+            info_on_host[rank..2 * rank].copy_from_slice(&input_tensor.stride());
+            info_on_host[2 * rank..3 * rank].copy_from_slice(&output_tensor.shape());
+            info_on_host[3 * rank..].copy_from_slice(&input_tensor.stride());
+
+            let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
+
+            let info = cuda_bump
+                .alloc_from_slice_with_fallback(info_on_host)
+                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let info_data = info.data::<usize>();
 
             let func = self.load_cuda_function(T::data_type(), Tind::data_type())?;
 
             match (ctx.get_input(3), ctx.get_input(4)) {
                 (Ok(axes), Ok(steps)) => {
-                    let axes_ptr = axes.try_dev_data_ptr()?;
-                    let axes_view = axes_ptr.data::<Tind>();
-                    let steps_ptr = steps.try_dev_data_ptr()?;
-                    let steps_view = steps_ptr.data::<Tind>();
+                    let axes_ptr = axes.payload();
+                    let axes_data = axes_ptr.data::<Tind>();
+                    let steps_ptr = steps.payload();
+                    let steps_data = steps_ptr.data::<Tind>();
 
                     unsafe {
                         slice::compute(
                             self.stream.clone(),
                             func,
                             rank,
-                            info,
-                            starts_view.as_ref(),
-                            ends_view.as_ref(),
-                            axes_view.as_ref(),
-                            steps_view.as_ref(),
-                            input_view.as_ref(),
-                            output_view.as_mut(),
+                            &info_data,
+                            starts_data.as_ref(),
+                            ends_data.as_ref(),
+                            axes_data.as_ref(),
+                            steps_data.as_ref(),
+                            input_data.as_ref(),
+                            output_data.as_mut(),
                         )?;
                     }
                 }
                 (Err(_), Ok(steps)) => {
-                    let steps_ptr = steps.try_dev_data_ptr()?;
-                    let steps_view = steps_ptr.data::<Tind>();
+                    let steps_ptr = steps.payload();
+                    let steps_data = steps_ptr.data::<Tind>();
 
                     let null_axes = self
                         .stream
@@ -293,19 +154,19 @@ impl SliceBackend {
                             self.stream.clone(),
                             func,
                             rank,
-                            info,
-                            starts_view.as_ref(),
-                            ends_view.as_ref(),
+                            &info_data,
+                            starts_data.as_ref(),
+                            ends_data.as_ref(),
                             &null_axes,
-                            steps_view.as_ref(),
-                            input_view.as_ref(),
-                            output_view.as_mut(),
+                            steps_data.as_ref(),
+                            input_data.as_ref(),
+                            output_data.as_mut(),
                         )?;
                     }
                 }
                 (Ok(axes), Err(_)) => {
-                    let axes_ptr = axes.try_dev_data_ptr()?;
-                    let axes_view = axes_ptr.data::<Tind>();
+                    let axes_ptr = axes.payload();
+                    let axes_data = axes_ptr.data::<Tind>();
 
                     let null_steps = self
                         .stream
@@ -317,13 +178,13 @@ impl SliceBackend {
                             self.stream.clone(),
                             func,
                             rank,
-                            info,
-                            starts_view.as_ref(),
-                            ends_view.as_ref(),
-                            axes_view.as_ref(),
+                            &info_data,
+                            starts_data.as_ref(),
+                            ends_data.as_ref(),
+                            axes_data.as_ref(),
                             &null_steps,
-                            input_view.as_ref(),
-                            output_view.as_mut(),
+                            input_data.as_ref(),
+                            output_data.as_mut(),
                         )?;
                     }
                 }
@@ -342,13 +203,13 @@ impl SliceBackend {
                             self.stream.clone(),
                             func,
                             rank,
-                            info,
-                            starts_view.as_ref(),
-                            ends_view.as_ref(),
+                            &info_data,
+                            starts_data.as_ref(),
+                            ends_data.as_ref(),
                             &null_axes,
                             &null_steps,
-                            input_view.as_ref(),
-                            output_view.as_mut(),
+                            input_data.as_ref(),
+                            output_data.as_mut(),
                         )?;
                     }
                 }
@@ -357,10 +218,6 @@ impl SliceBackend {
 
         #[cfg(feature = "debugger")]
         debug::write_results_slice::<T, Tind>("debugging/slice", self.stream.clone(), ctx).unwrap();
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -390,8 +247,128 @@ impl SliceBackend {
     }
 }
 
+fn compute_output_shape<Tind>(ctx: &Context<Cuda>) -> Result<()>
+where
+    Tind: DataTypeMap
+        + ValidAsZeroBits
+        + DeviceRepr
+        + Num
+        + Default
+        + Copy
+        + Signed
+        + PrimInt
+        + Debug
+        + TryFrom<usize>,
+    <Tind as TryFrom<usize>>::Error: Debug,
+    i64: From<Tind>,
+{
+    let input_tensor = ctx.get_input(0)?;
+
+    debug!(
+        "[input][dtype={:?}][shape={:?}][strides={:?}]",
+        input_tensor.dtype(),
+        input_tensor.shape(),
+        input_tensor.stride()
+    );
+
+    let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+    let starts_data = {
+        let starts_tensor = ctx.get_input(1)?;
+
+        debug!(
+            "[starts][dtype={:?}][shape={:?}][strides={:?}]",
+            starts_tensor.dtype(),
+            starts_tensor.shape(),
+            starts_tensor.stride()
+        );
+
+        let starts_payload = starts_tensor.payload();
+        let starts_data_len = starts_payload.len();
+        let starts_data = scratch_alloc.allocate(starts_data_len)?;
+        starts_tensor.payload_to_host::<Tind>(starts_data)?;
+        starts_data
+    };
+
+    let ends_data = {
+        let ends_tensor = ctx.get_input(2)?;
+
+        debug!(
+            "[ends][dtype={:?}][shape={:?}][strides={:?}]",
+            ends_tensor.dtype(),
+            ends_tensor.shape(),
+            ends_tensor.stride()
+        );
+
+        let ends_payload = ends_tensor.payload();
+        let ends_data_len = ends_payload.len();
+        let ends_data = scratch_alloc.allocate(ends_data_len)?;
+        ends_tensor.payload_to_host::<Tind>(ends_data)?;
+        ends_data
+    };
+
+    let starts_len = starts_data.len();
+
+    let norm_axes;
+    match ctx.get_input(3) {
+        Ok(axes_tensor) => {
+            debug!(
+                "[axes][dtype={:?}][shape={:?}][strides={:?}]",
+                axes_tensor.dtype(),
+                axes_tensor.shape(),
+                axes_tensor.stride()
+            );
+            // Todo: maybe validate that this is 1D.
+            let axes_data_data = axes_tensor.len();
+
+            let axes_data = scratch_alloc.allocate(axes_data_data)?;
+            axes_tensor.payload_to_host::<Tind>(axes_data)?;
+            norm_axes = axes_data;
+        }
+        Err(_) => {
+            norm_axes = scratch_alloc.allocate(starts_len)?;
+            for i in 0..starts_len {
+                norm_axes[i] = Tind::try_from(i).expect("MAX_RANK is 8");
+            }
+        }
+    }
+
+    let mut steps = None;
+    if let Ok(steps_tensor) = ctx.get_input(4) {
+        debug!(
+            "[steps][dtype={:?}][shape={:?}][strides={:?}]",
+            steps_tensor.dtype(),
+            steps_tensor.shape(),
+            steps_tensor.stride()
+        );
+
+        let steps_len = steps_tensor.len();
+        let steps_data = scratch_alloc.allocate(steps_len)?;
+        steps_tensor.payload_to_host::<Tind>(steps_data)?;
+        steps = Some(steps_data);
+    }
+
+    let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+    let input = ctx.get_input(0)?;
+    let output_shape = scratch_alloc.allocate_from_slice(&input.shape())?;
+
+    compute_output_shape_helper(
+        &input.shape(),
+        norm_axes,
+        starts_data,
+        ends_data,
+        steps.as_deref(),
+        output_shape,
+    )?;
+
+    let output_tensor = ctx.get_output(0)?;
+    output_tensor.copy_shape_from_slice(output_shape);
+
+    Ok(())
+}
+
 // Assumes that `axes` has been normalized.
-fn compute_output_shape<T>(
+fn compute_output_shape_helper<T>(
     input_shape: &[usize],
     axes: &[T],
     starts: &[T],
@@ -543,7 +520,7 @@ mod tests {
     fn pos_step_regular() {
         let shape = [10];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[2], &[9], Some(&[3]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[2], &[9], Some(&[3]), &mut out).unwrap();
         assert_eq!(out, [3]);
     }
 
@@ -551,7 +528,8 @@ mod tests {
     fn pos_step_end_eq_dim() {
         let shape = [10];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[0], &[10], Some(&[1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[10], Some(&[1]), &mut out)
+            .unwrap();
         assert_eq!(out, [10]);
     }
 
@@ -559,7 +537,8 @@ mod tests {
     fn neg_step_regular() {
         let shape = [10];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[8], &[1], Some(&[-2]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[8], &[1], Some(&[-2]), &mut out)
+            .unwrap();
         assert_eq!(out, [4]);
     }
 
@@ -567,7 +546,8 @@ mod tests {
     fn neg_step_end_minus1() {
         let shape = [5];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[4], &[-1], Some(&[-1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[4], &[-1], Some(&[-1]), &mut out)
+            .unwrap();
         assert_eq!(out, [0]);
     }
 
@@ -575,7 +555,7 @@ mod tests {
     fn empty_slice_pos() {
         let shape = [6];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[3], &[3], Some(&[1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[3], &[3], Some(&[1]), &mut out).unwrap();
         assert_eq!(out, [0]);
     }
 
@@ -583,7 +563,8 @@ mod tests {
     fn empty_slice_neg() {
         let shape = [6];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[2], &[2], Some(&[-1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[2], &[2], Some(&[-1]), &mut out)
+            .unwrap();
         assert_eq!(out, [0]);
     }
 
@@ -591,8 +572,9 @@ mod tests {
     fn step_zero_error() {
         let shape = [4];
         let mut out = shape;
-        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[4], Some(&[0]), &mut out)
-            .unwrap_err();
+        let err =
+            compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[4], Some(&[0]), &mut out)
+                .unwrap_err();
         matches!(err.downcast(), Ok(InternalError::InvalidInput { .. }));
     }
 
@@ -600,8 +582,9 @@ mod tests {
     fn steps_len_mismatch_error() {
         let shape = [4];
         let mut out = shape;
-        let err = compute_output_shape::<i64>(&shape, &[0], &[0], &[4], Some(&[1, 2]), &mut out)
-            .unwrap_err();
+        let err =
+            compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[4], Some(&[1, 2]), &mut out)
+                .unwrap_err();
         matches!(err.downcast(), Ok(InternalError::InvalidInput { .. }));
     }
 
@@ -609,7 +592,7 @@ mod tests {
     fn pos_start_oob_error() {
         let shape = [5];
         let mut out = vec![0];
-        compute_output_shape::<i64>(&shape, &[0], &[6], &[6], Some(&[1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[6], &[6], Some(&[1]), &mut out).unwrap();
         assert_eq!(out, vec![0]);
     }
 
@@ -617,15 +600,23 @@ mod tests {
     fn neg_end_lt_minus1() {
         let shape = [5];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[4], &[-2], Some(&[-1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[4], &[-2], Some(&[-1]), &mut out)
+            .unwrap();
     }
 
     #[test]
     fn rank2_two_axes_mixed_steps() {
         let shape = [6, 5];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0, 1], &[1, 4], &[5, -1], Some(&[2, -1]), &mut out)
-            .unwrap();
+        compute_output_shape_helper::<i64>(
+            &shape,
+            &[0, 1],
+            &[1, 4],
+            &[5, -1],
+            Some(&[2, -1]),
+            &mut out,
+        )
+        .unwrap();
         assert_eq!(out, [2, 0]);
     }
 
@@ -633,7 +624,7 @@ mod tests {
     fn rank3_slice_one_axis_default_step() {
         let shape = [3, 4, 10];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[2], &[3], &[10], None, &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[2], &[3], &[10], None, &mut out).unwrap();
         assert_eq!(out, [3, 4, 7]);
     }
 
@@ -641,7 +632,8 @@ mod tests {
     fn rank3_empty_slice_axis1_neg() {
         let shape = [2, 8, 4];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[1], &[3], &[3], Some(&[-2]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[1], &[3], &[3], Some(&[-2]), &mut out)
+            .unwrap();
         assert_eq!(out, [2, 0, 4]);
     }
 
@@ -650,8 +642,8 @@ mod tests {
     fn axis_out_of_range_error() {
         let shape = [4, 4];
         let mut out = shape;
-        let err =
-            compute_output_shape::<i64>(&shape, &[2], &[0], &[1], None, &mut out).unwrap_err();
+        let err = compute_output_shape_helper::<i64>(&shape, &[2], &[0], &[1], None, &mut out)
+            .unwrap_err();
         matches!(err.downcast(), Ok(SliceError::AxisOutOfRange));
     }
 
@@ -659,8 +651,14 @@ mod tests {
     fn duplicate_axes_error() {
         let shape = [5, 5, 5];
         let mut out = shape;
-        let _ =
-            compute_output_shape::<i64>(&shape, &[1, 1], &[0, 0], &[5, 5], Some(&[1, 1]), &mut out);
+        let _ = compute_output_shape_helper::<i64>(
+            &shape,
+            &[1, 1],
+            &[0, 0],
+            &[5, 5],
+            Some(&[1, 1]),
+            &mut out,
+        );
         // Todo: We need to decide what to do here.
     }
 
@@ -668,7 +666,7 @@ mod tests {
     fn rank2_end_oob_positive_step_clamped() {
         let shape = [7, 3];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0], &[0], &[8], Some(&[1]), &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[8], Some(&[1]), &mut out).unwrap();
         assert_eq!(out, [7, 3]);
     }
 
@@ -676,7 +674,7 @@ mod tests {
     fn rank3_all_axes_mixed_steps() {
         let shape = [8, 6, 10];
         let mut out = shape;
-        compute_output_shape::<i64>(
+        compute_output_shape_helper::<i64>(
             &shape,
             &[0, 1, 2],
             &[0, 5, 1],
@@ -694,6 +692,7 @@ mod tests {
     fn rank3_starts_too_short_panics() {
         let shape = [4, 4, 4];
         let mut out = shape;
-        compute_output_shape::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out).unwrap();
+        compute_output_shape_helper::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out)
+            .unwrap();
     }
 }

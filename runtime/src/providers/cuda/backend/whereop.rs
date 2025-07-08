@@ -1,6 +1,6 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+use crate::providers::cuda;
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -8,7 +8,7 @@ use crate::utils;
 use anyhow::Result;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
-use log::debug;
+use log::{debug, trace};
 use num_traits::Num;
 use rmlk_cuda::kernels::whereop;
 use rmlk_cuda::kernels::whereop::WhereKernel;
@@ -39,227 +39,144 @@ impl WhereBackend {
         whereop::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
-    fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_where<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    where
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+    {
+        let func = self.load_cuda_function(T::data_type())?;
+
+        compute_output_shape(ctx)?;
+
         let condition = ctx.get_input(0)?;
-
-        debug!(
-            "[condition][dtype={:?}][shape={:?}][stride={:?}]",
-            condition.dtype(),
-            condition.shape(),
-            condition.stride()
-        );
-
         let x = ctx.get_input(1)?;
-
-        debug!(
-            "[x][dtype={:?}][shape={:?}][stride={:?}]",
-            x.dtype(),
-            x.shape(),
-            x.stride()
-        );
-
         let y = ctx.get_input(2)?;
 
-        debug!(
-            "[y][dtype={:?}][shape={:?}][stride={:?}]",
-            y.dtype(),
-            y.shape(),
-            y.stride()
-        );
+        let x_dev_data_ref = x.payload();
+        let x_dev_data = x_dev_data_ref.data::<T>();
 
-        match x.shape() == y.shape() && x.shape() == condition.shape() {
-            true => {
-                let output = ctx.get_output(0)?;
-                let x_index = x.src_id();
-                let output_index = output.dst_id();
-                ctx.execution_state_mut()
-                    .copy_shape_from_within(x_index, output_index)?;
-            }
-            false => {
-                let rank = [x.shape().len(), y.shape().len(), condition.shape().len()]
-                    .into_iter()
-                    .max()
-                    .expect("Iterator is not empty");
+        let y_dev_data_ref = y.payload();
+        let y_dev_data = y_dev_data_ref.data::<T>();
 
-                let alloc = ctx.execution_state().scratch_alloc().clone();
-                let inter_shape = alloc.allocate_fill(rank, 0)?;
+        let condition_dev_data_ref = condition.payload();
+        let condition_dev_data = condition_dev_data_ref.data::<bool>();
 
-                if !utils::compute_broadcast_output_shape(x.shape(), y.shape(), inter_shape) {
-                    return Err(InternalError::IncompatibleShapesForBroadcast {
-                        shapes: [
-                            (x.src_id().into(), x.shape().to_vec()),
-                            (y.src_id().into(), y.shape().to_vec()),
-                        ]
-                        .try_into()
-                        .expect("Small map so should succeed"),
-                    }
-                    .into());
-                }
+        let output = ctx.get_output(0)?;
 
-                let output_shape = alloc.allocate_fill(rank, 0)?;
-
-                if !utils::compute_broadcast_output_shape(
-                    inter_shape,
-                    condition.shape(),
-                    output_shape,
-                ) {
-                    return Err(InternalError::IncompatibleShapesForBroadcast {
-                        shapes: [(condition.src_id().into(), y.shape().to_vec())]
-                            .try_into()
-                            .expect("Small map so should succeed"),
-                    }
-                    .into());
-                }
-
-                let output = ctx.get_output(0)?;
-                let output_index = output.dst_id();
-                ctx.execution_state_mut()
-                    .copy_shape_from_slice(output_shape, output_index)?;
-            }
+        if condition.is_scalar() && x.is_scalar() && y.is_scalar() {
+            output.init_scalar_payload::<T>()?;
+        } else {
+            output.init_payload::<T>()?;
         }
 
-        Ok(())
-    }
+        debug!(
+            "[output][dtype={:?}][where][shape={:?}][stride=[{:?}]",
+            output.dtype(),
+            output.shape(),
+            output.stride()
+        );
 
-    fn compute_where<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
-    {
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+
+        let (x_shape, x_stride) = if x.is_scalar() {
+            cuda::utils::scalar_shape_and_stride(&x)
+        } else {
+            (x.shape(), x.stride())
+        };
+
+        let output_shape = if output.is_scalar() {
+            let (shape, _) = cuda::utils::scalar_shape_and_stride(&output);
+            shape
+        } else {
+            output.shape()
+        };
+
+        let broadcast_x_stride = scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            &x_shape,
+            &x_stride,
+            &output_shape,
+            broadcast_x_stride,
+        );
+
+        let (y_shape, y_stride) = if y.is_scalar() {
+            cuda::utils::scalar_shape_and_stride(&y)
+        } else {
+            (y.shape(), y.stride())
+        };
+
+        let broadcast_y_stride = scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            &y_shape,
+            &y_stride,
+            &output_shape,
+            broadcast_y_stride,
+        );
+
+        let (condition_shape, condition_stride) = if condition.is_scalar() {
+            cuda::utils::scalar_shape_and_stride(&condition)
+        } else {
+            (condition.shape(), condition.stride())
+        };
+
+        let broadcast_condition_stride =
+            scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
+        utils::compute_broadcast_stride_from_output_shape(
+            &condition_shape,
+            &condition_stride,
+            &output_shape,
+            broadcast_condition_stride,
+        );
+
+        debug!("[x][where][broadcast][stride={:?}]", broadcast_x_stride);
+        debug!("[y][where][broadcast][stride={:?}]", broadcast_y_stride);
+        debug!(
+            "[condition][where][broadcast][stride={:?}]",
+            broadcast_condition_stride
+        );
+
+        let output_rank = output_shape.len();
+
+        let info_on_host = ctx
+            .execution_state()
+            .scratch_alloc()
+            .allocate(4 * output_rank)?;
+        info_on_host[..output_rank].copy_from_slice(&output_shape);
+        info_on_host[output_rank..2 * output_rank].copy_from_slice(broadcast_x_stride);
+        info_on_host[2 * output_rank..3 * output_rank].copy_from_slice(broadcast_y_stride);
+        info_on_host[3 * output_rank..].copy_from_slice(broadcast_condition_stride);
+
+        trace!("[info_on_host={:?}]", info_on_host);
+
+        let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
+        let info = cuda_bump
+            .alloc_from_slice_with_fallback(info_on_host)
+            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let info_data = info.data::<usize>();
+
         {
-            let func = self.load_cuda_function(D::data_type())?;
-
-            // The output should have the same dimensions.
-            // We do it now to avoid lifetime errors.
-            self.compute_output_shape(ctx)?;
-
-            let condition = ctx.get_input(0)?;
-            let x = ctx.get_input(1)?;
-            let y = ctx.get_input(2)?;
-
-            let x_dev_data_ref = x.try_dev_data_ptr()?;
-            let x_dev_data = x_dev_data_ref.data::<D>();
-
-            let y_dev_data_ref = y.try_dev_data_ptr()?;
-            let y_dev_data = y_dev_data_ref.data::<D>();
-
-            let condition_dev_data_ref = condition.try_dev_data_ptr()?;
-            let condition_dev_data = condition_dev_data_ref.data::<bool>();
-
-            let output = ctx.get_output(0)?;
-
-            debug!(
-                "[output][dtype={:?}][where][shape={:?}][stride=[{:?}]",
-                output.dtype(),
-                output.shape(),
-                output.stride()
-            );
-
-            common::init_tensor_device_data::<D>(&self.stream, output)?;
-
-            let output = ctx.get_output(0)?;
-            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-
-            let (x_shape, x_stride) = if x.is_scalar() {
-                ([1].as_ref(), [1].as_ref())
-            } else {
-                (x.shape(), x.stride())
-            };
-
-            let output_shape = if output.is_scalar() {
-                [1].as_ref()
-            } else {
-                output.shape()
-            };
-
-            let broadcast_x_stride = scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
-            utils::compute_broadcast_stride_from_output_shape(
-                x_shape,
-                x_stride,
-                output_shape,
-                broadcast_x_stride,
-            );
-
-            let (y_shape, y_stride) = if y.is_scalar() {
-                ([1].as_ref(), [1].as_ref())
-            } else {
-                (y.shape(), y.stride())
-            };
-
-            let broadcast_y_stride = scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
-            utils::compute_broadcast_stride_from_output_shape(
-                y_shape,
-                y_stride,
-                output_shape,
-                broadcast_y_stride,
-            );
-
-            let (condition_shape, condition_stride) = if condition.is_scalar() {
-                ([1].as_ref(), [1].as_ref())
-            } else {
-                (condition.shape(), condition.stride())
-            };
-
-            let broadcast_condition_stride =
-                scratch_alloc.allocate_fill::<usize>(output_shape.len(), 0)?;
-            utils::compute_broadcast_stride_from_output_shape(
-                condition_shape,
-                condition_stride,
-                output_shape,
-                broadcast_condition_stride,
-            );
-
-            debug!("[x][where][broadcast][stride={:?}]", broadcast_x_stride);
-            debug!("[y][where][broadcast][stride={:?}]", broadcast_y_stride);
-            debug!(
-                "[condition][where][broadcast][stride={:?}]",
-                broadcast_condition_stride
-            );
-
-            // The device data should exist so we will execute the kernel
-            // and update the destination device data with the result.
-            let output = ctx.get_output(0)?;
-            let mut output_dev_data_ref = output.dev_data_ptr_mut();
-            let mut output_dev_data = output_dev_data_ref
-                .as_mut()
-                .expect("we already checked that it initialized")
-                .data_mut();
-
-            let output_rank = output_shape.len();
-
-            let info_buffer = ctx
-                .execution_state()
-                .scratch_alloc()
-                .allocate(4 * output_rank)?;
-            info_buffer[..output_rank].copy_from_slice(output_shape);
-            info_buffer[output_rank..2 * output_rank].copy_from_slice(broadcast_x_stride);
-            info_buffer[2 * output_rank..3 * output_rank].copy_from_slice(broadcast_y_stride);
-            info_buffer[3 * output_rank..].copy_from_slice(broadcast_condition_stride);
-
+            let mut output_payload = output.payload_mut();
+            let mut output_data = output_payload.data_mut();
             unsafe {
                 whereop::compute(
                     self.stream.clone(),
                     func,
                     output_rank,
-                    info_buffer,
+                    &info_data,
                     &x_dev_data,
                     &y_dev_data,
                     &condition_dev_data,
-                    &mut output_dev_data,
+                    &mut output_data,
                 )?;
             }
         }
 
         #[cfg(feature = "debugger")]
-        debug::write_results_ternary::<bool, D, D, D>(
+        debug::write_results_ternary::<bool, T, T, T>(
             "debugging/where",
             self.stream.clone(),
             ctx,
             Default::default(),
         )?;
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -276,4 +193,77 @@ impl WhereBackend {
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
+}
+
+fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
+    let condition = ctx.get_input(0)?;
+
+    debug!(
+        "[condition][dtype={:?}][shape={:?}][stride={:?}]",
+        condition.dtype(),
+        condition.shape(),
+        condition.stride()
+    );
+
+    let x = ctx.get_input(1)?;
+
+    debug!(
+        "[x][dtype={:?}][shape={:?}][stride={:?}]",
+        x.dtype(),
+        x.shape(),
+        x.stride()
+    );
+
+    let y = ctx.get_input(2)?;
+
+    debug!(
+        "[y][dtype={:?}][shape={:?}][stride={:?}]",
+        y.dtype(),
+        y.shape(),
+        y.stride()
+    );
+
+    match x.shape().as_ref() == y.shape().as_ref()
+        && x.shape().as_ref() == condition.shape().as_ref()
+    {
+        true => {
+            let output = ctx.get_output(0)?;
+            output.copy_shape(x.shape_handle());
+        }
+        false => {
+            let rank = [x.shape().len(), y.shape().len(), condition.shape().len()]
+                .into_iter()
+                .max()
+                .expect("Iterator is not empty");
+
+            let alloc = ctx.execution_state().scratch_alloc().clone();
+            let inter_shape = alloc.allocate_fill(rank, 0)?;
+
+            if !utils::compute_broadcast_output_shape(&x.shape(), &y.shape(), inter_shape) {
+                return Err(InternalError::IncompatibleShapesForBroadcast {
+                    shapes: [(1, x.shape().to_vec()), (2, y.shape().to_vec())]
+                        .try_into()
+                        .expect("Small map so should succeed"),
+                }
+                .into());
+            }
+
+            let output_shape = alloc.allocate_fill(rank, 0)?;
+
+            if !utils::compute_broadcast_output_shape(inter_shape, &condition.shape(), output_shape)
+            {
+                return Err(InternalError::IncompatibleShapesForBroadcast {
+                    shapes: [(0, y.shape().to_vec())]
+                        .try_into()
+                        .expect("Small map so should succeed"),
+                }
+                .into());
+            }
+
+            let output = ctx.get_output(0)?;
+            output.copy_shape_from_slice(output_shape);
+        }
+    }
+
+    Ok(())
 }

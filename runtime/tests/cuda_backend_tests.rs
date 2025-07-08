@@ -31,6 +31,7 @@ mod cuda {
     mod gather_higher_dim_indices;
     mod gather_negative_axis;
     mod gather_scalar;
+    mod gather_scalar_output;
     mod gather_simple;
     mod gather_with_axis;
     mod gemm_simple;

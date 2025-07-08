@@ -39,7 +39,7 @@ pub unsafe fn compute<T>(
     upper: bool,
     k: i64,
     rank: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     input: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
 ) -> Result<()>
@@ -47,12 +47,10 @@ where
     T: ValidAsZeroBits + DeviceRepr,
 {
     assert!(rank >= 3);
-    assert_eq!(rank * 2, info_buffer.len());
+    assert_eq!(rank * 2, info.len());
     assert_eq!(input.len(), output.len());
 
-    let info = stream.memcpy_stod(info_buffer)?;
-
-    let elem_count: usize = info_buffer[..rank].iter().product();
+    let elem_count: usize = output.len();
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -70,7 +68,7 @@ where
             .arg(&rank)
             .arg(&upper)
             .arg(&k)
-            .arg(&info)
+            .arg(info)
             .arg(input)
             .arg(output)
             .launch(config)?;
@@ -114,6 +112,7 @@ mod tests {
         let mut info_buffer = Vec::new();
         info_buffer.extend_from_slice(shape);
         info_buffer.extend_from_slice(strides.as_ref());
+        let info = stream.memcpy_stod(&info_buffer).unwrap();
 
         let input = stream.memcpy_stod(input).unwrap();
 
@@ -126,7 +125,7 @@ mod tests {
                 upper,
                 k,
                 3,
-                &info_buffer,
+                &info,
                 &input,
                 &mut output,
             )

@@ -155,6 +155,7 @@ pub enum InternalError {
         message: String,
     },
     ScalarInputsAreNotAllowed,
+    CudaBumpAllocatorFailed,
 }
 
 impl InternalError {
@@ -274,6 +275,9 @@ impl Display for InternalError {
             }
             InternalError::ScalarInputsAreNotAllowed => {
                 write!(f, "scalar inputs are not allowed")
+            }
+            InternalError::CudaBumpAllocatorFailed => {
+                write!(f, "cuda-bump allocator failed")
             }
         }
     }

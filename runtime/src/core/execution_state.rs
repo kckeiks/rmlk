@@ -1,10 +1,8 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::device_service::DeviceService;
+use crate::core::device_service::{DeviceService, Value as StoreValue, ValueStore};
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::store::TensorStore;
-use crate::core::tensor::Tensor;
-use crate::core::tensor_handle::{DstTensorId, SrcTensorId};
 use crate::core::value::{InnerValue, Value};
+use crate::utils;
 use anyhow::Result;
 use log::trace;
 use rmlk_graph::{Graph, Node};
@@ -24,7 +22,7 @@ pub struct ExecutionState<T: DeviceService> {
     ///
     /// This includes the inputs, outputs and
     /// intermediate values of the entire graph.
-    tensor_store: TensorStore<T::Data>,
+    tensor_store: T::Store,
     /// Tensor indices for finding an operation's tensor values.
     ///
     /// The order is inputs, optional inputs and outputs.
@@ -44,7 +42,7 @@ where
 {
     pub fn new(
         instance_state: Arc<ModelInstanceState<T>>,
-        store: TensorStore<T::Data>,
+        store: T::Store,
     ) -> Result<ExecutionState<T>> {
         let graph = instance_state.graph();
         let mut node_to_value_index_map = HashMap::new();
@@ -93,6 +91,10 @@ where
         })
     }
 
+    pub fn clear(&self) {
+        self.tensor_store.clear();
+    }
+
     /// Get a reference to the node.
     pub fn get_node(&self, node_id: usize) -> Option<&Node<Definition>> {
         self.instance_state.graph().get_node(node_id)
@@ -102,7 +104,7 @@ where
     ///
     /// The value index for a given computation can be
     /// found using [`ExecutionState::get_tensor_index`].
-    pub fn get_tensor(&self, value_index: usize) -> Option<Tensor<T::Data>> {
+    pub fn get_tensor(&self, value_index: usize) -> Option<<T::Store as ValueStore>::Value> {
         let index = self.get_inner_index(value_index)?;
         self.tensor_store.get(index)
     }
@@ -128,7 +130,7 @@ where
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
                     .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-                tensor.set_dev_data(data);
+                tensor.set_data(data)?;
             }
             InnerValue::Float32(data) => {
                 let data = self
@@ -140,7 +142,7 @@ where
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
                     .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-                tensor.set_dev_data(data);
+                tensor.set_data(data)?;
             }
             InnerValue::Int32(data) => {
                 let data = self
@@ -152,7 +154,7 @@ where
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
                     .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-                tensor.set_dev_data(data);
+                tensor.set_data(data)?;
             }
             InnerValue::Int64(data) => {
                 let data = self
@@ -164,7 +166,7 @@ where
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
                     .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-                tensor.set_dev_data(data);
+                tensor.set_data(data)?;
             }
             InnerValue::Bool(data) => {
                 let data = self
@@ -176,87 +178,51 @@ where
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
                     .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-                tensor.set_dev_data(data);
+                tensor.set_data(data)?;
             }
         }
 
         if let Some(shape) = value.shape {
-            self.compare_shapes(&shape, node_id)?;
+            let node = self
+                .get_node(node_id)
+                .expect("we already checked that it exists above");
+            utils::compare_shapes(&shape, node)?;
 
-            let tensor = self
+            let mut tensor = self
                 .get_tensor_from_node_id(node_id)
                 .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
 
-            let dst_id = tensor.dst_id();
-            self.copy_shape_from_slice(&shape, dst_id)?;
+            tensor.set_shape(&shape)?;
         }
 
         Ok(())
-    }
-
-    fn compare_shapes(&self, shape: &[usize], node_id: usize) -> Result<()> {
-        let node = self
-            .get_node(node_id)
-            .expect("we already checked that it exists above");
-
-        let shape_def = node
-            .value()
-            .shape()
-            .ok_or(ExecutionStateError::MissingShape)?;
-
-        if shape.len() != shape_def.len() {
-            println!(
-                "{} {:?} != {:?}",
-                node.value().name().unwrap(),
-                shape,
-                shape_def
-            );
-            return Err(ExecutionStateError::RankMismatch.into());
-        }
-
-        for (idx, &dim) in shape.iter().enumerate() {
-            if shape_def[idx] != dim {
-                if shape_def[idx] != 0 || !(shape_def[idx] == 0 && node.value().has_dynamic_dims())
-                {
-                    return Err(ExecutionStateError::DimensionMismatch.into());
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn compare_value_and_def_shape(&self, node_id: usize) -> Result<()> {
-        let tensor = self
-            .get_tensor_from_node_id(node_id)
-            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
-        self.compare_shapes(tensor.shape(), node_id)
     }
 
     /// Gets a copy of the value from the device for the given node.
     /// Returns an error if the node does not have a corresponding value,
     /// like for instance, a node that corresponds to an operation.
     pub fn get_value(&self, node_id: usize) -> Result<Value> {
-        let provider = self
-            .instance_state
-            ._plan()
-            .device(0)
-            .expect("We always have one device");
-
         let tensor = self
             .get_tensor_from_node_id(node_id)
             .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
 
-        let ptr = tensor
-            .dev_data_ptr()
-            .take()
-            .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
-
         match tensor.dtype() {
-            DataType::Float => Ok((provider.dtoh_float(&ptr)?, tensor.shape()).into()),
-            DataType::Int32 => Ok((provider.dtoh_i32(&ptr)?, tensor.shape()).into()),
-            DataType::Int64 => Ok((provider.dtoh_i64(&ptr)?, tensor.shape()).into()),
-            DataType::Bool => Ok((provider.dtoh_bool(&ptr)?, tensor.shape()).into()),
+            DataType::Float => {
+                let data = tensor.data::<f32>()?;
+                Ok((data, tensor.shape()).into())
+            }
+            DataType::Int32 => {
+                let data = tensor.data::<i32>()?;
+                Ok((data, tensor.shape()).into())
+            }
+            DataType::Int64 => {
+                let data = tensor.data::<i64>()?;
+                Ok((data, tensor.shape()).into())
+            }
+            DataType::Bool => {
+                let data = tensor.data::<bool>()?;
+                Ok((data, tensor.shape()).into())
+            }
             _ => unimplemented!(),
         }
     }
@@ -276,19 +242,26 @@ where
         &mut self.scratch_alloc
     }
 
-    /// Copies the shape data from the source's shape buffer.
-    pub fn copy_shape_from_within(&mut self, src: SrcTensorId, dst: DstTensorId) -> Result<()> {
-        self.tensor_store
-            .copy_shape_from_within(src.into(), dst.into())
+    /// Get a mutable reference to the tensor store.
+    pub fn dev(&self) -> &T {
+        self.instance_state._plan().device(0).unwrap()
     }
 
-    /// Copies the shape data from the src slice.
-    pub fn copy_shape_from_slice(&mut self, src: &[usize], dst: DstTensorId) -> Result<()> {
-        self.tensor_store.copy_shape_from_slice(src, dst.into())
+    // Todo: this is a helper that feels weird to have here.
+    pub fn compare_value_and_def_shape(&self, node_id: usize) -> Result<()> {
+        let tensor = self
+            .get_tensor_from_node_id(node_id)
+            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
+
+        let node = self
+            .get_node(node_id)
+            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
+
+        utils::compare_shapes(&tensor.shape(), node)
     }
 
     /// Get the tensor value given a node ID.
-    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<Tensor<T::Data>> {
+    fn get_tensor_from_node_id(&self, node_id: usize) -> Option<<T::Store as ValueStore>::Value> {
         self.tensor_store.get(node_id)
     }
 

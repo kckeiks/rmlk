@@ -13,6 +13,7 @@ half.workspace = true
 log.workspace = true
 num-traits.workspace = true
 base64 = { workspace = true, optional = true }
+serde_json = { workspace = true }
 
 rmlk-schema = { path = "../schema" }
 rmlk-graph = { path = "../graph" }
@@ -24,7 +25,6 @@ env_logger = "0.11"
 image = "0.24"
 ndarray = "0.15"
 serde.workspace = true
-serde_json.workspace = true
 tokenizers = "0.21"
 
 [features]

@@ -1,8 +1,8 @@
 use crate::attributes::reduce_mean;
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
-use crate::providers::cuda::data::CudaData;
+
+use crate::providers::cuda;
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -44,94 +44,11 @@ impl ReduceMeanBackend {
         )?)
     }
 
-    fn compute_output_shape(&mut self, axes: &[usize], ctx: &mut Context<Cuda>) -> Result<()> {
-        let input = ctx.get_input(0)?;
-        let rank = input.shape().len();
-
-        let alloc = ctx.execution_state().scratch_alloc().clone();
-        let reduced = alloc.allocate::<bool>(rank)?;
-
-        // Todo: this if was added to handle scalars. Revisit.
-        if rank > 0 {
-            for axis in axes.iter().copied() {
-                if axis > rank {
-                    return Err(ReduceMeanError::AxisOutOfBounds.into());
-                }
-
-                if reduced[axis] {
-                    return Err(ReduceMeanError::DuplicateAxis.into());
-                }
-
-                reduced[axis] = true;
-            }
-        }
-
-        let keep_dims = ctx
-            .get_attributes()
-            .map(|attrs| reduce_mean::get_keep_dims(&attrs))
-            .unwrap_or(true);
-
-        let output_shape = if keep_dims {
-            let buf = alloc.allocate_from_slice(input.shape())?;
-            for dim in 0..rank {
-                if reduced[dim] {
-                    buf[dim] = 1;
-                }
-            }
-            buf
-        } else {
-            if rank < axes.len() {
-                return Err(ReduceMeanError::AxesLargerThanRank.into());
-            }
-
-            let buf = alloc.allocate::<usize>(rank - axes.len())?;
-            for (axis, dim) in input
-                .shape()
-                .iter()
-                .copied()
-                .enumerate()
-                .filter(|(axis, _dim)| !reduced[*axis])
-                .map(|(_, dim)| dim)
-                .enumerate()
-            {
-                buf[axis] = dim;
-            }
-            buf
-        };
-
-        let dst = ctx.get_output(0)?.dst_id();
-
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(output_shape, dst)?;
-        Ok(())
-    }
-
-    fn copy_input_to_output<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_reduce_mean<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
-        {
-            let src = ctx.get_input(0)?.src_id();
-            let dst = ctx.get_output(0)?.dst_id();
-            ctx.execution_state_mut().copy_shape_from_within(src, dst)?;
-        }
-
-        let input = ctx.get_input(0)?;
-        let input_dev_data_ptr = input.try_dev_data_ptr()?;
-        let dev_data = input_dev_data_ptr.data::<I>().clone();
-
-        let mut output = ctx.get_output(0)?;
-
-        output.set_dev_data(CudaData::new(dev_data));
-
-        Ok(())
-    }
-
-    fn compute_reduce_mean<I>(mut self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
-    {
-        let func = self.load_cuda_function(I::data_type())?;
+        let func = self.load_cuda_function(T::data_type())?;
 
         let input = ctx.get_input(0)?;
 
@@ -142,6 +59,8 @@ impl ReduceMeanBackend {
             input.stride()
         );
 
+        // Todo: document or fix.
+        // In the compute_output_shape helper, we don't do this.
         let rank = if input.is_scalar() {
             1
         } else {
@@ -167,16 +86,15 @@ impl ReduceMeanBackend {
                         tensor.stride()
                     );
 
-                    let axes_dev_ptr = tensor.try_dev_data_ptr()?;
-                    let axes_dev_data = axes_dev_ptr.data::<i64>();
+                    if !tensor.is_empty() {
+                        let axes_data_len = tensor.len();
 
-                    if !axes_dev_data.is_empty() {
-                        let raw_axes = alloc.allocate::<i64>(axes_dev_data.len())?;
-                        self.stream
-                            .memcpy_dtoh(axes_dev_data.as_ref(), raw_axes)
-                            .map_err(rmlk_cuda::Error::from)?;
-                        let axes = alloc.allocate::<usize>(axes_dev_data.len())?;
+                        let raw_axes = alloc.allocate::<i64>(axes_data_len)?;
+                        tensor.payload_to_host(raw_axes)?;
+
+                        let axes = alloc.allocate::<usize>(axes_data_len)?;
                         utils::normalize_indices(raw_axes, axes, rank)?;
+
                         Some(axes)
                     } else if !tensor.is_scalar() {
                         None
@@ -198,9 +116,11 @@ impl ReduceMeanBackend {
                             None
                         }
                     } else {
-                        debug!("[no `AXES` tensor]");
                         let buf = alloc.allocate::<usize>(rank)?;
                         utils::write_increasing_sequence(buf)?;
+
+                        debug!("[No `AXES`][axes={buf:?}]");
+
                         Some(buf)
                     }
                 }
@@ -217,11 +137,28 @@ impl ReduceMeanBackend {
                 Some(axes) => axes,
             };
 
-            self.compute_output_shape(&axes, ctx)?;
+            compute_output_shape(&axes, ctx)?;
+
+            let output = ctx.get_output(0)?;
+
+            let keep_dims = ctx
+                .get_attributes()
+                .map(|attrs| reduce_mean::get_keep_dims(&attrs))
+                .unwrap_or(true);
+
+            // The output is a scalar if and only if:
+            // 1. The input is a scalar.
+            // 2. All axes are reduced and keepdims = false.
+            if input.is_scalar() || output.shape().is_empty() && !keep_dims {
+                output.init_scalar_payload::<T>()?;
+            } else {
+                output.init_payload::<T>()?;
+            }
 
             let input = ctx.get_input(0)?;
+
             let (input_shape, input_stride) = if input.is_scalar() {
-                ([1].as_ref(), [1].as_ref())
+                cuda::utils::scalar_shape_and_stride(&input)
             } else {
                 (input.shape(), input.stride())
             };
@@ -231,16 +168,23 @@ impl ReduceMeanBackend {
                 reduced_dim_prod *= input_shape[axis]
             }
 
-            let info = alloc.allocate(2 * rank)?;
-            info[..rank].copy_from_slice(input_shape);
-            info[rank..2 * rank].copy_from_slice(input_stride);
+            let info_on_host = alloc.allocate(2 * rank)?;
+            info_on_host[..rank].copy_from_slice(&input_shape);
+            info_on_host[rank..2 * rank].copy_from_slice(&input_stride);
 
-            let input_dev_ptr = input.try_dev_data_ptr()?;
-            let input_dev_data = input_dev_ptr.data::<I>();
+            let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
+            let info = cuda_bump
+                .alloc_from_slice_with_fallback(info_on_host)
+                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let info_data = info.data::<usize>();
 
-            common::init_tensor_device_data::<I>(&self.stream, ctx.get_output(0)?)?;
+            let axes = cuda_bump
+                .alloc_from_slice_with_fallback(axes)
+                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let axes_data = axes.data::<usize>();
 
-            let output = ctx.get_output(0)?;
+            let input_payload = input.payload();
+            let input_data = input_payload.data::<T>();
 
             debug!(
                 "[output][dtype={:?}][shape={:?}][stride={:?}]",
@@ -249,35 +193,31 @@ impl ReduceMeanBackend {
                 output.stride()
             );
 
-            let mut output_dev_ptr = output.try_dev_data_ptr_mut()?;
-            let mut output_dev_data = output_dev_ptr.data_mut::<I>();
+            let mut output_payload = output.payload_mut();
+            let mut output_data = output_payload.data_mut::<T>();
 
             unsafe {
                 rmlk_cuda::kernels::reduce_mean::compute(
                     self.stream.clone(),
                     func,
                     reduced_dim_prod,
-                    axes,
+                    &axes_data,
                     rank,
-                    info,
-                    &input_dev_data,
-                    &mut output_dev_data,
+                    &info_data,
+                    &input_data,
+                    &mut output_data,
                 )?;
             }
         } else {
-            self.copy_input_to_output::<I>(ctx)?;
+            copy_input_to_output::<T>(ctx)?;
         }
 
         #[cfg(feature = "debugger")]
-        debug::write_results_reduce_mean::<I, i64>(
+        debug::write_results_reduce_mean::<T, i64>(
             "debugging/reduce_mean",
             self.stream.clone(),
             ctx,
         )?;
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -294,6 +234,83 @@ impl ReduceMeanBackend {
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
+}
+
+fn copy_input_to_output<I>(ctx: &mut Context<Cuda>) -> Result<()>
+where
+    I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+{
+    let input = ctx.get_input(0)?;
+    let output = ctx.get_output(0)?;
+    output.copy_shape(input.shape_handle());
+
+    let input_payload = input.payload();
+    let input_data = input_payload.data::<I>();
+
+    output.write_payload(&input_data)?;
+
+    Ok(())
+}
+
+fn compute_output_shape(axes: &[usize], ctx: &Context<Cuda>) -> Result<()> {
+    let input = ctx.get_input(0)?;
+    let rank = input.shape().len();
+
+    let alloc = ctx.execution_state().scratch_alloc().clone();
+    let reduced = alloc.allocate::<bool>(rank)?;
+
+    // Todo: this if was added to handle scalars. Revisit.
+    if rank > 0 {
+        for axis in axes.iter().copied() {
+            if axis > rank {
+                return Err(ReduceMeanError::AxisOutOfBounds.into());
+            }
+
+            if reduced[axis] {
+                return Err(ReduceMeanError::DuplicateAxis.into());
+            }
+
+            reduced[axis] = true;
+        }
+    }
+
+    let keep_dims = ctx
+        .get_attributes()
+        .map(|attrs| reduce_mean::get_keep_dims(&attrs))
+        .unwrap_or(true);
+
+    let output_shape = if keep_dims {
+        let buf = alloc.allocate_from_slice(&input.shape())?;
+        for dim in 0..rank {
+            if reduced[dim] {
+                buf[dim] = 1;
+            }
+        }
+        buf
+    } else {
+        if rank < axes.len() {
+            return Err(ReduceMeanError::AxesLargerThanRank.into());
+        }
+
+        let buf = alloc.allocate::<usize>(rank - axes.len())?;
+        for (axis, dim) in input
+            .shape()
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(axis, _dim)| !reduced[*axis])
+            .map(|(_, dim)| dim)
+            .enumerate()
+        {
+            buf[axis] = dim;
+        }
+        buf
+    };
+
+    let output_tensor = ctx.get_output(0)?;
+    output_tensor.copy_shape_from_slice(&output_shape);
+
+    Ok(())
 }
 
 #[derive(Debug)]

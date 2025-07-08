@@ -45,10 +45,12 @@ impl SubBackend {
     where
         D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
+        let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
         let func = self.load_cuda_function(D::data_type())?;
         unsafe {
-            binary::compute::<D, D, D>("sub", self.stream.clone(), func, ctx)?;
+            binary::compute::<D, D, D>("sub", self.stream.clone(), cuda_bump, func, ctx)?;
         }
+
         #[cfg(feature = "debugger")]
         debug::write_results_binary::<D, D, D>(
             "debugging/sub",
@@ -56,9 +58,6 @@ impl SubBackend {
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

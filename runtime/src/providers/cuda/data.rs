@@ -121,6 +121,9 @@ impl Drop for CudaData {
                 DataType::Bool => {
                     let _dev_data = self.stream.upgrade_device_ptr::<bool>(self.ptr, self.len);
                 }
+                DataType::USize => {
+                    let _dev_data = self.stream.upgrade_device_ptr::<usize>(self.ptr, self.len);
+                }
                 dtype => unimplemented!("CudaDevData::drop unimplemented for `{dtype:?}`!"),
             }
         }

@@ -99,10 +99,10 @@ impl PowBackend {
         X: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
         Y: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
+        let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
         let func = self.load_cuda_function(X::data_type(), Y::data_type())?;
-
         unsafe {
-            binary::compute::<X, Y, X>("pow", self.stream.clone(), func, ctx)?;
+            binary::compute::<X, Y, X>("pow", self.stream.clone(), cuda_bump, func, ctx)?;
         }
 
         #[cfg(feature = "debugger")]
@@ -112,9 +112,6 @@ impl PowBackend {
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

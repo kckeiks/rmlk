@@ -41,9 +41,9 @@ pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     reduced_dim_prod: usize,
-    axes: &[usize],
+    axes: &CudaSlice<usize>,
     rank: usize,
-    tensor_info: &[usize],
+    info: &CudaSlice<usize>,
     input: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
 ) -> crate::error::Result<()>
@@ -56,12 +56,11 @@ where
     debug_assert!(reduced_dim_prod > 0);
 
     debug_assert!(rank > 0);
-    debug_assert!(tensor_info.len() > 0);
-    debug_assert_eq!(tensor_info.len(), 2 * rank);
-    debug_assert_eq!(tensor_info[..rank].iter().product::<usize>(), input.len());
-
-    let axes = stream.memcpy_stod(axes)?;
-    let info = stream.memcpy_stod(tensor_info)?;
+    debug_assert!(info.len() > 0);
+    debug_assert_eq!(info.len(), 2 * rank);
+    // Todo: we assume that this will be validated upstream.
+    // Can we assert anything down here?
+    // debug_assert_eq!(tensor_info[..rank].iter().product::<usize>(), input.len());
 
     let elem_count = output.len();
 
@@ -79,10 +78,10 @@ where
     unsafe {
         stream
             .launch_builder(&func)
-            .arg(&axes)
+            .arg(axes)
             .arg(&axes_len)
             .arg(&rank)
-            .arg(&info)
+            .arg(info)
             .arg(input)
             .arg(&reduced_dim_prod)
             .arg(&elem_count)
@@ -129,6 +128,9 @@ mod tests {
         let mut output_dev_ptr = stream.alloc_zeros(output_len).unwrap();
 
         let info = create_info_buffer(&x_shape, &x_stride);
+        let info = stream.memcpy_stod(&info).unwrap();
+
+        let axes = stream.memcpy_stod(axes).unwrap();
 
         let num_elements = x_shape.iter().product();
 
@@ -137,7 +139,7 @@ mod tests {
                 stream.clone(),
                 f,
                 num_elements,
-                axes,
+                &axes,
                 x_shape.len(),
                 &info,
                 &x_dev_ptr,

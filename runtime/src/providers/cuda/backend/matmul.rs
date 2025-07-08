@@ -1,7 +1,10 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
-use crate::providers::cuda::Cuda;
+
+use crate::providers::cuda::data::CudaData;
+#[cfg(feature = "debugger")]
+use crate::providers::cuda::debug;
+use crate::providers::cuda::{Cuda, Tensor};
 use crate::utils::FromF32;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -42,147 +45,16 @@ impl MatMulBackend {
 }
 
 impl MatMulBackend {
-    fn prepare_gemm_params(&self, ctx: &mut Context<Cuda>) -> Result<MatMulParams> {
-        let a = ctx.get_input(0)?;
-        let b = ctx.get_input(1)?;
-        let a_shape = a.shape();
-        let b_shape = b.shape();
-        let a_rank = a.shape().len();
-        let b_rank = b.shape().len();
-
-        if a_rank == 0 || b_rank == 0 {
-            return Err(MatMulError::ZeroRank.into());
-        }
-
-        let (promoted_a, batch_a, a_2d_shape, a_2d_stride) = if a_rank == 1 {
-            (true, 1, [1, a_shape[0]], [a_shape[0], 1])
-        } else if a_rank == 2 {
-            (false, 1, [a_shape[0], a_shape[1]], [a_shape[1], 1])
-        } else {
-            let batch = a_shape[..a_rank - 2].iter().product::<usize>();
-            (
-                false,
-                batch,
-                [a_shape[a_rank - 2], a_shape[a_rank - 1]],
-                [a_shape[a_rank - 1], 1],
-            )
-        };
-
-        let (promoted_b, batch_b, b_2d_shape, b_2d_stride) = if b_rank == 1 {
-            (true, 1, [b_shape[0], 1], [1, 1])
-        } else if b_rank == 2 {
-            (false, 1, [b_shape[0], b_shape[1]], [b_shape[1], 1])
-        } else {
-            let batch = b_shape[..b_rank - 2].iter().product::<usize>();
-            (
-                false,
-                batch,
-                [b_shape[b_rank - 2], b_shape[b_rank - 1]],
-                [b_shape[b_rank - 1], 1],
-            )
-        };
-
-        let promoted = match (promoted_a, promoted_b) {
-            (true, true) => Some(Promoted::Both),
-            (false, true) => Some(Promoted::Right),
-            (true, false) => Some(Promoted::Left),
-            (false, false) => None,
-        };
-
-        if a_2d_shape[1] != b_2d_shape[0] {
-            // Todo: we need a better error.
-            return Err(MatMulError::IncompatibleDimForMul.into());
-        }
-
-        if batch_a != batch_b && batch_a != 1 && batch_b != 1 {
-            // Todo: we need a better error.
-            return Err(MatMulError::IncompatibleDimForBroadcast.into());
-        }
-
-        let gemm_params = gemm::gemm_params(
-            &a_2d_shape,
-            &a_2d_stride,
-            &b_2d_shape,
-            &b_2d_stride,
-            false,
-            false,
-            cmp::max(batch_a, batch_b),
-        )?;
-
-        Ok(MatMulParams {
-            gemm: gemm_params,
-            promoted,
-        })
-    }
-
-    fn compute_output_shape(&self, params: &MatMulParams, ctx: &mut Context<Cuda>) -> Result<()> {
-        let y = ctx.get_output(0)?;
-        let y_index = y.dst_id();
-
-        let (add_batch, max_rank) = {
-            let a = ctx.get_input(0)?;
-            let b = ctx.get_input(1)?;
-
-            let add_batch = if a.shape().len() >= 3 || b.shape().len() >= 3 {
-                true
-            } else {
-                false
-            };
-
-            (add_batch, cmp::max(a.shape().len(), b.shape().len()))
-        };
-
-        match params.promoted {
-            None => {
-                if add_batch {
-                    let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-                    let output_shape = scratch_alloc.allocate_fill(max_rank, 1)?;
-                    output_shape[max_rank - 3] = params.gemm.b;
-                    output_shape[max_rank - 2] = params.gemm.m;
-                    output_shape[max_rank - 1] = params.gemm.n;
-
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(output_shape, y_index)?;
-                } else {
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.m, params.gemm.n], y_index)?;
-                }
-            }
-            Some(Promoted::Both) => {
-                // Todo: handle scalars.
-                ctx.execution_state_mut()
-                    .copy_shape_from_slice(&[], y_index)?;
-            }
-            Some(Promoted::Left) => {
-                if add_batch {
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.b, params.gemm.n], y_index)?;
-                } else {
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.n], y_index)?;
-                }
-            }
-            Some(Promoted::Right) => {
-                if add_batch {
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.b, params.gemm.m], y_index)?;
-                } else {
-                    ctx.execution_state_mut()
-                        .copy_shape_from_slice(&[params.gemm.m], y_index)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn compute_multiplication<D>(
+    fn broadcast_shape<T>(
         &self,
+        ctx: &Context<Cuda>,
+        tensor: &Tensor,
+        size: usize,
+        target_size: usize,
         params: &MatMulParams,
-        ctx: &mut Context<Cuda>,
-    ) -> Result<()>
+    ) -> Result<Option<CudaData>>
     where
-        D: CudaParamMap
+        T: CudaParamMap
             + DataTypeMap
             + CudnnDataType
             + ValidAsZeroBits
@@ -190,12 +62,51 @@ impl MatMulBackend {
             + Num
             + FromF32,
     {
-        self.compute_output_shape(&params, ctx)?;
-        let config = gemm::strided_batch_config::<D>((D::one(), D::zero()), &params.gemm)?;
+        let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
+        let data = if params.gemm.b > 1 && target_size != size {
+            let mut on_dev_buf = cuda_bump
+                .alloc_with_fallback::<T>(params.gemm.b * size)
+                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            {
+                let mut slice = on_dev_buf.data_mut();
+                for batch_i in 0..params.gemm.b {
+                    let payload = tensor.payload();
+                    let data = payload.data::<T>();
+                    assert_eq!(size, data.len());
+                    self.stream
+                        .memcpy_dtod(
+                            data.as_ref(),
+                            &mut slice.slice_mut(batch_i * size..batch_i * size + size),
+                        )
+                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                }
+            }
+            Some(on_dev_buf)
+        } else {
+            None
+        };
+
+        Ok(data)
+    }
+
+    fn compute_multiplication<T>(
+        &self,
+        params: &MatMulParams,
+        ctx: &mut Context<Cuda>,
+    ) -> Result<()>
+    where
+        T: CudaParamMap
+            + DataTypeMap
+            + CudnnDataType
+            + ValidAsZeroBits
+            + DeviceRepr
+            + Num
+            + FromF32,
+    {
+        compute_output_shape(&params, ctx)?;
+        let config = gemm::strided_batch_config::<T>((T::one(), T::zero()), &params.gemm)?;
 
         let a = ctx.get_input(0)?;
-        let b = ctx.get_input(1)?;
-        let y = ctx.get_output(0)?;
 
         debug!(
             "[a][dtype={:?}][shape={:?}][stride=[{:?}]",
@@ -203,12 +114,24 @@ impl MatMulBackend {
             a.shape(),
             a.stride()
         );
+
+        let b = ctx.get_input(1)?;
+
         debug!(
             "[b][dtype={:?}][shape={:?}][stride=[{:?}]",
             b.dtype(),
             b.shape(),
             b.stride()
         );
+
+        let y = ctx.get_output(0)?;
+
+        if a.rank() == 1 && b.rank() == 1 {
+            y.init_scalar_payload::<T>()?;
+        } else {
+            y.init_payload::<T>()?;
+        }
+
         debug!(
             "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
             y.dtype(),
@@ -218,117 +141,61 @@ impl MatMulBackend {
 
         let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
         let a_size = a.shape().iter().product::<usize>();
-        let a_broadcast_slice = if params.gemm.b > 1 && a_expected_size != a_size {
-            let mut slice = self
-                .stream
-                .alloc_zeros::<D>(params.gemm.b * a_size)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            for batch_i in 0..params.gemm.b {
-                let a_dev_data_ref = a.try_dev_data_ptr()?;
-                let a_dev_data = a_dev_data_ref.data::<D>();
-                debug_assert_eq!(a_size, a_dev_data.len());
-                self.stream
-                    .memcpy_dtod(
-                        a_dev_data.as_ref(),
-                        &mut slice.slice_mut(batch_i * a_size..batch_i * a_size + a_size),
-                    )
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
-            }
-
-            Some(slice)
-        } else {
-            None
-        };
+        let a_broadcast_slice =
+            self.broadcast_shape::<T>(ctx, &a, a_size, a_expected_size, &params)?;
 
         let b_expected_size = params.gemm.b * params.gemm.matrix_b_shape.iter().product::<usize>();
         let b_size = b.shape().iter().product::<usize>();
-        let b_broadcast_slice = if params.gemm.b > 1 && b_expected_size != b_size {
-            let mut slice = self
-                .stream
-                .alloc_zeros::<D>(params.gemm.b * b_size)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-            for batch_i in 0..params.gemm.b {
-                let b_dev_data_ref = b.try_dev_data_ptr()?;
-                let b_dev_data = b_dev_data_ref.data::<D>();
-                debug_assert_eq!(b_size, b_dev_data.len());
-                self.stream
-                    .memcpy_dtod(
-                        b_dev_data.as_ref(),
-                        &mut slice.slice_mut(batch_i * b_size..batch_i * b_size + b_size),
-                    )
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
-            }
+        let b_broadcast_slice =
+            self.broadcast_shape::<T>(ctx, &b, b_size, b_expected_size, &params)?;
 
-            Some(slice)
-        } else {
-            None
-        };
-
-        let output_tensor = ctx.get_output(0)?;
-        common::init_tensor_device_data::<D>(&self.stream, output_tensor)?;
-
-        // The device data should exist so we will execute the kernel
-        // and update the destination device data with the result.
         let y = ctx.get_output(0)?;
-        let mut y_dev_data_ref = y.dev_data_ptr_mut();
-        let mut y_dev_data = y_dev_data_ref
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
+        let mut y_payload = y.payload_mut();
+        let mut y_data = y_payload.data_mut();
 
         match (a_broadcast_slice, b_broadcast_slice) {
             (Some(a_broadcast_slice), Some(b_broadcast_slice)) => {
-                gemm::compute::<D>(
+                gemm::compute::<T>(
                     &self.stream,
-                    &a_broadcast_slice,
-                    &b_broadcast_slice,
-                    &mut y_dev_data,
+                    &a_broadcast_slice.data::<T>(),
+                    &b_broadcast_slice.data::<T>(),
+                    &mut y_data,
                     config,
                 )?;
             }
             (Some(a_broadcast_slice), None) => {
-                let b_dev_data_ref = b.try_dev_data_ptr()?;
-                let b_dev_data = b_dev_data_ref.data::<D>();
+                let b_payload = b.payload();
+                let b_data = b_payload.data::<T>();
 
-                gemm::compute::<D>(
+                gemm::compute::<T>(
                     &self.stream,
-                    &a_broadcast_slice,
-                    &b_dev_data,
-                    &mut y_dev_data,
+                    &a_broadcast_slice.data::<T>(),
+                    &b_data,
+                    &mut y_data,
                     config,
                 )?;
             }
             (None, Some(b_broadcast_slice)) => {
-                let a_dev_data_ref = a.try_dev_data_ptr()?;
-                let a_dev_data = a_dev_data_ref.data::<D>();
+                let a_payload = a.payload();
+                let a_data = a_payload.data::<T>();
 
-                gemm::compute::<D>(
+                gemm::compute::<T>(
                     &self.stream,
-                    &a_dev_data,
-                    &b_broadcast_slice,
-                    &mut y_dev_data,
+                    &a_data,
+                    &b_broadcast_slice.data::<T>(),
+                    &mut y_data,
                     config,
                 )?;
             }
             (None, None) => {
-                let a_dev_data_ref = a.try_dev_data_ptr()?;
-                let a_dev_data = a_dev_data_ref.data::<D>();
-                let b_dev_data_ref = b.try_dev_data_ptr()?;
-                let b_dev_data = b_dev_data_ref.data::<D>();
+                let a_payload = a.payload();
+                let a_data = a_payload.data::<T>();
+                let b_payload = b.payload();
+                let b_data = b_payload.data::<T>();
 
-                gemm::compute::<D>(
-                    &self.stream,
-                    &a_dev_data,
-                    &b_dev_data,
-                    &mut y_dev_data,
-                    config,
-                )?;
+                gemm::compute::<T>(&self.stream, &a_data, &b_data, &mut y_data, config)?;
             }
         }
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }
@@ -343,16 +210,16 @@ impl MatMulBackend {
             + Num
             + FromF32,
     {
-        let params = self.prepare_gemm_params(ctx)?;
+        let params = prepare_gemm_params(ctx)?;
         self.compute_multiplication::<D>(&params, ctx)?;
 
-        // common::write_results_binary::<D, D, D>(
-        //     "debugging/matmul",
-        //     self.stream.clone(),
-        //     ctx,
-        //     Default::default(),
-        // )
-        // .unwrap();
+        #[cfg(feature = "debugger")]
+        debug::write_results_binary::<D, D, D>(
+            "debugging/matmul",
+            self.stream.clone(),
+            ctx,
+            Default::default(),
+        )?;
 
         Ok(())
     }
@@ -366,6 +233,134 @@ impl MatMulBackend {
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
+}
+
+fn prepare_gemm_params(ctx: &mut Context<Cuda>) -> Result<MatMulParams> {
+    let a = ctx.get_input(0)?;
+    let b = ctx.get_input(1)?;
+    let a_shape = a.shape();
+    let b_shape = b.shape();
+    let a_rank = a.shape().len();
+    let b_rank = b.shape().len();
+
+    if a_rank == 0 || b_rank == 0 {
+        return Err(MatMulError::ZeroRank.into());
+    }
+
+    let (promoted_a, batch_a, a_2d_shape, a_2d_stride) = if a_rank == 1 {
+        (true, 1, [1, a_shape[0]], [a_shape[0], 1])
+    } else if a_rank == 2 {
+        (false, 1, [a_shape[0], a_shape[1]], [a_shape[1], 1])
+    } else {
+        let batch = a_shape[..a_rank - 2].iter().product::<usize>();
+        (
+            false,
+            batch,
+            [a_shape[a_rank - 2], a_shape[a_rank - 1]],
+            [a_shape[a_rank - 1], 1],
+        )
+    };
+
+    let (promoted_b, batch_b, b_2d_shape, b_2d_stride) = if b_rank == 1 {
+        (true, 1, [b_shape[0], 1], [1, 1])
+    } else if b_rank == 2 {
+        (false, 1, [b_shape[0], b_shape[1]], [b_shape[1], 1])
+    } else {
+        let batch = b_shape[..b_rank - 2].iter().product::<usize>();
+        (
+            false,
+            batch,
+            [b_shape[b_rank - 2], b_shape[b_rank - 1]],
+            [b_shape[b_rank - 1], 1],
+        )
+    };
+
+    let promoted = match (promoted_a, promoted_b) {
+        (true, true) => Some(Promoted::Both),
+        (false, true) => Some(Promoted::Right),
+        (true, false) => Some(Promoted::Left),
+        (false, false) => None,
+    };
+
+    if a_2d_shape[1] != b_2d_shape[0] {
+        // Todo: we need a better error.
+        return Err(MatMulError::IncompatibleDimForMul.into());
+    }
+
+    if batch_a != batch_b && batch_a != 1 && batch_b != 1 {
+        // Todo: we need a better error.
+        return Err(MatMulError::IncompatibleDimForBroadcast.into());
+    }
+
+    let gemm_params = gemm::gemm_params(
+        &a_2d_shape,
+        &a_2d_stride,
+        &b_2d_shape,
+        &b_2d_stride,
+        false,
+        false,
+        cmp::max(batch_a, batch_b),
+    )?;
+
+    Ok(MatMulParams {
+        gemm: gemm_params,
+        promoted,
+    })
+}
+
+fn compute_output_shape(params: &MatMulParams, ctx: &Context<Cuda>) -> Result<()> {
+    let y = ctx.get_output(0)?;
+
+    let (add_batch, max_rank) = {
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+
+        let add_batch = if a.shape().len() >= 3 || b.shape().len() >= 3 {
+            true
+        } else {
+            false
+        };
+
+        // We do this to appease the compiler.
+        let res = (add_batch, cmp::max(a.shape().len(), b.shape().len()));
+        res
+    };
+
+    match params.promoted {
+        None => {
+            if add_batch {
+                let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+                let output_shape = scratch_alloc.allocate_fill(max_rank, 1)?;
+                output_shape[max_rank - 3] = params.gemm.b;
+                output_shape[max_rank - 2] = params.gemm.m;
+                output_shape[max_rank - 1] = params.gemm.n;
+
+                y.copy_shape_from_slice(&output_shape);
+            } else {
+                y.copy_shape_from_slice(&[params.gemm.m, params.gemm.n]);
+            }
+        }
+        Some(Promoted::Both) => {
+            // Todo: handle scalars.
+            y.copy_shape_from_slice(&[]);
+        }
+        Some(Promoted::Left) => {
+            if add_batch {
+                y.copy_shape_from_slice(&[params.gemm.b, params.gemm.n]);
+            } else {
+                y.copy_shape_from_slice(&[params.gemm.n]);
+            }
+        }
+        Some(Promoted::Right) => {
+            if add_batch {
+                y.copy_shape_from_slice(&[params.gemm.b, params.gemm.m]);
+            } else {
+                y.copy_shape_from_slice(&[params.gemm.m]);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug)]

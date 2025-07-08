@@ -1,8 +1,8 @@
 use crate::attributes::conv::ConvAttributes;
+use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
-use crate::providers::cuda::Cuda;
+use crate::providers::cuda::{Cuda, Tensor};
 use crate::utils;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -26,7 +26,7 @@ impl ConvolutionBackend {
 }
 
 impl ConvolutionBackend {
-    fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
+    fn compute_output_shape(&self, ctx: &Context<Cuda>) -> Result<()> {
         let x = ctx.get_input(0)?;
 
         let filter_dims = match x.shape().len() {
@@ -67,20 +67,16 @@ impl ConvolutionBackend {
         )?;
 
         let y = ctx.get_output(0)?;
-        let y_index = y.dst_id();
         let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(shape, y_index)?;
+        y.copy_shape_from_slice(shape);
 
         Ok(())
     }
 
-    fn compute_convolution<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_convolution<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        // We compute the output shape first.
-        // This is cheap because we're using scratch buffers.
         self.compute_output_shape(ctx)?;
 
         let x = ctx.get_input(0)?;
@@ -124,112 +120,72 @@ impl ConvolutionBackend {
         let w_shape = scratch_alloc.allocate_and_convert_from_slice(&w.shape())?;
 
         let y = ctx.get_output(0)?;
-        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(&y.shape())?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(&y.stride())?;
 
-        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
+        let bias = get_bias::<T>(ctx, &scratch_alloc)?;
 
-        // Todo: refactor this.
-        // Extract and prepare bias argument.
-        // At this point, we still don't know the data type of bias.
-        let bias = ctx.get_input(2).ok();
-        let bias = match bias.as_ref() {
-            Some(bias_tensor) => {
-                debug!(
-                    "[bias][dtype={:?}][shape={:?}][stride=[{:?}]",
-                    bias_tensor.dtype(),
-                    bias_tensor.shape(),
-                    bias_tensor.stride()
-                );
+        let x_payload = x.payload();
+        let x_data = x_payload.data();
 
-                if bias_tensor.is_scalar() {
-                    return Err(ConvError::InvalidInputRank { rank: 0 }.into());
-                }
-
-                let bias_shape = scratch_alloc.allocate_fill(x_shape.len(), 1)?;
-                // Todo: Urgent. We need to make this generic.
-                bias_shape[1] = bias_tensor.shape()[0] as i32;
-
-                let bias_stride = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
-                utils::compute_stride(&bias_shape, bias_stride);
-
-                let device_data = bias_tensor.try_dev_data_ptr()?;
-
-                Some(BiasArg {
-                    data: device_data,
-                    shape: bias_shape,
-                    stride: bias_stride,
-                })
-            }
-            None => None,
-        };
-
-        let x_dev_data_ref = x.try_dev_data_ptr()?;
-        let x_dev_data = x_dev_data_ref.data();
-
-        let w_dev_data_ref = w.try_dev_data_ptr()?;
-        let w_dev_data = w_dev_data_ref.data();
+        let w_payload = w.payload();
+        let w_data = w_payload.data();
 
         let y = ctx.get_output(0)?;
+        y.init_payload::<T>()?;
 
         debug!(
             "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
-            D::data_type(),
+            T::data_type(),
             y.shape(),
             y.stride()
         );
 
-        common::init_tensor_device_data::<D>(&self.stream, y)?;
-
-        // The device data should exist so we will execute the kernel
-        // and update the destination device data with the result.
-        let y = ctx.get_output(0)?;
-        let mut y_dev_data_ref = y.dev_data_ptr_mut();
-        let mut y_dev_data = y_dev_data_ref
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
+        let mut y_payload = y.payload_mut();
+        let mut y_dev = y_payload.data_mut();
 
         // Since we know the data type, we extract it.
         match bias.as_ref() {
             Some(bias) => {
-                let data = bias.data.data();
-                rmlk_cuda::kernels::conv::compute::<D>(
+                let bias_payload = bias.data.payload();
+                let bias_data = bias_payload.data();
+                rmlk_cuda::kernels::conv::compute::<T>(
                     self.stream,
-                    (D::one(), D::zero()),
-                    &x_dev_data,
+                    (T::one(), T::zero()),
+                    &x_data,
                     &x_shape,
                     &x_stride,
-                    &w_dev_data,
+                    &w_data,
                     &w_shape,
                     conv_attrs.pads(),
                     conv_attrs.strides(),
                     conv_attrs.dilations(),
                     conv_attrs.group(),
                     Some(BiasInput {
-                        data: &data,
+                        data: &bias_data,
                         shape: bias.shape,
                         stride: bias.stride,
                     }),
-                    &mut y_dev_data,
+                    &mut y_dev,
                     &y_shape,
                     &y_stride,
                 )?;
             }
             None => {
-                rmlk_cuda::kernels::conv::compute::<D>(
+                rmlk_cuda::kernels::conv::compute::<T>(
                     self.stream,
-                    (D::one(), D::zero()),
-                    &x_dev_data,
+                    (T::one(), T::zero()),
+                    &x_data,
                     &x_shape,
                     &x_stride,
-                    &w_dev_data,
+                    &w_data,
                     &w_shape,
                     conv_attrs.pads(),
                     conv_attrs.strides(),
                     conv_attrs.dilations(),
                     conv_attrs.group(),
                     None,
-                    &mut y_dev_data,
+                    &mut y_dev,
                     &y_shape,
                     &y_stride,
                 )?;
@@ -251,6 +207,47 @@ impl ConvolutionBackend {
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
+}
+
+// Todo: refactor this.
+// Extract and prepare bias argument.
+// At this point, we still don't know the data type of bias.
+fn get_bias<'a, T>(
+    ctx: &'a Context<Cuda>,
+    scratch_alloc: &'a ScratchAllocator,
+) -> Result<Option<BiasArg<'a, Tensor>>> {
+    let x = ctx.get_input(0)?;
+    let bias = ctx.get_input(2).ok();
+    let bias = match bias {
+        Some(bias_tensor) => {
+            debug!(
+                "[bias][dtype={:?}][shape={:?}][stride=[{:?}]",
+                bias_tensor.dtype(),
+                bias_tensor.shape(),
+                bias_tensor.stride()
+            );
+
+            if bias_tensor.is_scalar() {
+                return Err(ConvError::InvalidInputRank { rank: 0 }.into());
+            }
+
+            let bias_shape = scratch_alloc.allocate_fill(x.shape().len(), 1)?;
+            // Todo: Urgent. We need to make this generic.
+            bias_shape[1] = bias_tensor.shape()[0] as i32;
+
+            let bias_stride = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
+            utils::compute_stride(&bias_shape, bias_stride);
+
+            Some(BiasArg {
+                data: bias_tensor,
+                shape: bias_shape,
+                stride: bias_stride,
+            })
+        }
+        None => None,
+    };
+
+    Ok(bias)
 }
 
 struct BiasArg<'a, T> {

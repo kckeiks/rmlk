@@ -1,13 +1,41 @@
 mod iterators;
 mod serialization;
+mod slab;
 
 pub use iterators::*;
 pub use serialization::*;
+pub use slab::*;
 
 use anyhow::{anyhow, bail, Result};
 use num_traits::{Num, ToPrimitive};
+use rmlk_graph::Node;
+use rmlk_schema::Definition;
 use std::cmp;
 use std::ops::AddAssign;
+
+pub const SCALAR_SHAPE: &[usize] = &[1];
+pub const SCALAR_STRIDE: &[usize] = &[1];
+
+pub(crate) fn compare_shapes(shape: &[usize], node: &Node<Definition>) -> Result<()> {
+    let shape_def = node
+        .value()
+        .shape()
+        .ok_or(anyhow!("definition has no shape"))?;
+
+    if shape.len() != shape_def.len() {
+        bail!("rank mismatch src={:?} def={:?}", shape, shape_def);
+    }
+
+    for (idx, &dim) in shape.iter().enumerate() {
+        if shape_def[idx] != dim {
+            if shape_def[idx] != 0 || !(shape_def[idx] == 0 && node.value().has_dynamic_dims()) {
+                bail!("dimensions mismatch src={:?} def={:?}", shape, shape_def);
+            }
+        }
+    }
+
+    Ok(())
+}
 
 pub fn compute_stride<T: Num + Copy + AddAssign>(shape: &[T], stride: &mut [T]) {
     let ndims = shape.len();

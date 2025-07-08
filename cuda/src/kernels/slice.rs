@@ -62,7 +62,7 @@ pub unsafe fn compute<T, Tind>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     rank: usize,
-    info: &[usize],
+    info: &CudaSlice<usize>,
     starts: &CudaSlice<Tind>,
     ends: &CudaSlice<Tind>,
     axes: &CudaSlice<Tind>,
@@ -82,7 +82,8 @@ where
         return Ok(());
     }
 
-    assert_eq!(elem_count, info[2 * rank..3 * rank].iter().product());
+    // Todo: we need to validate this.
+    // assert_eq!(elem_count, info[2 * rank..3 * rank].iter().product());
 
     assert!(8 >= rank);
 
@@ -91,8 +92,6 @@ where
     assert_eq!(ends.len(), indices_len);
     assert!(axes_len == indices_len || axes_len == 0);
     assert!(steps.len() == indices_len || steps.len() == 0);
-
-    let info_on_dev = stream.memcpy_stod(info)?;
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -109,7 +108,7 @@ where
             .arg(&elem_count)
             .arg(&axes_len)
             .arg(&rank)
-            .arg(&info_on_dev)
+            .arg(info)
             .arg(input_data)
             .arg(starts)
             .arg(ends)
@@ -152,15 +151,16 @@ mod tests {
             utils::calculate_stride(output_shape, &mut out_strides);
         }
 
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
+        let func = load_kernel(ctx, kernel_type).unwrap();
+
         let mut info = Vec::with_capacity(rank * 4);
         info.extend_from_slice(input_shape);
         info.extend_from_slice(&in_strides);
         info.extend_from_slice(output_shape);
         info.extend_from_slice(&out_strides);
-
-        let ctx = CudaContext::new(0).unwrap();
-        let stream = ctx.default_stream();
-        let func = load_kernel(ctx, kernel_type).unwrap();
+        let info = stream.memcpy_stod(&info).unwrap();
 
         let starts_dev = stream.memcpy_stod(starts).unwrap();
         let ends_dev = stream.memcpy_stod(ends).unwrap();

@@ -40,13 +40,14 @@ impl AdditionBackend {
         add::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
-    fn compute_addition<I>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_addition<I>(self, ctx: &Context<Cuda>) -> Result<()>
     where
         I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
+        let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
         let func = self.load_cuda_function(I::data_type())?;
         unsafe {
-            binary::compute::<I, I, I>("add", self.stream.clone(), func, ctx)?;
+            binary::compute::<I, I, I>("add", self.stream.clone(), cuda_bump, func, ctx)?;
         }
 
         #[cfg(feature = "debugger")]
@@ -56,10 +57,6 @@ impl AdditionBackend {
             ctx,
             Default::default(),
         )?;
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

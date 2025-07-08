@@ -1,7 +1,7 @@
 use crate::attributes::pooling::MaxPoolAttributes;
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -23,56 +23,15 @@ impl MaxPoolBackend {
 }
 
 impl MaxPoolBackend {
-    fn comput_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let x = ctx.get_input(0)?;
-
-        debug!(
-            "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
-            x.dtype(),
-            x.shape(),
-            x.stride()
-        );
-
-        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
-        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
-
-        let attrs = ctx
-            .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
-            .map_err(Box::new)?;
-        let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
-
-        let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
-
-        // Todo: Refactor function so we dont have to allocate a scratch buffer.
-        // Todo: Move this to utils.
-        // Todo: if attributes were usize, we wouldn't need to do this allocation here.
-        rmlk_cuda::kernels::max_pool::compute_output_shape(
-            &x_shape,
-            max_pool_attrs.kernel_shape(),
-            max_pool_attrs.pads(),
-            max_pool_attrs.strides(),
-            &mut y_shape,
-            false,
-        )?;
-
-        let y = ctx.get_output(0)?;
-        let dst_id = y.dst_id();
-        let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(shape, dst_id)?;
-
-        Ok(())
-    }
-
-    fn compute_max_pool<D>(&self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_max_pool<T>(&self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
     {
-        self.comput_output_shape(ctx)?;
+        comput_output_shape(ctx)?;
 
         let x = ctx.get_input(0)?;
         let y = ctx.get_output(0)?;
+        y.init_payload::<T>()?;
 
         debug!(
             "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
@@ -96,35 +55,28 @@ impl MaxPoolBackend {
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
 
-        let x_shape = scratch_alloc.allocate_and_convert_from_slice(x.shape())?;
-        let x_stride = scratch_alloc.allocate_and_convert_from_slice(x.stride())?;
-        let y_shape = scratch_alloc.allocate_and_convert_from_slice(y.shape())?;
-        let y_stride = scratch_alloc.allocate_and_convert_from_slice(y.stride())?;
+        let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+        let x_stride = scratch_alloc.allocate_and_convert_from_slice(&x.stride())?;
+        let y_shape = scratch_alloc.allocate_and_convert_from_slice(&y.shape())?;
+        let y_stride = scratch_alloc.allocate_and_convert_from_slice(&y.stride())?;
 
-        let x_dev_data_ref = x.try_dev_data_ptr()?;
-        let x_dev_data = x_dev_data_ref.data();
+        let x_payload = x.payload();
+        let x_data = x_payload.data();
 
-        common::init_tensor_device_data::<D>(&self.stream, y)?;
-
-        // The device data should exist so we will execute the kernel
-        // and update the destination device data with the result.
         let y = ctx.get_output(0)?;
-        let mut y_dev_data_ref = y.dev_data_ptr_mut();
-        let mut y_dev_data = y_dev_data_ref
-            .as_mut()
-            .expect("we already checked that it initialized")
-            .data_mut();
+        let mut y_payload = y.payload_mut();
+        let mut y_data = y_payload.data_mut();
 
-        rmlk_cuda::kernels::max_pool::compute::<D>(
+        rmlk_cuda::kernels::max_pool::compute::<T>(
             self.stream.clone(),
-            (D::one(), D::zero()),
-            &x_dev_data,
+            (T::one(), T::zero()),
+            &x_data,
             x_shape,
             x_stride,
             max_pool_attrs.kernel_shape(),
             max_pool_attrs.pads(),
             max_pool_attrs.strides(),
-            &mut y_dev_data,
+            &mut y_data,
             y_shape,
             y_stride,
         )?;
@@ -144,4 +96,44 @@ impl MaxPoolBackend {
             _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
         }
     }
+}
+
+fn comput_output_shape(ctx: &Context<Cuda>) -> Result<()> {
+    let x = ctx.get_input(0)?;
+
+    debug!(
+        "[x][dtype={:?}][shape={:?}][stride=[{:?}]",
+        x.dtype(),
+        x.shape(),
+        x.stride()
+    );
+
+    let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+    let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
+
+    let attrs = ctx
+        .get_attributes()
+        .ok_or(InternalError::MissingAttributes)
+        .map_err(Box::new)?;
+    let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
+
+    let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+
+    // Todo: Refactor function so we dont have to allocate a scratch buffer.
+    // Todo: Move this to utils.
+    // Todo: if attributes were usize, we wouldn't need to do this allocation here.
+    rmlk_cuda::kernels::max_pool::compute_output_shape(
+        &x_shape,
+        max_pool_attrs.kernel_shape(),
+        max_pool_attrs.pads(),
+        max_pool_attrs.strides(),
+        &mut y_shape,
+        false,
+    )?;
+
+    let y = ctx.get_output(0)?;
+    let shape = scratch_alloc.allocate_and_convert_from_slice(y_shape)?;
+    y.copy_shape_from_slice(shape);
+
+    Ok(())
 }

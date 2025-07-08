@@ -1,6 +1,6 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -25,9 +25,9 @@ impl RangeBackend {
         }
     }
 
-    fn compute_range<I>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_range<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        I: Copy
+        T: Copy
             + DataTypeMap
             + CudnnDataType
             + Default
@@ -38,114 +38,83 @@ impl RangeBackend {
             + ElementCount
             + Debug,
     {
-        {
-            let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
+        let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
 
-            let start_value = scratch_alloc.allocate::<I>(1)?;
-            let limit_value = scratch_alloc.allocate::<I>(1)?;
-            let delta_value = scratch_alloc.allocate::<I>(1)?;
+        let start_value = scratch_alloc.allocate::<T>(1)?;
+        let limit_value = scratch_alloc.allocate::<T>(1)?;
+        let delta_value = scratch_alloc.allocate::<T>(1)?;
 
-            {
-                let start_tensor = ctx.get_input(0)?;
+        let start_tensor = ctx.get_input(0)?;
 
-                debug!(
-                    "[start][dtype={:?}][shape={:?}][stride=[{:?}]",
-                    start_tensor.dtype(),
-                    start_tensor.shape(),
-                    start_tensor.stride(),
-                );
+        debug!(
+            "[start][dtype={:?}][shape={:?}][stride=[{:?}]",
+            start_tensor.dtype(),
+            start_tensor.shape(),
+            start_tensor.stride(),
+        );
 
-                let start_ptr = start_tensor.try_dev_data_ptr()?;
-                let start_view = start_ptr.data::<I>();
-                self.stream
-                    .memcpy_dtoh(start_view.as_ref(), start_value)
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
+        start_tensor.payload_to_host(start_value)?;
 
-                let limit_tensor = ctx.get_input(1)?;
+        let limit_tensor = ctx.get_input(1)?;
 
-                debug!(
-                    "[limit][dtype={:?}][shape={:?}][stride=[{:?}]",
-                    limit_tensor.dtype(),
-                    limit_tensor.shape(),
-                    limit_tensor.stride(),
-                );
+        debug!(
+            "[limit][dtype={:?}][shape={:?}][stride=[{:?}]",
+            limit_tensor.dtype(),
+            limit_tensor.shape(),
+            limit_tensor.stride(),
+        );
 
-                let limit_ptr = limit_tensor.try_dev_data_ptr()?;
-                let limit_view = limit_ptr.data::<I>();
-                self.stream
-                    .memcpy_dtoh(limit_view.as_ref(), limit_value)
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
+        limit_tensor.payload_to_host(limit_value)?;
 
-                let delta_tensor = ctx.get_input(2)?;
+        let delta_tensor = ctx.get_input(2)?;
 
-                debug!(
-                    "[delta][dtype={:?}][shape={:?}][stride=[{:?}]",
-                    delta_tensor.dtype(),
-                    delta_tensor.shape(),
-                    delta_tensor.stride(),
-                );
+        debug!(
+            "[delta][dtype={:?}][shape={:?}][stride=[{:?}]",
+            delta_tensor.dtype(),
+            delta_tensor.shape(),
+            delta_tensor.stride(),
+        );
 
-                let delta_ptr = delta_tensor.try_dev_data_ptr()?;
-                let delta_view = delta_ptr.data::<I>();
-                self.stream
-                    .memcpy_dtoh(delta_view.as_ref(), delta_value)
-                    .map_err(|e| InternalError::Device { error: e.into() })?;
-            }
+        delta_tensor.payload_to_host(delta_value)?;
 
-            let start = start_value[0];
-            let limit = limit_value[0];
-            let delta = delta_value[0];
+        let start = start_value[0];
+        let limit = limit_value[0];
+        let delta = delta_value[0];
 
-            debug!("[start={:?}][limit={:?}][delta=[{:?}]", start, limit, delta);
+        debug!("[start={:?}][limit={:?}][delta=[{:?}]", start, limit, delta);
 
-            // First compute N = the number of elements.
-            let elem_count = I::element_count(start, limit, delta)?;
+        // First compute N = the number of elements.
+        let elem_count = T::element_count(start, limit, delta)?;
 
-            // The shape of the output should be [N].
-            let output_shape = scratch_alloc.allocate_fill(1, elem_count)?;
+        // The shape of the output should be [N].
+        let output_shape = scratch_alloc.allocate_fill(1, elem_count)?;
 
-            let output_tensor = ctx.get_output(0)?;
-            let dst_id = output_tensor.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_slice(output_shape, dst_id)?;
+        let output_tensor = ctx.get_output(0)?;
+        output_tensor.copy_shape_from_slice(output_shape);
+        output_tensor.init_payload::<T>()?;
 
-            // Try to init the tensor.
-            let output_tensor = ctx.get_output(0)?;
+        debug!(
+            "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+            output_tensor.dtype(),
+            output_tensor.shape(),
+            output_tensor.stride(),
+        );
 
-            debug!(
-                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
-                output_tensor.dtype(),
-                output_tensor.shape(),
-                output_tensor.stride(),
-            );
+        let output = scratch_alloc.allocate_fill::<T>(elem_count, T::zero())?;
 
-            common::init_tensor_device_data::<I>(&self.stream, output_tensor)?;
+        // Compute the values in the output on the host.
+        compute_output(start, delta, elem_count, output)?;
 
-            let output = scratch_alloc.allocate_fill::<I>(elem_count, I::zero())?;
-
-            // Compute the values in the output on the host.
-            compute_output(start, delta, elem_count, output)?;
-
-            // Copy the data from the host to the device.
-            let output_tensor = ctx.get_output(0)?;
-
-            let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-            let mut output_view = output_ptr.data_mut::<I>();
-            self.stream
-                .memcpy_htod(output, output_view.as_mut())
-                .map_err(|e| InternalError::Device { error: e.into() })?;
-        }
+        // Copy the data from the host to the device.
+        output_tensor.write_payload_from_slice(output)?;
 
         #[cfg(feature = "debugger")]
-        debug::write_results_ternary::<I, I, I, I>(
+        debug::write_results_ternary::<T, T, T, T>(
             "debugging/range",
             self.stream.clone(),
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

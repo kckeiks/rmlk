@@ -1,235 +1,474 @@
-use crate::core::allocators::BufferArena;
-use crate::core::error::InternalError;
-use crate::core::error::Result;
-use crate::providers::cuda::data::{CudaData, DataView};
-use cudarc::driver::{sys, CudaContext, CudaSlice, CudaStream, DeviceRepr};
-use num_traits::ToPrimitive;
-use rmlk_schema::DataTypeMap;
-use std::cell::{Cell, Ref, RefCell, RefMut};
+use crate::core::device_service::{Value, ValueStore};
+use crate::providers::cuda::allocator::CudaBump;
+use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::tensor::Tensor;
+use crate::utils::{FromBytes, ShapeAllocator};
+use anyhow::Result;
+use cudarc::driver::DeviceRepr;
+use half::f16;
+use log::debug;
+use rmlk_graph::Graph;
+use rmlk_schema::{DataType, DataTypeMap, Definition, Op};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use std::sync::Arc;
-
-pub struct CudaBump {
-    stream: Arc<CudaStream>,
-    ptr: sys::CUdeviceptr,
-    len: usize,
-    cur_len: Cell<u64>,
-}
-
-impl CudaBump {
-    pub fn new(stream: Arc<CudaStream>, size: usize) -> Result<Self> {
-        let slice = stream
-            .alloc_zeros::<u8>(size)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
-        let len = slice.len();
-        let ptr = slice.leak();
-        Ok(Self {
-            stream,
-            ptr,
-            len,
-            cur_len: Cell::new(0),
-        })
-    }
-
-    fn alloc<T: DataTypeMap>(&self, len: usize) -> Option<CudaData> {
-        let align = align_of::<T>() as u64;
-        let size = size_of::<T>() as u64;
-        let mut cur = self.cur_len.get();
-
-        cur = (cur + align - 1) & !(align - 1);
-
-        let bytes_needed = (len as u64).checked_mul(size)?;
-        let end = cur.checked_add(bytes_needed)?;
-
-        if end > self.len as u64 {
-            return None;
-        }
-
-        let slice = unsafe {
-            self.stream
-                .upgrade_device_ptr::<T>(self.ptr.checked_add(cur)?, len)
-        };
-
-        self.cur_len.set(end);
-
-        let mut cuda_data = CudaData::new(slice);
-
-        cuda_data.forget();
-
-        Some(cuda_data)
-    }
-}
-
-impl Drop for CudaBump {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = self.stream.upgrade_device_ptr::<u8>(self.ptr, self.len);
-        };
-    }
-}
-
-#[derive(Clone)]
-pub struct Slab {
-    range: std::ops::Range<usize>,
-    arena: Rc<RefCell<Vec<usize>>>,
-}
-
-impl Slab {
-    pub fn slice(&self) -> Ref<'_, [usize]> {
-        Ref::map(self.arena.borrow(), |t| &t[self.range.clone()])
-    }
-
-    pub fn slice_mut(&self) -> RefMut<'_, [usize]> {
-        RefMut::map(self.arena.borrow_mut(), |t| &mut t[self.range.clone()])
-    }
-}
-
-pub struct Tensor {
-    shape: Slab,
-    stride: Slab,
-    payload: Rc<RefCell<Option<CudaData>>>,
-}
-
-impl Tensor {
-    pub fn write<T>(&mut self, src: &DataView<T>) -> Result<()>
-    where
-        T: DataTypeMap,
-    {
-        let mut ref_mut = self.payload.borrow_mut();
-        let cuda_data = ref_mut.as_mut().unwrap();
-        let stream = cuda_data.data::<T>().stream().clone();
-        stream
-            .memcpy_dtod(src.as_ref(), cuda_data.data_mut::<T>().as_mut())
-            .unwrap();
-
-        Ok(())
-    }
-
-    pub fn write_from_buf<T>(&mut self, src: &[T]) -> Result<()>
-    where
-        T: DataTypeMap + DeviceRepr,
-    {
-        let mut ref_mut = self.payload.borrow_mut();
-        let cuda_data = ref_mut.as_mut().unwrap();
-        let stream = cuda_data.data::<T>().stream().clone();
-        stream
-            .memcpy_htod(src, cuda_data.data_mut::<T>().as_mut())
-            .unwrap();
-
-        Ok(())
-    }
-
-    pub fn update_shape(&mut self, src: &Slab) {
-        let mut shape = self.shape.slice_mut();
-        shape.copy_within(src.range.clone(), 0);
-    }
-
-    pub fn update_shape_from_slice(&mut self, src: &[usize]) {
-        let mut shape = self.shape.slice_mut();
-        shape.copy_from_slice(src);
-    }
-}
 
 pub struct TensorStore {
-    stream: Arc<CudaStream>,
-    allocator: Rc<CudaBump>,
+    scratch_alloc: Rc<CudaBump>,
+    static_alloc: Rc<CudaBump>,
     tensors: Box<[Option<Tensor>]>,
-    memory_usage: usize,
+    shape_alloc: ShapeAllocator,
 }
 
-pub struct MainStore {
-    inner: Rc<TensorStore>,
-}
-
-fn foo<T>(s: &CudaSlice<T>) {
-    println!("len: {}", s.len());
-}
-
-fn bar<T>(s: &mut CudaSlice<T>) {
-    println!("len: {}", s.len());
-}
-
-fn testing() {
-    let ctx = CudaContext::new(0).unwrap();
-    let stream = ctx.default_stream();
-
-    let bump = CudaBump::new(stream, 8).unwrap();
-
-    let mut slab = bump.alloc::<f32>(4).unwrap();
-
-    foo::<f32>(&slab.data::<f32>());
-
-    bar::<f32>(&mut slab.data_mut::<f32>());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cudarc::driver::{CudaContext, DevicePtr};
-
-    #[test]
-    fn alignment_correct_lengths() {
-        let dev = CudaContext::new(0).unwrap();
-        let stream = dev.default_stream();
-        let bump = CudaBump::new(stream.clone(), 1024).unwrap();
-
-        let a = bump.alloc::<u8>(3).unwrap();
-        assert_eq!(a.len(), 3);
-
-        let b = bump.alloc::<f64>(6).unwrap();
-        assert_eq!(b.len(), 6);
+impl TensorStore {
+    pub fn new(
+        scratch_alloc: Rc<CudaBump>,
+        static_alloc: Rc<CudaBump>,
+        shape_alloc: ShapeAllocator,
+    ) -> TensorStore {
+        Self {
+            scratch_alloc,
+            static_alloc,
+            shape_alloc,
+            tensors: Box::new([]),
+        }
     }
 
-    #[test]
-    fn alignment_after_mixed_alloc() {
-        let dev = CudaContext::new(0).unwrap();
-        let stream = dev.default_stream();
-        let bump = CudaBump::new(stream.clone(), 1024).unwrap();
-
-        let a = bump.alloc::<u8>(1).unwrap();
-        let (ptr_a, _) = a.data::<u8>().as_ref().device_ptr(&stream);
-
-        let b = bump.alloc::<f64>(1).unwrap();
-        let (ptr_b, _) = b.data::<f64>().as_ref().device_ptr(&stream);
-
-        assert_eq!(
-            ptr_a % 8,
-            0,
-            "address produced by CUDA should be aligned to 256 bytes"
-        );
-        assert_eq!(
-            ptr_b % 8,
-            0,
-            "second allocation should respect natural 8-byte alignment"
-        );
-        assert!(ptr_b > ptr_a, "second slice must be at a higher address");
+    pub fn init(
+        &mut self,
+        graph: &Graph<Definition>,
+        initializers: HashMap<usize, rmlk_schema::Tensor>,
+    ) -> Result<()> {
+        let store = Builder::new(
+            self.scratch_alloc.clone(),
+            self.static_alloc.clone(),
+            self.shape_alloc.clone(),
+            graph,
+            initializers,
+        )
+        .build()?;
+        self.tensors = store.tensors;
+        Ok(())
     }
 
-    #[test]
-    fn slices_do_not_overlap() {
-        let dev = CudaContext::new(0).unwrap();
-        let stream = dev.default_stream();
-        let bump = CudaBump::new(stream.clone(), 1024).unwrap();
-
-        let s1 = bump.alloc::<u32>(10).unwrap();
-        let s2 = bump.alloc::<u16>(20).unwrap();
-
-        let (p1, _) = s1.data::<u32>().device_ptr(&stream);
-        let (p2, _) = s2.data::<u16>().device_ptr(&stream);
-
-        assert!(
-            p2 >= p1 + 40,
-            "second slice must start after first slice ends"
-        );
-    }
-
-    #[test]
-    fn out_of_space_returns_none() {
-        let dev = CudaContext::new(0).unwrap();
-        let stream = dev.default_stream();
-        let bump = CudaBump::new(stream.clone(), 1024).unwrap();
-
-        assert!(bump.alloc::<u8>(1024).is_some());
-        assert!(bump.alloc::<u8>(1).is_none());
+    pub fn get(&self, id: usize) -> Option<Tensor> {
+        self.tensors.get(id)?.clone()
     }
 }
+
+struct Builder<'a> {
+    scratch_alloc: Rc<CudaBump>,
+    static_alloc: Rc<CudaBump>,
+    graph: &'a Graph<Definition>,
+    initializers: Option<HashMap<usize, rmlk_schema::Tensor>>,
+    shape_alloc: ShapeAllocator,
+    tensors: Vec<Option<Tensor>>,
+}
+
+impl<'a> Builder<'a> {
+    fn new(
+        scratch_alloc: Rc<CudaBump>,
+        static_alloc: Rc<CudaBump>,
+        shape_alloc: ShapeAllocator,
+        graph: &'a Graph<Definition>,
+        initializers: HashMap<usize, rmlk_schema::Tensor>,
+    ) -> Self {
+        let node_count = graph.node_count();
+        let mut tensors = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            // TensorHandle does not implement clone so we cannot use the macro.
+            tensors.push(None);
+        }
+
+        Self {
+            scratch_alloc,
+            static_alloc,
+            graph,
+            initializers: Some(initializers),
+            shape_alloc,
+            tensors,
+        }
+    }
+
+    fn load_initializers(&mut self) -> Result<()> {
+        // Load initializers.
+        let mut initializers = self
+            .initializers
+            .take()
+            .expect("call load_initializers only once")
+            .into_iter()
+            .collect::<Vec<_>>();
+        initializers.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+        for (node_id, ir_tensor) in initializers {
+            debug!(
+                "[node={node_id}][ir_tensor={}][dtype={:?}][shape={:?}]",
+                ir_tensor.name.as_deref().unwrap_or(""),
+                ir_tensor.data_type,
+                ir_tensor.dims
+            );
+
+            debug_assert!(matches!(
+                self.graph.get_node(node_id).map(|n| n.value().op()),
+                // Todo: Fix this when we resolve the issue with Constants.
+                Some(Op::Const) | Some(Op::NoOp)
+            ));
+
+            let tensor = Tensor::new(
+                Rc::new(self.shape_alloc.empty()),
+                Rc::new(RefCell::new(None)),
+                self.static_alloc.clone(),
+            );
+
+            match ir_tensor.data_type {
+                DataType::Float16 => {
+                    let on_host_data = f16::from_bytes(
+                        ir_tensor
+                            .raw_data
+                            .as_ref()
+                            .ok_or(StoreError::FailedToParseTensorRawData)?,
+                    )?;
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<f16>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<f16>(&on_host_data)?;
+                }
+                DataType::Float => {
+                    let on_host_data = match ir_tensor.float_data.is_empty() {
+                        true => f32::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.float_data
+                        }
+                    };
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<f32>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<f32>(&on_host_data)?;
+                }
+                DataType::Double => {
+                    let on_host_data = match ir_tensor.double_data.is_empty() {
+                        true => f64::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.double_data
+                        }
+                    };
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<f64>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<f64>(&on_host_data)?;
+                }
+                DataType::Int32 => {
+                    let on_host_data = match ir_tensor.int32_data.is_empty() {
+                        true => i32::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.int32_data
+                        }
+                    };
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<i32>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<i32>(&on_host_data)?;
+                }
+                DataType::Int64 => {
+                    let on_host_data = match ir_tensor.int64_data.is_empty() {
+                        true => i64::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.int64_data
+                        }
+                    };
+                    let len = if on_host_data.len() >= 10 {
+                        10
+                    } else {
+                        on_host_data.len()
+                    };
+                    debug!(
+                        "RAW_DATA (len={}) = <{:?}>",
+                        on_host_data.len(),
+                        &on_host_data[..len]
+                    );
+
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<i64>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<i64>(&on_host_data)?;
+                }
+                DataType::Bool => {
+                    let on_host_data = match ir_tensor.bool_data.is_empty() {
+                        true => bool::from_bytes(
+                            ir_tensor
+                                .raw_data
+                                .as_ref()
+                                .ok_or(StoreError::FailedToParseTensorRawData)?,
+                        )?,
+                        false => {
+                            // Todo: remove allocation.
+                            ir_tensor.bool_data
+                        }
+                    };
+                    debug!("on_host_data = {:?}", on_host_data);
+
+                    // self.cuda_alloc
+                    //     .alloc_from_slice::<bool>(&on_host_data)
+                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    tensor.write_payload_from_slice::<bool>(&on_host_data)?;
+                }
+                _ => {
+                    return Err(StoreError::DataTypeNotSupported {
+                        dtype: ir_tensor.data_type,
+                    }
+                    .into())
+                }
+            };
+
+            if ir_tensor.dims.is_empty() && tensor.len() == 1 {
+                // Todo: handle scalars.
+                tensor.copy_shape_from_slice(&[]);
+                //self.slab_alloc.alloc_from_slice(&[])
+            } else {
+                tensor.copy_shape_from_slice(ir_tensor.dims.as_slice());
+                //self.slab_alloc.alloc_from_slice(ir_tensor.dims.as_slice())
+            };
+
+            self.tensors[node_id].replace(tensor);
+        }
+
+        Ok(())
+    }
+
+    fn load_inputs(&mut self) -> Result<()> {
+        for node_id in self.graph.inputs() {
+            match self.graph.get_node(node_id) {
+                Some(node) => {
+                    let def = node.value();
+                    let shape = def.shape().ok_or(StoreError::ShapeNotFound { node_id })?;
+                    let arena_id = self.shape_alloc.alloc_from_slice(shape.as_slice());
+                    let tensor = Tensor::new(
+                        Rc::new(arena_id),
+                        Rc::new(RefCell::new(None)),
+                        self.scratch_alloc.clone(),
+                    );
+                    self.tensors[node_id].replace(tensor);
+                }
+                None => {
+                    return Err(StoreError::UnknownInputNode { id: node_id }.into());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_outputs(&mut self) -> Result<()> {
+        for node_id in self.graph.outputs() {
+            match self.graph.get_node(node_id) {
+                Some(node) => {
+                    let def = node.value();
+                    let shape = def.shape().ok_or(StoreError::ShapeNotFound { node_id })?;
+                    let arena_id = self.shape_alloc.alloc_from_slice(shape.as_slice());
+                    let tensor = Tensor::new(
+                        Rc::new(arena_id),
+                        Rc::new(RefCell::new(None)),
+                        self.scratch_alloc.clone(),
+                    );
+                    self.tensors[node_id].replace(tensor);
+                }
+                None => return Err(StoreError::UnknownOutputNode { id: node_id }.into()),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_op_outputs(&mut self) -> Result<()> {
+        for (node_id, node) in self.graph.node_iter() {
+            // We already loaded the initializers.
+            if matches!(node.value().op(), Op::NoOp) {
+                continue;
+            }
+
+            for output in node.outputs() {
+                match self.graph.get_node(*output) {
+                    Some(_) => {
+                        if self
+                            .tensors
+                            .get(*output)
+                            .ok_or(StoreError::OutputNodeNotFound {
+                                node_id,
+                                output_id: *output,
+                            })?
+                            .is_none()
+                        {
+                            self.tensors[*output].replace(Tensor::new(
+                                Rc::new(self.shape_alloc.empty()),
+                                Rc::new(RefCell::new(None)),
+                                self.scratch_alloc.clone(),
+                            ));
+                        }
+                    }
+                    None => {
+                        return Err(StoreError::OutputNodeNotFound {
+                            output_id: *output,
+                            node_id,
+                        }
+                        .into())
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn build(mut self) -> Result<TensorStore> {
+        self.load_inputs()?;
+        self.load_outputs()?;
+        self.load_op_outputs()?;
+        self.load_initializers()?;
+
+        Ok(TensorStore {
+            scratch_alloc: self.scratch_alloc,
+            static_alloc: self.static_alloc,
+            tensors: self.tensors.into_boxed_slice(),
+            shape_alloc: self.shape_alloc,
+        })
+    }
+}
+
+impl ValueStore for TensorStore {
+    type Value = Tensor;
+
+    fn init(
+        &mut self,
+        graph: &Graph<Definition>,
+        initializers: HashMap<usize, rmlk_schema::Tensor>,
+    ) -> Result<()> {
+        self.init(graph, initializers)
+    }
+
+    fn get(&self, id: usize) -> Option<Self::Value> {
+        self.get(id)
+    }
+
+    fn clear(&self) {
+        self.scratch_alloc.clear();
+    }
+}
+
+impl Value for Tensor {
+    type Data = CudaData;
+
+    fn set_data(&mut self, data: Self::Data) -> Result<()> {
+        let dtype = data.dtype();
+        match dtype {
+            DataType::Float16 => {
+                let src = data.data::<f16>();
+                self.write_payload(&src)?;
+            }
+            DataType::Float => {
+                let src = data.data::<f32>();
+                self.write_payload(&src)?;
+            }
+            DataType::Double => {
+                let src = data.data::<f64>();
+                self.write_payload(&src)?;
+            }
+            DataType::Int32 => {
+                let src = data.data::<i32>();
+                self.write_payload(&src)?;
+            }
+            DataType::Int64 => {
+                let src = data.data::<i64>();
+                self.write_payload(&src)?;
+            }
+            DataType::Bool => {
+                let src = data.data::<bool>();
+                self.write_payload(&src)?;
+            }
+            dtype => unimplemented!("unimplemented for data type {dtype:?}"),
+        }
+
+        Ok(())
+    }
+
+    fn set_shape(&mut self, shape: &[usize]) -> Result<()> {
+        self.copy_shape_from_slice(shape);
+        Ok(())
+    }
+
+    fn data<T>(&self) -> Result<Vec<T>>
+    where
+        T: DataTypeMap + DeviceRepr + Default + Clone,
+    {
+        self.payload_to_vec().map_err(Into::into)
+    }
+
+    fn shape(&self) -> Vec<usize> {
+        Tensor::shape(self).to_vec()
+    }
+
+    fn dtype(&self) -> DataType {
+        Tensor::dtype(self)
+    }
+}
+
+#[derive(Debug)]
+pub enum StoreError {
+    TensorNotFound { id: usize },
+    OutputNodeNotFound { output_id: usize, node_id: usize },
+    UnknownOutputNode { id: usize },
+    UnknownInputNode { id: usize },
+    FailedToParseTensorRawData,
+    DataTypeNotFound { node_id: usize },
+    ShapeNotFound { node_id: usize },
+    DataTypeNotSupported { dtype: DataType },
+}
+
+impl Display for StoreError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::TensorNotFound { id } => write!(f, "tensor not found: {}", id),
+            StoreError::OutputNodeNotFound { output_id, node_id } => write!(
+                f,
+                "Output node `{output_id}` not found for node `{node_id}`"
+            ),
+            StoreError::UnknownOutputNode { id } => write!(f, "Unknown output node `{id}`"),
+            StoreError::UnknownInputNode { id } => write!(f, "Unknown input node `{id}`"),
+            StoreError::FailedToParseTensorRawData => write!(f, "failed to parse tensor raw data"),
+            StoreError::DataTypeNotFound { node_id } => {
+                write!(f, "DataType not found in node `{}`", node_id)
+            }
+            StoreError::ShapeNotFound { node_id } => {
+                write!(f, "shape not found in node `{}`", node_id)
+            }
+            StoreError::DataTypeNotSupported { dtype } => {
+                write!(f, "dataType `{:?}` not supported for tensor", dtype)
+            }
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}

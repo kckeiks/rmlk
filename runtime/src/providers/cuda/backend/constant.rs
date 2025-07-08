@@ -1,7 +1,6 @@
 use crate::attributes;
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
 use anyhow::Result;
@@ -26,25 +25,20 @@ impl ConstantBackend {
     fn load_from_values<T>(
         &mut self,
         values: &[T],
-        ctx: &mut Context<Cuda>,
+        ctx: &Context<Cuda>,
         is_scalar: bool,
     ) -> Result<()>
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes,
     {
-        {
-            let output_tensor = ctx.get_output(0)?;
-            let dst_id = output_tensor.dst_id();
-            if is_scalar {
-                ctx.execution_state_mut()
-                    .copy_shape_from_slice(&[], dst_id)?;
-            } else {
-                ctx.execution_state_mut()
-                    .copy_shape_from_slice(&[values.len()], dst_id)?;
-            }
-        }
-
         let output_tensor = ctx.get_output(0)?;
+        if is_scalar {
+            output_tensor.copy_shape_from_slice(&[]);
+            output_tensor.init_scalar_payload::<T>()?;
+        } else {
+            output_tensor.copy_shape_from_slice(&[values.len()]);
+            output_tensor.init_payload::<T>()?;
+        }
 
         debug!(
             "[output][dtype={:?}][shape={:?}][strides={:?}]",
@@ -53,35 +47,20 @@ impl ConstantBackend {
             output_tensor.stride()
         );
 
-        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
-
-        let output_tensor = ctx.get_output(0)?;
-        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_ptr.data_mut::<T>();
-        self.stream
-            .memcpy_htod(values, output_view.as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        output_tensor.write_payload_from_slice(values)?;
 
         Ok(())
     }
 
-    fn load_from_bytes<T>(
-        &self,
-        shape: &[usize],
-        bytes: &[u8],
-        ctx: &mut Context<Cuda>,
-    ) -> Result<()>
+    fn load_from_bytes<T>(&self, shape: &[usize], bytes: &[u8], ctx: &Context<Cuda>) -> Result<()>
     where
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromBytes + Unpin,
     {
-        {
-            let output_tensor = ctx.get_output(0)?;
-            let dst_id = output_tensor.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_slice(shape, dst_id)?;
-        }
+        let output_tensor = ctx.get_output(0)?;
+        output_tensor.copy_shape_from_slice(shape);
 
         let output_tensor = ctx.get_output(0)?;
+        output_tensor.init_payload::<T>()?;
 
         debug!(
             "[output][dtype={:?}][shape={:?}][strides={:?}]",
@@ -90,15 +69,8 @@ impl ConstantBackend {
             output_tensor.stride()
         );
 
-        common::init_tensor_device_data::<T>(&self.stream, output_tensor)?;
-
         let data = T::from_bytes(bytes)?;
-        let output_tensor = ctx.get_output(0)?;
-        let mut output_ptr = output_tensor.try_dev_data_ptr_mut()?;
-        let mut output_view = output_ptr.data_mut::<T>();
-        self.stream
-            .memcpy_htod(&data, output_view.as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        output_tensor.write_payload_from_slice::<T>(&data)?;
 
         Ok(())
     }
@@ -167,10 +139,6 @@ impl ConstantBackend {
         if let Some(value) = attributes::constant::get_ints(&attrs) {
             return self.load_from_values::<i32>(value, ctx, false);
         }
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Err(InternalError::MissingAttributes.into())
     }

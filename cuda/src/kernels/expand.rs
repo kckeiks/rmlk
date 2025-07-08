@@ -37,7 +37,7 @@ pub unsafe fn compute<T>(
     func: CudaFunction,
     input_rank: usize,
     output_rank: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     elem_count: usize,
     input: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
@@ -49,10 +49,7 @@ where
         return Ok(());
     }
 
-    assert!(info_buffer.len() >= 4);
-
-    let mut info_dev_ptr = unsafe { stream.alloc(info_buffer.len())? };
-    stream.memcpy_htod(info_buffer, &mut info_dev_ptr)?;
+    assert!(info.len() >= 4);
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -69,7 +66,7 @@ where
             .arg(&elem_count)
             .arg(&input_rank)
             .arg(&output_rank)
-            .arg(&info_dev_ptr)
+            .arg(info)
             .arg(input)
             .arg(output)
             .launch(config)?
@@ -129,6 +126,7 @@ mod test {
         info_buffer.extend_from_slice(&input_strides);
         info_buffer.extend_from_slice(output_shape);
         info_buffer.extend_from_slice(&output_strides);
+        let info = stream.memcpy_stod(&info_buffer).unwrap();
 
         let input_dev_ptr = stream.memcpy_stod(input).unwrap();
 
@@ -141,7 +139,7 @@ mod test {
                 func,
                 input_rank,
                 output_rank,
-                &info_buffer,
+                &info,
                 output_len,
                 &input_dev_ptr,
                 &mut output_dev_ptr,

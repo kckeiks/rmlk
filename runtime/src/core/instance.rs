@@ -1,11 +1,10 @@
 use crate::core::backend::OperationBackend;
 use crate::core::context::Context;
-use crate::core::device_service::DeviceService;
+use crate::core::device_service::{DeviceService, Value as TensorValue};
 use crate::core::error::Error;
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::plan::Plan;
-use crate::core::store::TensorStore;
 use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaContext;
@@ -94,12 +93,19 @@ impl Builder {
         // ctx.set_blocking_synchronize()
         //     .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
         // Todo: We don't always want to use the default stream.
-        let provider = Cuda::new(ctx.default_stream());
-        let values = TensorStore::new(&provider, &self.graph, self.initializers).map_err(|e| {
-            Error::Internal {
-                error: e.into_boxed_dyn_error(),
-            }
+
+        let default_stream = ctx.default_stream();
+        let provider = Cuda::new(default_stream).map_err(|e| Error::Internal {
+            error: e.into_boxed_dyn_error(),
         })?;
+        let mut values = provider.store().map_err(|e| Error::Internal {
+            error: e.into_boxed_dyn_error(),
+        })?;
+        values
+            .init(&self.graph, self.initializers)
+            .map_err(|e| Error::Internal {
+                error: e.into_boxed_dyn_error(),
+            })?;
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
@@ -168,6 +174,7 @@ where
                     return Err(Error::NodeNotFound { id: output });
                 }
                 Some(node) => {
+                    // Todo: we need to validate the inputs and outputs.
                     self.execution_state
                         .compare_value_and_def_shape(output)
                         .map_err(|e| Error::Internal {
@@ -197,6 +204,7 @@ where
 
     fn clean_up(&mut self) {
         self.execution_state.scratch_alloc_mut().reset();
+        self.execution_state.clear();
     }
 
     pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {

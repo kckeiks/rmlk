@@ -47,6 +47,7 @@ impl SqrtBackend {
         unsafe {
             unary::compute::<I>("sqrt", self.stream.clone(), kernel, ctx)?;
         }
+
         #[cfg(feature = "debugger")]
         debug::write_results_unary::<I, I>(
             "debugging/sqrt",
@@ -54,9 +55,6 @@ impl SqrtBackend {
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

@@ -272,6 +272,9 @@ pub fn tensor_from_onnx_tensor(
             DataType::Int4 => {
                 res.int32_data = u8_to_i32_vec(data.as_slice())?;
             }
+            DataType::USize => {
+                unreachable!("this is not supported in onnx");
+            }
         }
     }
 
@@ -306,6 +309,7 @@ pub enum DataType {
     Float8E5M2FNUZ,
     Uint4,
     Int4,
+    USize,
 }
 
 impl DataType {
@@ -334,6 +338,7 @@ impl DataType {
             DataType::Float8E5M2FNUZ => false,
             DataType::Uint4 => true,
             DataType::Int4 => true,
+            DataType::USize => false,
         }
     }
 }
@@ -364,6 +369,7 @@ impl From<DataType> for i32 {
             DataType::Float8E5M2FNUZ => 20,
             DataType::Uint4 => 21,
             DataType::Int4 => 22,
+            DataType::USize => -1,
         }
     }
 }
@@ -373,6 +379,7 @@ impl TryFrom<i32> for DataType {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         let v = match value {
+            -1 => Self::USize,
             0 => Self::Undefined,
             1 => Self::Float,
             2 => Self::Uint8,
@@ -499,6 +506,12 @@ impl DataTypeMap for u64 {
 impl DataTypeMap for bool {
     fn data_type() -> DataType {
         DataType::Bool
+    }
+}
+
+impl DataTypeMap for usize {
+    fn data_type() -> DataType {
+        DataType::USize
     }
 }
 

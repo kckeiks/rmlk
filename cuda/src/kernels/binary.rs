@@ -28,7 +28,7 @@ pub unsafe fn compute<T>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     a: &CudaSlice<T>,
     b: &CudaSlice<T>,
     c: &mut CudaSlice<T>,
@@ -36,14 +36,14 @@ pub unsafe fn compute<T>(
 where
     T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    compute_with_types::<T, T, T>(stream, func, ndims, info_buffer, a, b, c)
+    compute_with_types::<T, T, T>(stream, func, ndims, info, a, b, c)
 }
 
 pub unsafe fn compute_with_diff_output<I, O>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     a: &CudaSlice<I>,
     b: &CudaSlice<I>,
     c: &mut CudaSlice<O>,
@@ -52,14 +52,14 @@ where
     I: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     O: CudnnDataType + ValidAsZeroBits + DeviceRepr,
 {
-    compute_with_types::<I, I, O>(stream, func, ndims, info_buffer, a, b, c)
+    compute_with_types::<I, I, O>(stream, func, ndims, info, a, b, c)
 }
 
 pub unsafe fn compute_with_types<X, Y, O>(
     stream: Arc<CudaStream>,
     func: CudaFunction,
     ndims: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     a: &CudaSlice<X>,
     b: &CudaSlice<Y>,
     c: &mut CudaSlice<O>,
@@ -68,14 +68,12 @@ where
     X: ValidAsZeroBits + DeviceRepr,
     Y: ValidAsZeroBits + DeviceRepr,
 {
-    assert_eq!(3 * ndims, info_buffer.len());
+    assert_eq!(3 * ndims, info.len());
+    assert!(!a.is_empty());
+    assert!(!b.is_empty());
+    assert!(!c.is_empty());
 
-    let mut info_ptr = stream.alloc(info_buffer.len())?;
-    stream.memcpy_htod(info_buffer, &mut info_ptr)?;
-
-    let elem_count: usize = info_buffer[..ndims].iter().product();
-
-    assert_eq!(elem_count, c.len());
+    let elem_count = c.len();
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -91,7 +89,7 @@ where
             .launch_builder(&func)
             .arg(&elem_count)
             .arg(&ndims)
-            .arg(&info_ptr)
+            .arg(info)
             .arg(a)
             .arg(b)
             .arg(c)
@@ -127,21 +125,16 @@ pub unsafe fn compute_alpha_beta_inplace<T>(
     alpha: T,
     beta: T,
     ndims: usize,
-    info_buffer: &[usize],
+    info: &CudaSlice<usize>,
     a: &CudaSlice<T>,
     b: &mut CudaSlice<T>,
 ) -> Result<()>
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
-    assert_eq!(3 * ndims, info_buffer.len());
+    assert_eq!(3 * ndims, info.len());
 
-    // Unfortunately, the asynchronous API only accepts owned vectors.
-    let info = stream.memcpy_stod(info_buffer)?;
-
-    let elem_count: usize = info_buffer[..ndims].iter().product();
-
-    assert_eq!(elem_count, b.len());
+    let elem_count = b.len();
 
     let num_threads = 128;
     let num_blocks = (elem_count + num_threads - 1) / num_threads;
@@ -159,7 +152,7 @@ where
             .arg(&beta)
             .arg(&elem_count)
             .arg(&ndims)
-            .arg(&info)
+            .arg(info)
             .arg(a)
             .arg(b)
             .launch(config)?;

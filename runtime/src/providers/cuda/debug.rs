@@ -1,13 +1,15 @@
 use crate::attributes;
 use crate::attributes::{cast, reduce_mean, softmax, transpose};
-use crate::core::{Context, Tensor};
-use crate::providers::cuda::data::CudaData;
-use crate::providers::cuda::Cuda;
+use crate::core::Context;
+use crate::providers::cuda::{Cuda, Tensor};
+use base64::Engine;
 use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::env;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -37,18 +39,18 @@ fn slice_to_bytes<T>(data: &[T]) -> Vec<u8> {
     unsafe { std::slice::from_raw_parts(ptr, byte_len) }.to_vec()
 }
 
-fn value_from_tensor<T>(stream: Arc<CudaStream>, tensor: &Tensor<CudaData>) -> Value
+fn value_from_tensor<T>(stream: Arc<CudaStream>, tensor: &Tensor) -> Value
 where
     T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
 {
-    let tensor_ptr = tensor.try_dev_data_ptr().unwrap();
+    let tensor_ptr = tensor.payload();
     let tensor_view = tensor_ptr.data::<T>();
 
     let data = stream.memcpy_dtov(tensor_view.as_ref()).unwrap();
 
     json!({
-        "shape":  tensor.shape(),
-        "stride": tensor.stride(),
+        "shape":  tensor.shape().as_ref(),
+        "stride": tensor.stride().as_ref(),
         "dtype":  numpy_dtype(tensor.dtype()),
         "data":  base64::engine::general_purpose::STANDARD.encode(slice_to_bytes(&data)),
     })
@@ -542,7 +544,6 @@ fn random_string(len: usize) -> String {
           abcdefghijklmnopqrstuvwxyz\
           0123456789";
 
-    // simple 64-bit state seeded from the current time
     let mut x = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -551,7 +552,6 @@ fn random_string(len: usize) -> String {
     let mut out = String::with_capacity(len);
 
     for _ in 0..len {
-        // xorshift64* PRNG (10 ns per iteration on modern CPUs)
         x ^= x >> 12;
         x ^= x << 25;
         x ^= x >> 27;
@@ -563,10 +563,10 @@ fn random_string(len: usize) -> String {
 }
 
 fn sanitize_op_name(name: &str) -> String {
-    name.trim_start_matches(|c| c == '/' || c == '\\') // no leading sep
+    name.trim_start_matches(|c| c == '/' || c == '\\')
         .chars()
         .map(|c| match c {
-            '/' | '\\' => '_', // flatten dirs
+            '/' | '\\' => '_',
             _ => c,
         })
         .collect()

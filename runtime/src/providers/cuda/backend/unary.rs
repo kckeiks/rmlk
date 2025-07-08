@@ -1,5 +1,5 @@
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -9,34 +9,27 @@ use num_traits::Num;
 use rmlk_schema::DataTypeMap;
 use std::sync::Arc;
 
-pub unsafe fn compute<I>(
+pub unsafe fn compute<T>(
     op: &'static str,
     stream: Arc<CudaStream>,
     f: CudaFunction,
-    ctx: &mut Context<Cuda>,
+    ctx: &Context<Cuda>,
 ) -> Result<()>
 where
-    I: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
+    T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
 {
-    {
-        let input = ctx.get_input(0)?;
-        let output = ctx.get_output(0)?;
-        let src_id = input.src_id();
-        let dst_id = output.dst_id();
-        ctx.execution_state_mut()
-            .copy_shape_from_within(src_id, dst_id)?;
-    }
-
-    let input = ctx.get_input(0)?;
+    let input_tensor = ctx.get_input(0)?;
 
     debug!(
         "[input][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
-        input.dtype(),
-        input.shape(),
-        input.stride()
+        input_tensor.dtype(),
+        input_tensor.shape(),
+        input_tensor.stride()
     );
 
     let output_tensor = ctx.get_output(0)?;
+    output_tensor.copy_shape(input_tensor.shape_handle());
+    output_tensor.init_payload::<T>()?;
 
     debug!(
         "[output][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
@@ -45,34 +38,13 @@ where
         output_tensor.stride()
     );
 
-    common::init_tensor_device_data::<I>(&stream, output_tensor)?;
+    let input_payload = input_tensor.payload();
+    let input_data = input_payload.data::<T>();
 
-    let input = ctx.get_input(0)?;
+    let mut output_payload = output_tensor.payload_mut();
+    let mut output_data = output_payload.data_mut();
 
-    let input_dev_data_ref = input.try_dev_data_ptr()?;
-    let input_dev_data = input_dev_data_ref.data::<I>();
-
-    // The device data should exist so we will execute the kernel
-    // and update the destination device data with the result.
-    let output = ctx.get_output(0)?;
-    let mut output_dev_data_ref = output.dev_data_ptr_mut();
-    let mut output_dev_data = output_dev_data_ref
-        .as_mut()
-        .expect("we already checked that it initialized")
-        .data_mut();
-
-    let rank = output.shape().len();
-
-    let info_buffer = ctx.execution_state().scratch_alloc().allocate(2 * rank)?;
-    info_buffer[..rank].copy_from_slice(output.shape());
-    info_buffer[rank..2 * rank].copy_from_slice(input.stride());
-
-    rmlk_cuda::kernels::unary::compute::<I>(
-        stream.clone(),
-        f,
-        &input_dev_data,
-        &mut output_dev_data,
-    )?;
+    rmlk_cuda::kernels::unary::compute::<T>(stream.clone(), f, &input_data, &mut output_data)?;
 
     Ok(())
 }

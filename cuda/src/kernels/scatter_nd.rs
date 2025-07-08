@@ -95,7 +95,7 @@ pub unsafe fn compute<T>(
     data_rank: usize,
     indices_rank: usize,
     updates_rank: usize,
-    info: &[usize],
+    info: &CudaSlice<usize>,
     indices: &CudaSlice<i64>,
     updates: &CudaSlice<T>,
     output: &mut CudaSlice<T>,
@@ -104,48 +104,46 @@ pub unsafe fn compute<T>(
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
-    let _data_shape = &info[..data_rank];
-    let _indices_shape = &info[2 * data_rank..2 * data_rank + indices_rank];
-    let _updates_shape =
-        &info[2 * data_rank + 2 * indices_rank..2 * data_rank + 2 * indices_rank + updates_rank];
-
-    assert!(data_rank > 0, "data rank must be greater than 0");
-    assert!(indices_rank > 0, "indices rank must be greater than 0");
-    assert!(
-        (indices_rank > 1
-            && updates_rank == data_rank + indices_rank - _indices_shape[indices_rank - 1] - 1)
-            || (indices_rank == 1
-                && updates_rank > 1
-                && updates_rank == data_rank + indices_rank - 1)
-            || indices_rank == updates_rank,
-        "Rank of updates must be = indices.rank + data.rank - indices.shape[-1] - 1"
-    );
-    assert!(
-        (indices_rank > 1 && _indices_shape[indices_rank - 1] <= data_rank)
-            || (indices_rank == 1 && indices_rank <= data_rank),
-        "indices.shape[-1] must be at most equal to data.rank"
-    );
-    assert_eq!(
-        _indices_shape[..indices_rank - 1],
-        _updates_shape[..indices_rank - 1],
-        "indices.shape[..indices.rank - 1] must equal update.shape[..indices.rank - 1]"
-    );
-    assert!(
-        (indices_rank > 1
-            && _updates_shape[indices_rank - 1..]
-                == _data_shape[_indices_shape[indices_rank - 1]..])
-            || (indices_rank == 1 && _updates_shape[indices_rank..] == _data_shape[indices_rank..])
-            || (indices_rank == updates_rank),
-        "update.shape[indices.rank - 1..] must be equal to data.shape[indices.shape[-1]..]"
-    );
-    assert!(
-        (indices_rank > 1 && num_idx_tuples == _indices_shape[..indices_rank - 1].iter().product())
-            || (indices_rank == 1 && num_idx_tuples == _indices_shape.iter().product()),
-        "invalid value for `num_idx_tuples`"
-    );
-
-    // The CUDA kernel does not need the data's shape.
-    let info = stream.memcpy_stod(info)?;
+    // // Todo: This needs to be validated upstream.
+    // let _data_shape = &info[..data_rank];
+    // let _indices_shape = &info[2 * data_rank..2 * data_rank + indices_rank];
+    // let _updates_shape =
+    //     &info[2 * data_rank + 2 * indices_rank..2 * data_rank + 2 * indices_rank + updates_rank];
+    //
+    // assert!(data_rank > 0, "data rank must be greater than 0");
+    // assert!(indices_rank > 0, "indices rank must be greater than 0");
+    // assert!(
+    //     (indices_rank > 1
+    //         && updates_rank == data_rank + indices_rank - _indices_shape[indices_rank - 1] - 1)
+    //         || (indices_rank == 1
+    //             && updates_rank > 1
+    //             && updates_rank == data_rank + indices_rank - 1)
+    //         || indices_rank == updates_rank,
+    //     "Rank of updates must be = indices.rank + data.rank - indices.shape[-1] - 1"
+    // );
+    // assert!(
+    //     (indices_rank > 1 && _indices_shape[indices_rank - 1] <= data_rank)
+    //         || (indices_rank == 1 && indices_rank <= data_rank),
+    //     "indices.shape[-1] must be at most equal to data.rank"
+    // );
+    // assert_eq!(
+    //     _indices_shape[..indices_rank - 1],
+    //     _updates_shape[..indices_rank - 1],
+    //     "indices.shape[..indices.rank - 1] must equal update.shape[..indices.rank - 1]"
+    // );
+    // assert!(
+    //     (indices_rank > 1
+    //         && _updates_shape[indices_rank - 1..]
+    //             == _data_shape[_indices_shape[indices_rank - 1]..])
+    //         || (indices_rank == 1 && _updates_shape[indices_rank..] == _data_shape[indices_rank..])
+    //         || (indices_rank == updates_rank),
+    //     "update.shape[indices.rank - 1..] must be equal to data.shape[indices.shape[-1]..]"
+    // );
+    // assert!(
+    //     (indices_rank > 1 && num_idx_tuples == _indices_shape[..indices_rank - 1].iter().product())
+    //         || (indices_rank == 1 && num_idx_tuples == _indices_shape.iter().product()),
+    //     "invalid value for `num_idx_tuples`"
+    // );
 
     let num_threads = 128;
     let num_blocks = (num_idx_tuples + num_threads - 1) / num_threads;
@@ -164,7 +162,7 @@ where
             .arg(&data_rank)
             .arg(&indices_rank)
             .arg(&updates_rank)
-            .arg(&info)
+            .arg(info)
             .arg(indices)
             .arg(updates)
             .arg(output)
@@ -281,6 +279,7 @@ mod test {
             &updates_shape,
             &updates_stride,
         );
+        let info = stream.memcpy_stod(&info).unwrap();
 
         let mut error = stream.alloc_zeros(1).unwrap();
 

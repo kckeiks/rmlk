@@ -1,6 +1,9 @@
+use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
+use crate::providers::cuda;
+use crate::providers::cuda::allocator::CudaBump;
+use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::Cuda;
 use crate::utils;
 use anyhow::Result;
@@ -9,24 +12,24 @@ use log::debug;
 use rmlk_cuda::kernels::binary;
 use rmlk_schema::DataTypeMap;
 use std::cmp;
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub unsafe fn compute<X, Y, O>(
     op: &'static str,
     stream: Arc<CudaStream>,
+    scratch_cuda_alloc: Rc<CudaBump>,
     f: CudaFunction,
-    ctx: &mut Context<Cuda>,
+    ctx: &Context<Cuda>,
 ) -> Result<()>
 where
     X: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     Y: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     O: DataTypeMap + ValidAsZeroBits + DeviceRepr,
 {
-    // We do it now to avoid lifetime errors.
-    compute_output_shape(ctx)?;
+    update_output_shape(ctx)?;
 
     let a = ctx.get_input(0)?;
-    let b = ctx.get_input(1)?;
 
     debug!(
         "[a][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
@@ -34,6 +37,9 @@ where
         a.shape(),
         a.stride()
     );
+
+    let b = ctx.get_input(1)?;
+
     debug!(
         "[b][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
         b.dtype(),
@@ -41,13 +47,12 @@ where
         b.stride()
     );
 
-    let a_dev_data_ref = a.try_dev_data_ptr()?;
-    let a_dev_data = a_dev_data_ref.data::<X>();
-
-    let b_dev_data_ref = b.try_dev_data_ptr()?;
-    let b_dev_data = b_dev_data_ref.data::<Y>();
-
     let c_tensor = ctx.get_output(0)?;
+    if a.is_scalar() && b.is_scalar() {
+        c_tensor.init_scalar_payload::<O>()?;
+    } else {
+        c_tensor.init_payload::<O>()?;
+    }
 
     debug!(
         "[c][{op}][dtype={:?}][shape={:?}][stride=[{:?}]",
@@ -56,26 +61,21 @@ where
         c_tensor.stride()
     );
 
-    common::init_tensor_device_data::<O>(&stream, c_tensor)?;
+    let a_payload = a.payload();
+    let a_data = a_payload.data::<X>();
 
-    let (a_shape, a_stride) = if a.is_scalar() {
-        ([1].as_ref(), [1].as_ref())
-    } else {
-        (a.shape(), a.stride())
-    };
+    let b_payload = b.payload();
+    let b_data = b_payload.data::<Y>();
 
-    let (b_shape, b_stride) = if b.is_scalar() {
-        ([1].as_ref(), [1].as_ref())
-    } else {
-        (b.shape(), b.stride())
-    };
+    let (a_shape, a_stride) = cuda::utils::get_kernel_safe_shape_and_stride(&a);
+    let (b_shape, b_stride) = cuda::utils::get_kernel_safe_shape_and_stride(&b);
 
     let stride_buf_len = cmp::max(a_shape.len(), b_shape.len());
     let strides = ctx
         .execution_state()
         .scratch_alloc()
         .allocate_fill::<usize>(2 * stride_buf_len, 0)?;
-    utils::compute_broadcast_stride(a_shape, b_shape, a_stride, b_stride, strides);
+    utils::compute_broadcast_stride(&a_shape, &b_shape, &a_stride, &b_stride, strides);
     let (a_stride, b_stride) = strides.split_at(stride_buf_len);
 
     debug!(
@@ -87,76 +87,78 @@ where
         b_shape, b_stride
     );
 
-    // The device data should exist so we will execute the kernel
-    // and update the destination device data with the result.
-    let c = ctx.get_output(0)?;
-    let mut c_dev_data_ref = c.dev_data_ptr_mut();
-    let mut c_dev_data = c_dev_data_ref
-        .as_mut()
-        .expect("we already checked that it initialized")
-        .data_mut::<O>();
+    let (c_shape, _) = cuda::utils::get_kernel_safe_shape_and_stride(&c_tensor);
 
-    let c_shape = if a.is_scalar() && b.is_scalar() {
-        [1].as_ref()
-    } else {
-        c.shape()
-    };
+    let mut c_payload = c_tensor.payload_mut();
+    let mut c_dev_data = c_payload.data_mut::<O>();
 
     let rank = c_shape.len();
-
-    let info_buffer = ctx.execution_state().scratch_alloc().allocate(3 * rank)?;
-    info_buffer[..rank].copy_from_slice(c_shape);
-    info_buffer[rank..2 * rank].copy_from_slice(a_stride);
-    info_buffer[2 * rank..].copy_from_slice(b_stride);
+    let alloc = ctx.execution_state().scratch_alloc().clone();
+    let info_cuda_data =
+        create_info_data_on_dev(&scratch_cuda_alloc, &alloc, a_stride, b_stride, &c_shape)?;
+    let info_payload = info_cuda_data.data::<usize>();
 
     binary::compute_with_types::<X, Y, O>(
         stream,
         f,
         rank,
-        info_buffer,
-        &a_dev_data,
-        &b_dev_data,
+        &info_payload,
+        &a_data,
+        &b_data,
         &mut c_dev_data,
     )?;
 
     Ok(())
 }
 
-fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
+fn create_info_data_on_dev(
+    cuda_alloc: &CudaBump,
+    host_alloc: &ScratchAllocator,
+    a_stride: &[usize],
+    b_stride: &[usize],
+    c_shape: &[usize],
+) -> Result<CudaData> {
+    assert_eq!(c_shape.len(), a_stride.len());
+    assert_eq!(b_stride.len(), a_stride.len());
+
+    let rank = c_shape.len();
+    let info_buffer = host_alloc.allocate(3 * rank)?;
+    info_buffer[..rank].copy_from_slice(c_shape);
+    info_buffer[rank..2 * rank].copy_from_slice(a_stride);
+    info_buffer[2 * rank..].copy_from_slice(b_stride);
+
+    Ok(cuda_alloc
+        .alloc_from_slice_with_fallback(info_buffer)
+        .ok_or(InternalError::CudaBumpAllocatorFailed)?)
+}
+
+fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
     let a = ctx.get_input(0)?;
     let b = ctx.get_input(1)?;
 
-    match a.shape() == b.shape() {
+    let equal_shape = a.shape().as_ref() == b.shape().as_ref();
+
+    match equal_shape {
         true => {
             let c = ctx.get_output(0)?;
-            let a_index = a.src_id();
-            let c_index = c.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_within(a_index, c_index)?;
+            c.copy_shape(a.shape_handle());
         }
         false => {
             let rank = cmp::max(a.shape().len(), b.shape().len());
             let alloc = ctx.execution_state().scratch_alloc().clone();
             let c_shape = alloc.allocate_fill(rank, 0)?;
 
-            if !utils::compute_broadcast_output_shape(a.shape(), b.shape(), c_shape) {
-                let a_id = a.src_id();
-                let b_id = b.src_id();
+            if !utils::compute_broadcast_output_shape(&a.shape(), &b.shape(), c_shape) {
                 return Err(InternalError::IncompatibleTensorShape {
-                    shapes: [
-                        (a_id.into(), a.shape().to_vec()),
-                        (b_id.into(), b.shape().to_vec()),
-                    ]
-                    .try_into()
-                    .expect("Small map so should succeed"),
+                    shapes: [(0, a.shape().to_vec()), (1, b.shape().to_vec())]
+                        .try_into()
+                        .expect("Small map so should succeed"),
                 }
                 .into());
             }
 
             let c = ctx.get_output(0)?;
-            let c_index = c.dst_id();
-            ctx.execution_state_mut()
-                .copy_shape_from_slice(c_shape, c_index)?;
+            c.copy_shape_from_slice(c_shape);
         }
     }
 

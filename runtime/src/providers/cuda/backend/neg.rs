@@ -48,6 +48,7 @@ impl NegBackend {
         unsafe {
             unary::compute::<D>("neg", self.stream.clone(), func, ctx)?;
         }
+
         #[cfg(feature = "debugger")]
         debug::write_results_unary::<D, D>(
             "debugging/neg",
@@ -55,9 +56,6 @@ impl NegBackend {
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

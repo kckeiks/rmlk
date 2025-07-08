@@ -1,21 +1,41 @@
 use crate::core::error::InternalError;
-use crate::core::{device_service::DeviceService, Context};
+use crate::core::Context;
+use crate::providers::cuda::Cuda;
 use anyhow::Result;
+use cudarc::driver::{DeviceRepr, ValidAsZeroBits};
+use half::f16;
 use log::debug;
+use num_traits::Num;
+use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 
+// Todo: this should be generic.
 pub struct FlattenTemplate(());
 
 impl FlattenTemplate {
     pub fn new() -> Self {
         Self(())
     }
-    pub fn compute<T: DeviceService>(self, ctx: &mut Context<T>) -> Result<()> {
-        compute(ctx)
+    pub fn compute(self, ctx: &mut Context<Cuda>) -> Result<()> {
+        let dtype = ctx.get_input(0)?.dtype();
+
+        match dtype {
+            DataType::Float16 => compute::<f16>(ctx),
+            DataType::Float => compute::<f32>(ctx),
+            DataType::Double => compute::<f64>(ctx),
+            DataType::Int32 => compute::<i32>(ctx),
+            DataType::Uint32 => compute::<u32>(ctx),
+            DataType::Int64 => compute::<i64>(ctx),
+            DataType::Uint64 => compute::<u64>(ctx),
+            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+        }
     }
 }
 
-pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
+pub fn compute<T>(ctx: &mut Context<Cuda>) -> Result<()>
+where
+    T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+{
     let x = ctx.get_input(0)?;
 
     debug!(
@@ -55,17 +75,13 @@ pub fn compute<T: DeviceService>(ctx: &mut Context<T>) -> Result<()> {
         }
     }
 
-    let dev_data = x
-        .dev_data_ptr_clone()
-        .ok_or(InternalError::MissingDeviceData)?;
-    let mut y = ctx.get_output(0)?;
-    y.set_dev_data_ptr(dev_data);
-
-    let index = y.dst_id();
-    ctx.execution_state_mut()
-        .copy_shape_from_slice(&y_shape, index)?;
-
     let y = ctx.get_output(0)?;
+    y.copy_shape_from_slice(&y_shape);
+
+    let x_payload = x.payload();
+    let x_data = x_payload.data::<T>();
+    y.write_payload(&x_data)?;
+
     debug!(
         "[y][dtype={:?}][shape={:?}][stride=[{:?}]",
         y.dtype(),

@@ -1,6 +1,5 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-use crate::providers::cuda::backend::common;
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -26,114 +25,63 @@ impl GatherBackend {
 }
 
 impl GatherBackend {
-    fn compute_output_shape(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()> {
-        let data = ctx.get_input(0)?;
-
-        debug!(
-            "[data][dtype={:?}][shape={:?}][stride={:?}]",
-            data.dtype(),
-            data.shape(),
-            data.stride()
-        );
-
-        if data.is_scalar() {
-            return Err(GatherError::ScalarInputDataNotAllowed.into());
-        }
-
-        let indices = ctx.get_input(1)?;
-
-        debug!(
-            "[indices][dtype={:?}][shape={:?}][stride={:?}]",
-            indices.dtype(),
-            indices.shape(),
-            indices.stride()
-        );
-
-        let data_rank = data.shape().len();
-        let indices_rank = indices.shape().len();
-
-        if data_rank < axis {
-            return Err(GatherError::RankAxisMismatch.into());
-        }
-
-        let alloc = ctx.execution_state().scratch_alloc().clone();
-
-        let output_shape_buf = alloc.allocate::<usize>(data_rank - 1 + indices_rank)?;
-
-        output_shape_buf[..axis].copy_from_slice(&data.shape()[..axis]);
-        output_shape_buf[axis..axis + indices_rank].copy_from_slice(&indices.shape());
-
-        if axis + 1 < data_rank {
-            output_shape_buf[axis + indices_rank..].copy_from_slice(&data.shape()[axis + 1..]);
-        }
-
-        let output = ctx.get_output(0)?;
-        let dst_id = output.dst_id();
-
-        ctx.execution_state_mut()
-            .copy_shape_from_slice(output_shape_buf, dst_id)?;
-
-        Ok(())
-    }
-
-    fn perform_device_gather<D, I>(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()>
+    fn perform_device_gather<T, Tind>(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
-        I: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Copy + Debug,
-        i64: From<I>,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+        Tind: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + Copy + Debug,
+        i64: From<Tind>,
     {
-        let data = ctx.get_input(0)?;
-        let indices = ctx.get_input(1)?;
-        let output = ctx.get_output(0)?;
+        let data_tensor = ctx.get_input(0)?;
+        let indices_tensor = ctx.get_input(1)?;
 
-        let data_ptr = data.try_dev_data_ptr()?;
-        let indices_ptr = indices.try_dev_data_ptr()?;
-        let mut output_ptr = output.try_dev_data_ptr_mut()?;
+        let indices_len = indices_tensor.payload().len();
+        let indices_on_host = ctx
+            .execution_state()
+            .scratch_alloc()
+            .allocate_fill::<Tind>(indices_len, Tind::zero())?;
+        indices_tensor.payload_to_host(indices_on_host)?;
 
-        let alloc = ctx.execution_state().scratch_alloc().clone();
+        let data_payload = data_tensor.payload();
+        let data = data_payload.data::<T>();
 
-        let view = indices_ptr.data::<I>();
-        let indices_on_host = alloc.allocate_fill::<I>(view.len(), I::zero())?;
-        self.stream
-            .memcpy_dtoh(view.as_ref(), indices_on_host)
-            .map_err(rmlk_cuda::Error::from)?;
+        let output_tensor = ctx.get_output(0)?;
+        let mut output_payload = output_tensor.payload_mut();
+        let mut output_data = output_payload.data_mut::<T>();
 
-        let dev_data = data_ptr.data::<D>();
-        let mut dev_output = output_ptr.data_mut::<D>();
-        compute::<I, D>(
+        compute::<Tind, T>(
             self.stream.clone(),
             axis,
-            data.shape(),
-            data.stride(),
+            &data_tensor.shape(),
+            &data_tensor.stride(),
             indices_on_host,
-            &dev_data,
-            &mut dev_output,
+            &data,
+            &mut output_data,
         )?;
 
         Ok(())
     }
 
-    fn compute_gather<D>(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()>
+    fn compute_gather<T>(&self, axis: usize, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         // The `indices` input could be `i32` or `i64`.
-        let dtype = ctx.get_input(1)?.try_dev_data_ptr()?.dtype();
+        let dtype = ctx.get_input(1)?.dtype();
 
         match dtype {
             DataType::Int32 => {
-                self.perform_device_gather::<D, i32>(axis, ctx)?;
+                self.perform_device_gather::<T, i32>(axis, ctx)?;
                 #[cfg(feature = "debugger")]
-                debug::write_results_gather::<D, i32>(
+                debug::write_results_gather::<T, i32>(
                     "debugging/gather",
                     self.stream.clone(),
                     ctx,
                 )?;
             }
             DataType::Int64 => {
-                self.perform_device_gather::<D, i64>(axis, ctx)?;
+                self.perform_device_gather::<T, i64>(axis, ctx)?;
                 #[cfg(feature = "debugger")]
-                debug::write_results_gather::<D, i64>(
+                debug::write_results_gather::<T, i64>(
                     "debugging/gather",
                     self.stream.clone(),
                     ctx,
@@ -144,16 +92,12 @@ impl GatherBackend {
             }
         }
 
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
-
         Ok(())
     }
 
-    fn run_gather<D>(self, ctx: &mut Context<Cuda>) -> Result<()>
+    fn run_gather<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
     where
-        D: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
+        T: DataTypeMap + ValidAsZeroBits + DeviceRepr + Num,
     {
         let axis = ctx
             .get_attributes()
@@ -167,9 +111,15 @@ impl GatherBackend {
         // Todo: handle this conversion better.
         let norm_axis = utils::normalize_index(axis as i64, data_rank)?;
 
-        self.compute_output_shape(norm_axis, ctx)?;
+        compute_output_shape(norm_axis, ctx)?;
 
         let output = ctx.get_output(0)?;
+        let indices_tensor = ctx.get_input(1)?;
+        if data_rank == 1 && indices_tensor.is_scalar() {
+            output.init_scalar_payload::<T>()?;
+        } else {
+            output.init_payload::<T>()?;
+        }
 
         debug!(
             "[output][dtype={:?}][shape={:?}][stride={:?}]",
@@ -178,9 +128,7 @@ impl GatherBackend {
             output.stride()
         );
 
-        common::init_tensor_device_data::<D>(&self.stream, output)?;
-
-        self.compute_gather::<D>(norm_axis, ctx)?;
+        self.compute_gather::<T>(norm_axis, ctx)?;
 
         Ok(())
     }
@@ -200,6 +148,54 @@ impl GatherBackend {
         }
     }
 }
+
+fn compute_output_shape(axis: usize, ctx: &Context<Cuda>) -> Result<()> {
+    let data = ctx.get_input(0)?;
+
+    debug!(
+        "[data][dtype={:?}][shape={:?}][stride={:?}]",
+        data.dtype(),
+        data.shape(),
+        data.stride()
+    );
+
+    if data.is_scalar() {
+        return Err(GatherError::ScalarInputDataNotAllowed.into());
+    }
+
+    let indices = ctx.get_input(1)?;
+
+    debug!(
+        "[indices][dtype={:?}][shape={:?}][stride={:?}]",
+        indices.dtype(),
+        indices.shape(),
+        indices.stride()
+    );
+
+    let data_rank = data.shape().len();
+    let indices_rank = indices.shape().len();
+
+    if data_rank < axis {
+        return Err(GatherError::RankAxisMismatch.into());
+    }
+
+    let alloc = ctx.execution_state().scratch_alloc().clone();
+
+    let output_shape_buf = alloc.allocate::<usize>(data_rank - 1 + indices_rank)?;
+
+    output_shape_buf[..axis].copy_from_slice(&data.shape()[..axis]);
+    output_shape_buf[axis..axis + indices_rank].copy_from_slice(&indices.shape());
+
+    if axis + 1 < data_rank {
+        output_shape_buf[axis + indices_rank..].copy_from_slice(&data.shape()[axis + 1..]);
+    }
+
+    let output = ctx.get_output(0)?;
+    output.copy_shape_from_slice(output_shape_buf);
+
+    Ok(())
+}
+
 fn compute<Indices, Data>(
     stream: Arc<CudaStream>,
     axis: usize,
@@ -242,11 +238,12 @@ where
             let norm_i = utils::normalize_index(i64::from(*dim_i), shape[axis])?;
             let start = batch_index * batch_offset + (norm_i * stride[axis]);
 
-            trace!("stack_size={batch_count}, stack_level={batch_index}, elem_count={batch_offset}, dim_i={dim_i:?}, norm_i={norm_i}, start={start}, slice_count={slice_count}, slice_size={batch_size}");
+            debug!("stack_size={batch_count}, stack_level={batch_index}, elem_count={batch_offset}, dim_i={dim_i:?}, norm_i={norm_i}, start={start}, slice_count={slice_count}, slice_size={batch_size}");
             // Slice the input.
             let subslice = data_dev_data.slice(start..start + batch_size);
 
             // Create a writeable slice of the output.
+            assert!(!output_dev_data.is_empty());
             let mut out_slice = output_dev_data
                 .slice_mut(slice_count * batch_size..slice_count * batch_size + batch_size);
 

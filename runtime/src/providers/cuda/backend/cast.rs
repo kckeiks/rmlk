@@ -1,6 +1,7 @@
 use crate::attributes::cast;
 use crate::core::error::InternalError;
 use crate::core::Context;
+
 use crate::providers::cuda::backend::common;
 #[cfg(feature = "debugger")]
 use crate::providers::cuda::debug;
@@ -70,66 +71,45 @@ impl CastBackend {
         rmlk_cuda::kernels::cast::load_kernel(self.stream.context(), kernel).map_err(Into::into)
     }
 
-    fn compute_output_shape(&self, ctx: &mut Context<Cuda>) -> Result<()> {
-        let input = ctx.get_input(0)?;
-        let output = ctx.get_output(0)?;
-        let src_id = input.src_id();
-        let dst_id = output.dst_id();
-        ctx.execution_state_mut()
-            .copy_shape_from_within(src_id, dst_id)?;
-        Ok(())
-    }
-
     pub fn compute_cast<I, O>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
     where
         I: DataTypeMap + ValidAsZeroBits + DeviceRepr,
         O: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     {
+        common::unary_op_copy_shape(ctx)?;
+
+        let kernel = self.load_cuda_function(I::data_type(), O::data_type())?;
+
+        let output_tensor = ctx.get_output(0)?;
+        output_tensor.init_payload::<O>()?;
+
+        debug!(
+            "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
+            output_tensor.dtype(),
+            output_tensor.shape(),
+            output_tensor.stride()
+        );
+
+        let input = ctx.get_input(0)?;
+        let input_payload = input.payload();
+        let input_data = input_payload.data::<I>();
+
         {
-            self.compute_output_shape(ctx)?;
-
-            let kernel = self.load_cuda_function(I::data_type(), O::data_type())?;
-
-            let output_tensor = ctx.get_output(0)?;
-
-            debug!(
-                "[output][dtype={:?}][shape={:?}][stride=[{:?}]",
-                output_tensor.dtype(),
-                output_tensor.shape(),
-                output_tensor.stride()
-            );
-
-            common::init_tensor_device_data::<O>(&self.stream, output_tensor)?;
-
-            let input = ctx.get_input(0)?;
-            let input_dev_data_ref = input.try_dev_data_ptr()?;
-            let input_dev_data = input_dev_data_ref.data::<I>();
-
-            // The device data should exist so we will execute the kernel
-            // and update the destination device data with the result.
             let output = ctx.get_output(0)?;
-            let mut output_dev_data_ref = output.dev_data_ptr_mut();
-            let mut output_dev_data = output_dev_data_ref
-                .as_mut()
-                .expect("we already checked that it initialized")
-                .data_mut();
+            let mut output_payload = output.payload_mut();
 
             unsafe {
                 rmlk_cuda::kernels::unary::explicit_io_types_compute::<I, O>(
                     &self.stream,
                     kernel,
-                    &input_dev_data,
-                    &mut output_dev_data,
+                    &input_data,
+                    &mut output_payload.data_mut::<O>(),
                 )?;
             }
         }
 
         #[cfg(feature = "debugger")]
         debug::write_results_cast::<I, O>("debugging/cast", self.stream.clone(), ctx)?;
-
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

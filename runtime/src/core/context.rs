@@ -1,6 +1,5 @@
-use crate::core::device_service::DeviceService;
+use crate::core::device_service::{DeviceService, ValueStore};
 use crate::core::execution_state::ExecutionState;
-use crate::core::tensor::Tensor;
 use anyhow::Result;
 use rmlk_graph::Node;
 use rmlk_schema::{Attribute, Definition};
@@ -85,7 +84,7 @@ where
         })
     }
 
-    pub fn get_input(&self, index: usize) -> Result<Tensor<D::Data>> {
+    pub fn get_input(&self, index: usize) -> Result<<D::Store as ValueStore>::Value> {
         let node_index = self.input_start_index + index;
         if self.output_start_index <= node_index {
             return Err(ContextError::InvalidTensorIndex { index: node_index }.into());
@@ -106,7 +105,7 @@ where
         self.execution_state.get_tensor(node_index).is_some()
     }
 
-    pub fn get_output(&self, index: usize) -> Result<Tensor<D::Data>> {
+    pub fn get_output(&self, index: usize) -> Result<<D::Store as ValueStore>::Value> {
         let node_index = self.output_start_index + index;
         if self.input_start_index + self.max_values < node_index {
             return Err(ContextError::InvalidTensorIndex { index: node_index }.into());

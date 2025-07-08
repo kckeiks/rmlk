@@ -49,6 +49,7 @@ impl SinBackend {
         unsafe {
             unary::compute::<D>("sin", self.stream.clone(), func, ctx)?;
         }
+
         #[cfg(feature = "debugger")]
         debug::write_results_unary::<D, D>(
             "debugging/sin",
@@ -56,9 +57,6 @@ impl SinBackend {
             ctx,
             Default::default(),
         )?;
-        /*self.stream
-        .synchronize()
-        .map_err(|e| InternalError::Device { error: e.into() })?;*/
 
         Ok(())
     }

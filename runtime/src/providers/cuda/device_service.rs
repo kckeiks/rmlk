@@ -3,6 +3,7 @@ use crate::core::error::InternalError;
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
+use crate::providers::cuda::allocator::CudaBump;
 use crate::providers::cuda::cast::CastBackend;
 use crate::providers::cuda::concat::ConcatBackend;
 use crate::providers::cuda::constant::ConstantBackend;
@@ -36,20 +37,39 @@ use crate::providers::cuda::transpose::TransposeBackend;
 use crate::providers::cuda::trilu::TriluBackend;
 use crate::providers::cuda::unsqueeze::UnsqueezeBackend;
 use crate::providers::cuda::whereop::WhereBackend;
-use crate::providers::cuda::CudaKernel;
+use crate::providers::cuda::{CudaKernel, Tensor, TensorStore};
+use crate::utils::ShapeAllocator;
 use anyhow::{anyhow, Result};
 use cudarc::driver::{CudaStream, DeviceRepr};
 use half::f16;
 use rmlk_schema::{DataType, DataTypeMap, Op};
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct Cuda {
     stream: Arc<CudaStream>,
+    scratch_alloc: Rc<CudaBump>,
+    static_alloc: Rc<CudaBump>,
+    shape_alloc: ShapeAllocator,
 }
 
 impl Cuda {
-    pub fn new(stream: Arc<CudaStream>) -> Self {
-        Self { stream }
+    pub fn new(stream: Arc<CudaStream>) -> Result<Self> {
+        // 10_000_000_000
+        let static_alloc = Rc::new(CudaBump::new(stream.clone(), 4096)?);
+        let scratch_alloc = Rc::new(CudaBump::new(stream.clone(), 4096)?);
+        let shape_alloc = ShapeAllocator::new(4096);
+
+        Ok(Self {
+            stream,
+            scratch_alloc,
+            static_alloc,
+            shape_alloc,
+        })
+    }
+
+    pub fn device_allocator(&self) -> &Rc<CudaBump> {
+        &self.scratch_alloc
     }
 
     pub fn htod<T>(&self, data: Vec<T>) -> Result<CudaData>
@@ -76,8 +96,9 @@ impl Cuda {
 }
 
 impl DeviceService for Cuda {
-    type Data = CudaData;
     type Backend = CudaKernel;
+    type Value = Tensor;
+    type Store = TensorStore;
 
     fn get_backend(&self, op: Op, _dtype: DataType) -> Result<Self::Backend> {
         let kernel = match op {
@@ -129,7 +150,15 @@ impl DeviceService for Cuda {
         Ok(kernel)
     }
 
-    fn htod_float16(&self, data: Vec<f16>) -> Result<Self::Data> {
+    fn store(&self) -> Result<Self::Store> {
+        Ok(TensorStore::new(
+            self.scratch_alloc.clone(),
+            self.static_alloc.clone(),
+            self.shape_alloc.clone(),
+        ))
+    }
+
+    fn htod_float16(&self, data: Vec<f16>) -> Result<CudaData> {
         self.htod(data)
     }
 
@@ -141,7 +170,7 @@ impl DeviceService for Cuda {
         self.htod(data)
     }
 
-    fn dtoh_float16(&self, data: &Self::Data) -> Result<Vec<f16>> {
+    fn dtoh_float16(&self, data: &CudaData) -> Result<Vec<f16>> {
         self.dtoh(data)
     }
 
@@ -149,31 +178,31 @@ impl DeviceService for Cuda {
         self.dtoh(data)
     }
 
-    fn dtoh_i32(&self, data: &Self::Data) -> Result<Vec<i32>> {
+    fn dtoh_i32(&self, data: &CudaData) -> Result<Vec<i32>> {
         self.dtoh(data)
     }
 
-    fn dtoh_i64(&self, data: &Self::Data) -> Result<Vec<i64>> {
+    fn dtoh_i64(&self, data: &CudaData) -> Result<Vec<i64>> {
         self.dtoh(data)
     }
 
-    fn dtoh_bool(&self, data: &Self::Data) -> Result<Vec<bool>> {
+    fn dtoh_bool(&self, data: &CudaData) -> Result<Vec<bool>> {
         self.dtoh(data)
     }
 
-    fn htod_i32(&self, data: Vec<i32>) -> Result<Self::Data> {
+    fn htod_i32(&self, data: Vec<i32>) -> Result<CudaData> {
         self.htod(data)
     }
 
-    fn htod_i64(&self, data: Vec<i64>) -> Result<Self::Data> {
+    fn htod_i64(&self, data: Vec<i64>) -> Result<CudaData> {
         self.htod(data)
     }
 
-    fn htod_bool(&self, data: Vec<bool>) -> Result<Self::Data> {
+    fn htod_bool(&self, data: Vec<bool>) -> Result<CudaData> {
         self.htod(data)
     }
 
-    fn alloc_zeros_float(&self, len: usize) -> Result<Self::Data> {
+    fn alloc_zeros_float(&self, len: usize) -> Result<CudaData> {
         self.stream
             .alloc_zeros::<f32>(len)
             .map_err(|e| InternalError::Device { error: e.into() })
