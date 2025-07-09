@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -49,7 +49,7 @@ impl NegBackend {
             unary::compute::<D>("neg", self.stream.clone(), func, ctx)?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_unary::<D, D>(
             "debugging/neg",
             self.stream.clone(),

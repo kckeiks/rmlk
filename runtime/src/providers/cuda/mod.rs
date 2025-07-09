@@ -1,7 +1,7 @@
 mod allocator;
 mod backend;
 mod data;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 pub mod debug;
 mod device_service;
 mod store;

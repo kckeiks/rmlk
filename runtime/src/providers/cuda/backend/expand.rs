@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -95,7 +95,7 @@ impl ExpandBackend {
             }
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_binary::<T, i64, T>(
             "debugging/expand",
             self.stream.clone(),

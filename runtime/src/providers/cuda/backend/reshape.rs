@@ -3,7 +3,7 @@ use crate::core::allocators::ScratchAllocator;
 use crate::core::error::InternalError;
 use crate::core::Context;
 
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -52,7 +52,7 @@ impl ReshapeBackend {
             reshaped_tensor.stride()
         );
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_reshape::<T>("debugging/reshape", self.stream.clone(), ctx)?;
 
         Ok(())

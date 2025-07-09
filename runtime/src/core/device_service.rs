@@ -16,7 +16,7 @@ pub trait DeviceService: Sized {
     type Store: ValueStore<Value = Self::Value>;
 
     /// Get the backend for an operation.
-    fn get_backend(&self, op: Op, dtype: DataType) -> Result<Self::Backend>;
+    fn get_backend(&self, op: Op) -> Result<Self::Backend>;
     fn store(&self) -> Result<Self::Store>;
     /// Copies `f32` data from host to device.
     fn htod_float16(&self, data: Vec<f16>) -> Result<<Self::Value as Value>::Data>;

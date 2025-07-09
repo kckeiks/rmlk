@@ -3,7 +3,7 @@ use crate::attributes::scatter_nd::Reduction;
 use crate::core::error::InternalError;
 use crate::core::Context;
 
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -210,7 +210,7 @@ impl ScatterNdBackend {
             }
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_scatter_nd::<T>("debugging/scatter_nd", self.stream.clone(), ctx)?;
 
         Ok(())

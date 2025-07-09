@@ -3,7 +3,7 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 
 use crate::providers::cuda::backend::common;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
@@ -99,7 +99,7 @@ impl SoftmaxBackend {
             )?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_softmax::<T, T>("debugging/softmax", self.stream.clone(), ctx)
             .unwrap();
 

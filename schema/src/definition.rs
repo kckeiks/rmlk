@@ -2,6 +2,8 @@ use crate::{Attribute, DataType, Node, Op};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+pub const NAME_NOT_AVAILABLE: &str = "NA";
+
 pub struct Definition {
     node: Node,
     attributes: Option<Rc<HashMap<Box<str>, Attribute>>>,

@@ -1,6 +1,6 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils::DataIterator;
@@ -71,7 +71,7 @@ impl GatherBackend {
         match dtype {
             DataType::Int32 => {
                 self.perform_device_gather::<T, i32>(axis, ctx)?;
-                #[cfg(feature = "debugger")]
+                #[cfg(feature = "dump")]
                 debug::write_results_gather::<T, i32>(
                     "debugging/gather",
                     self.stream.clone(),
@@ -80,7 +80,7 @@ impl GatherBackend {
             }
             DataType::Int64 => {
                 self.perform_device_gather::<T, i64>(axis, ctx)?;
-                #[cfg(feature = "debugger")]
+                #[cfg(feature = "dump")]
                 debug::write_results_gather::<T, i64>(
                     "debugging/gather",
                     self.stream.clone(),

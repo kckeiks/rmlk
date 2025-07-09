@@ -5,28 +5,44 @@ edition = "2021"
 authors = ["M. Meier <mi9uel9@gmail.com>"]
 
 [dependencies]
-anyhow.workspace = true
-bincode.workspace = true
-bumpalo.workspace = true
-cudarc.workspace = true
-half.workspace = true
-log.workspace = true
-num-traits.workspace = true
+anyhow = { workspace = true }
 base64 = { workspace = true, optional = true }
+bincode = { workspace = true }
+bumpalo = { workspace = true }
+cudarc = { workspace = true }
+log = { workspace = true }
+half = { workspace = true }
+num-traits = { workspace = true }
 serde_json = { workspace = true }
 
+## Project internal crates.
 rmlk-schema = { path = "../schema" }
 rmlk-graph = { path = "../graph" }
 rmlk-cuda = { path = "../cuda" }
 
 [dev-dependencies]
+# Floating‑point comparison helpers in tests.
 approx = "0.5"
+
+# Pretty logging for debugging.
 env_logger = "0.11"
+
+# Read/write image fixtures.
 image = "0.24"
+
+# N‑dimensional array helpers.
 ndarray = "0.15"
-serde.workspace = true
+
+# Derive macros for test structs.
+serde = { workspace = true }
+
+# Tokenizers for examples.
 tokenizers = "0.21"
 
 [features]
-debugger = ["base64"]
+default = []
 
+# Operation dump helpers.
+dump = ["base64"]
+
+verbose = []

@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -105,7 +105,7 @@ impl PowBackend {
             binary::compute::<X, Y, X>("pow", self.stream.clone(), cuda_bump, func, ctx)?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_binary::<X, Y, X>(
             "debugging/pow",
             self.stream.clone(),

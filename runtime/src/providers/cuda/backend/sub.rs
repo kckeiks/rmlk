@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -51,7 +51,7 @@ impl SubBackend {
             binary::compute::<D, D, D>("sub", self.stream.clone(), cuda_bump, func, ctx)?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_binary::<D, D, D>(
             "debugging/sub",
             self.stream.clone(),

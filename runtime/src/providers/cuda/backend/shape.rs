@@ -1,8 +1,8 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 
-#[cfg(feature = "debugger")]
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
@@ -79,7 +79,7 @@ impl ShapeBackend {
 
         shape.write_payload_from_slice(&shape_host_buf[start..end])?;
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_shape::<T>("debugging/shape", self.stream.clone(), ctx)?;
 
         Ok(())

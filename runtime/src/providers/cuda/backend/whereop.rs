@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -170,7 +170,7 @@ impl WhereBackend {
             }
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_ternary::<bool, T, T, T>(
             "debugging/where",
             self.stream.clone(),

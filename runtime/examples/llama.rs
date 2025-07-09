@@ -74,13 +74,6 @@ fn main() {
 
             let mut feed: HashMap<String, Value> = HashMap::new();
 
-            // println!("input tokens: {:?}", input_tokens);
-            // println!("input shape: {:?}", input_tokens_shape);
-            // println!("position_ids: {:?}", position_ids);
-            // println!("position_ids shape: {:?}", input_tokens_shape);
-            // println!("attention_mask: {:?}", attention_mask);
-            // println!("attention_mask shape: {:?}", attention_mask_shape);
-
             assert_eq!(input_tokens.len(), position_ids.len());
             assert_eq!(past_sequence_len + input_tokens.len(), attention_mask.len());
 
@@ -112,12 +105,10 @@ fn main() {
 
                     let (key, out_key_shape): (Vec<f32>, Vec<usize>) =
                         out.remove(&layer_key_name).unwrap().try_into().unwrap();
-                    // println!("present.{layer}.key shape={:?}", out_key_shape);
                     assert_eq!(key.len(), out_key_shape.iter().product::<usize>());
 
                     let (val, out_val_shape): (Vec<f32>, Vec<usize>) =
                         out.remove(&layer_value_name).unwrap().try_into().unwrap();
-                    // println!("present.{layer}.value shape={:?}", out_val_shape);
                     assert_eq!(val.len(), out_val_shape.iter().product::<usize>());
 
                     feed.insert(
@@ -133,7 +124,6 @@ fn main() {
                 for layer in 0..NUM_LAYERS {
                     let (kv_data, kv_shape) = kv_placeholder_shape(0);
                     assert!(kv_data.is_empty());
-                    // println!("past_key_values.{:?}.shape", kv_shape);
 
                     feed.insert(
                         format!("past_key_values.{}.key", layer),
@@ -149,7 +139,6 @@ fn main() {
             output = Some(engine.run(feed).unwrap());
 
             let out = output.as_mut().expect("missing output");
-            // println!("output: {:?}", out.keys().collect::<Vec<_>>());
             let logits: Vec<f32> = out.remove("logits").unwrap().try_into().unwrap();
 
             assert_eq!(logits.len(), seq_len * VOCAB_SIZE);
@@ -169,7 +158,7 @@ fn main() {
             }
 
             let text = tokenizer.decode(&[next_id as u32], true).unwrap();
-            // print!("token id=[{next_id}]\n");
+
             print!("{text}");
             std::io::Write::flush(&mut std::io::stdout()).unwrap();
 

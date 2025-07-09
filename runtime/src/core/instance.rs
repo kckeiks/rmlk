@@ -1,6 +1,6 @@
 use crate::core::backend::OperationBackend;
 use crate::core::context::Context;
-use crate::core::device_service::{DeviceService, Value as TensorValue};
+use crate::core::device_service::DeviceService;
 use crate::core::error::Error;
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
@@ -10,7 +10,9 @@ use crate::providers::cuda::Cuda;
 use cudarc::driver::CudaContext;
 use log::debug;
 use rmlk_graph::Graph;
-use rmlk_schema::{DataType, Definition, Op, Tensor};
+#[cfg(feature = "verbose")]
+use rmlk_graph::Node;
+use rmlk_schema::{Definition, Op, Tensor, NAME_NOT_AVAILABLE};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -21,7 +23,6 @@ type Result<T> = std::result::Result<T, Error>;
 pub struct Builder {
     /// Input/output names to node ID map.
     map_io_name_to_id: HashMap<String, usize>,
-    /// In
     initializers: HashMap<usize, Tensor>,
     graph: Graph<Definition>,
 }
@@ -90,22 +91,22 @@ impl Builder {
     pub fn build(self) -> Result<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
             .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
-        // ctx.set_blocking_synchronize()
-        //     .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
-        // Todo: We don't always want to use the default stream.
 
+        // Todo: We don't always want to use the default stream.
         let default_stream = ctx.default_stream();
+
         let provider = Cuda::new(default_stream).map_err(|e| Error::Internal {
             error: e.into_boxed_dyn_error(),
         })?;
-        let mut values = provider.store().map_err(|e| Error::Internal {
+        let mut store = provider.store().map_err(|e| Error::Internal {
             error: e.into_boxed_dyn_error(),
         })?;
-        values
+        store
             .init(&self.graph, self.initializers)
             .map_err(|e| Error::Internal {
                 error: e.into_boxed_dyn_error(),
             })?;
+
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
@@ -114,7 +115,7 @@ impl Builder {
         ));
 
         Ok(ModelInstance {
-            execution_state: ExecutionState::new(instance_state.clone(), values).map_err(|e| {
+            execution_state: ExecutionState::new(instance_state.clone(), store).map_err(|e| {
                 Error::Internal {
                     error: e.into_boxed_dyn_error(),
                 }
@@ -207,6 +208,55 @@ where
         self.execution_state.clear();
     }
 
+    #[cfg(feature = "verbose")]
+    fn log_input_and_output_names(&self, node: &Node<Definition>) {
+        // Todo: refactor this helper.
+        // Maybe add a trait ext for the Node.
+        let input_node_names = node
+            .inputs()
+            .iter()
+            .map(|id| {
+                (
+                    id,
+                    self.instance_state
+                        .graph()
+                        .get_node(*id)
+                        .unwrap()
+                        .value()
+                        .name()
+                        .unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let output_node_names = node
+            .outputs()
+            .iter()
+            .map(|id| {
+                (
+                    id,
+                    self.instance_state
+                        .graph()
+                        .get_node(*id)
+                        .unwrap()
+                        .value()
+                        .name()
+                        .unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        debug!(
+            "[node={:?}][inputs={:?}][output={:?}]",
+            node.value()
+                .name()
+                .unwrap_or(NAME_NOT_AVAILABLE)
+                .to_string(),
+            input_node_names,
+            output_node_names
+        );
+    }
+
     pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
         self.load_inputs(input)?;
 
@@ -225,74 +275,29 @@ where
                 continue;
             }
 
-            let mut ctx =
-                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
-                    error: e.into_boxed_dyn_error(),
-                })?;
-
-            let input_node_names = node
-                .inputs()
-                .iter()
-                .map(|id| {
-                    (
-                        id,
-                        self.instance_state
-                            .graph()
-                            .get_node(*id)
-                            .unwrap()
-                            .value()
-                            .name()
-                            .unwrap(),
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            let output_node_names = node
-                .outputs()
-                .iter()
-                .map(|id| {
-                    (
-                        id,
-                        self.instance_state
-                            .graph()
-                            .get_node(*id)
-                            .unwrap()
-                            .value()
-                            .name()
-                            .unwrap(),
-                    )
-                })
-                .collect::<Vec<_>>();
-
             debug!(
-                "\n[node={id}][{op:?}][name={:?}][inputs={:?}][input names ={input_node_names:?}][outputs={:?}][output names={output_node_names:?}]\n",
+                "[node={id}][op={op:?}][name={:?}][inputs={:?}][outputs={:?}]",
                 node.value().name(),
                 node.inputs(),
                 node.outputs(),
             );
 
-            // Todo: we need to spec this out.
-            let dtype = match ctx.get_input(0) {
-                Ok(tensor) => tensor.dtype(),
-                Err(_) => {
-                    debug!("[{op:?}] no input found");
-                    DataType::Undefined
-                }
-            };
+            #[cfg(feature = "verbose")]
+            self.log_input_and_output_names(node);
 
-            if let Err(e) = provider
-                .get_backend(op, dtype)
-                .map_err(|e| Error::Computation {
-                    op,
-                    // Todo: add name.
-                    name: "".to_string(),
+            let mut ctx =
+                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
                     error: e.into_boxed_dyn_error(),
-                })?
-                .compute(&mut ctx)
-            {
+                })?;
+
+            if let Err(e) = provider.get_backend(op).and_then(|b| b.compute(&mut ctx)) {
                 return Err(Error::Computation {
                     op,
-                    name: "".to_string(),
+                    name: node
+                        .value()
+                        .name()
+                        .unwrap_or(NAME_NOT_AVAILABLE)
+                        .to_string(),
                     error: e.into_boxed_dyn_error(),
                 });
             }

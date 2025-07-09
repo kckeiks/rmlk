@@ -1,6 +1,6 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::providers::TENSOR_3D_RANK;
@@ -141,7 +141,7 @@ impl TriluBackend {
             }
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_trilu::<T>("debugging/trilu", self.stream.clone(), ctx).unwrap();
 
         Ok(())

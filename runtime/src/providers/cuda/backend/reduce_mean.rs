@@ -3,7 +3,7 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 
 use crate::providers::cuda;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -212,7 +212,7 @@ impl ReduceMeanBackend {
             copy_input_to_output::<T>(ctx)?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_reduce_mean::<T, i64>(
             "debugging/reduce_mean",
             self.stream.clone(),

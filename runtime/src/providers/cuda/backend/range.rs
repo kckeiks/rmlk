@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -108,7 +108,7 @@ impl RangeBackend {
         // Copy the data from the host to the device.
         output_tensor.write_payload_from_slice(output)?;
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_ternary::<T, T, T, T>(
             "debugging/range",
             self.stream.clone(),

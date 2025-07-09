@@ -2,7 +2,7 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 
 use crate::providers::cuda::data::CudaData;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::{Cuda, Tensor};
 use crate::utils::FromF32;
@@ -213,7 +213,7 @@ impl MatMulBackend {
         let params = prepare_gemm_params(ctx)?;
         self.compute_multiplication::<D>(&params, ctx)?;
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_binary::<D, D, D>(
             "debugging/matmul",
             self.stream.clone(),

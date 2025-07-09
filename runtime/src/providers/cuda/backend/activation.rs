@@ -3,7 +3,7 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 
 use crate::providers::cuda::backend::common;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::utils;
@@ -82,7 +82,7 @@ impl ActivationBackend {
 
         self.launch_kernel::<I, K>(ctx)?;
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_unary::<I, I>(
             "debugging/activation",
             self.stream.clone(),

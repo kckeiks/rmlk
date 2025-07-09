@@ -3,7 +3,7 @@ use crate::core::error::InternalError;
 use crate::core::Context;
 
 use crate::providers::cuda::backend::common;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -108,7 +108,7 @@ impl CastBackend {
             }
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_cast::<I, O>("debugging/cast", self.stream.clone(), ctx)?;
 
         Ok(())

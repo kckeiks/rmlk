@@ -1,7 +1,7 @@
 use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
-#[cfg(feature = "debugger")]
+#[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -48,7 +48,7 @@ impl SqrtBackend {
             unary::compute::<I>("sqrt", self.stream.clone(), kernel, ctx)?;
         }
 
-        #[cfg(feature = "debugger")]
+        #[cfg(feature = "dump")]
         debug::write_results_unary::<I, I>(
             "debugging/sqrt",
             self.stream.clone(),

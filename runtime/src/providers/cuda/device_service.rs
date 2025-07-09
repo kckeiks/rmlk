@@ -42,7 +42,7 @@ use crate::utils::ShapeAllocator;
 use anyhow::{anyhow, Result};
 use cudarc::driver::{CudaStream, DeviceRepr};
 use half::f16;
-use rmlk_schema::{DataType, DataTypeMap, Op};
+use rmlk_schema::{DataTypeMap, Op};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -100,7 +100,7 @@ impl DeviceService for Cuda {
     type Value = Tensor;
     type Store = TensorStore;
 
-    fn get_backend(&self, op: Op, _dtype: DataType) -> Result<Self::Backend> {
+    fn get_backend(&self, op: Op) -> Result<Self::Backend> {
         let kernel = match op {
             Op::Add => CudaKernel::Add(AdditionBackend::new(self.stream.clone())),
             Op::Cast => CudaKernel::Cast(CastBackend::new(&self.stream)),
