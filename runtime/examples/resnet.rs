@@ -30,7 +30,7 @@ fn main() {
     }
 
     // Read onnx file from disk.
-    let serialized_graph = fs::read("resnet34.rmlk").expect("bad");
+    let serialized_graph = fs::read("resnet34.rmlk").unwrap();
 
     // Build engine graph.
     let builder = Builder::with_model_from_memory(serialized_graph.into_boxed_slice()).unwrap();
