@@ -4,9 +4,15 @@ Rusty Machine Learning Kit (rmlk) is an inference runtime written in Rust, with 
 
 ### Resnet34 Example
 
+**Input**
+
+![dog](https://github.com/user-attachments/assets/96cc6c82-83cf-4d3d-9bc1-bd754763918b)
+
+![resnet-demo](https://github.com/user-attachments/assets/8f6e11f5-59dc-40dd-bf54-04a1e5fa5eb6)
 
 ### LLama 3.2 Example
 
+![llama-demo](https://github.com/user-attachments/assets/78fc83ef-a8a5-4a2a-82b7-8eeef8eb6872)
 
 ## Motivation
 
@@ -99,7 +105,4 @@ Please see the examples under `runtime`.
 
 - `resnet34`
 - `llama3.2`
-
-## Notes
-
-Based on ONNX version: 1.13.1
+  
