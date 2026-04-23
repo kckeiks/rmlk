@@ -56,7 +56,7 @@ where
         }
 
         for (input_name, value) in input {
-            let node_id = match self.instance_state.get_io_node_id(&input_name) {
+            let node_id = match self.instance_state.get_input_node_id(&input_name) {
                 Some(node_id) => node_id,
                 None => return Err(Error::UnknownInput { name: input_name }),
             };
@@ -89,12 +89,6 @@ where
                     });
                 }
                 Some(node) => {
-                    self.execution_state
-                        .compare_value_and_def_shape(output)
-                        .map_err(|e| Error::Internal {
-                            error: e.into_boxed_dyn_error(),
-                        })?;
-
                     let value =
                         self.execution_state
                             .get_value(output)
@@ -167,8 +161,7 @@ where
 
 /// Builds an instance of a model for inference.
 pub struct Builder {
-    /// Input/output names to node ID map.
-    map_io_name_to_id: HashMap<String, usize>,
+    map_input_name_to_id: HashMap<String, usize>,
     initializers: HashMap<usize, Tensor>,
     graph: Graph<Definition>,
 }
@@ -178,7 +171,7 @@ impl Builder {
         let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
             .map_err(|_| Error::ModelDeserializationFailed)?;
 
-        let mut map_name_to_id = HashMap::new();
+        let mut map_input_name_to_id = HashMap::new();
 
         for input in graph_schema.input.as_slice() {
             let name = graph_schema
@@ -188,18 +181,7 @@ impl Builder {
                 .name
                 .as_ref()
                 .ok_or_else(|| BuilderError::MissingNodeName { id: *input })?;
-            map_name_to_id.insert(name.clone(), *input);
-        }
-
-        for output in graph_schema.output.as_slice() {
-            let name = graph_schema
-                .node
-                .get(*output)
-                .ok_or_else(|| BuilderError::OutputNodeNotFound { id: *output })?
-                .name
-                .as_ref()
-                .ok_or_else(|| BuilderError::MissingNodeName { id: *output })?;
-            map_name_to_id.insert(name.clone(), *output);
+            map_input_name_to_id.insert(name.clone(), *input);
         }
 
         // Use an allocator here.
@@ -215,7 +197,7 @@ impl Builder {
         }
 
         Ok(Self {
-            map_io_name_to_id: map_name_to_id,
+            map_input_name_to_id,
             initializers: graph_schema.initializer,
             graph: Graph::new(graph_schema.input, nodes, graph_schema.output),
         })
@@ -223,12 +205,12 @@ impl Builder {
 
     // Todo: we should put this behind a flag for testing only.
     pub fn new(
-        map_io_name_to_id: HashMap<String, usize>,
+        map_input_name_to_id: HashMap<String, usize>,
         initializers: HashMap<usize, Tensor>,
         graph: Graph<Definition>,
     ) -> Self {
         Self {
-            map_io_name_to_id,
+            map_input_name_to_id,
             initializers,
             graph,
         }
@@ -257,7 +239,7 @@ impl Builder {
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
             self.graph,
-            self.map_io_name_to_id,
+            self.map_input_name_to_id,
         ));
 
         Ok(ModelInstance {

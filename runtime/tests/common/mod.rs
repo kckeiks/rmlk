@@ -15,7 +15,7 @@ pub fn build(test_def: &str) -> Builder {
     } = serde_json::from_str(test_def).unwrap();
 
     let mut map_name_to_id = HashMap::new();
-    let mut map_io_name_to_id = HashMap::new();
+    let mut map_input_name_to_id = HashMap::new();
     let mut nodes = Vec::new();
     for node in node_defs {
         let id = nodes.len();
@@ -85,14 +85,13 @@ pub fn build(test_def: &str) -> Builder {
     let mut inputs = Vec::new();
     for input in named_inputs {
         let input_id = map_name_to_id.get(&input).unwrap();
-        map_io_name_to_id.insert(input.clone(), *input_id);
+        map_input_name_to_id.insert(input.clone(), *input_id);
         inputs.push(*input_id);
     }
 
     let mut outputs = Vec::new();
     for output in named_outputs {
         let output_id = map_name_to_id.get(&output).unwrap();
-        map_io_name_to_id.insert(output, *output_id);
         outputs.push(*output_id);
     }
 
@@ -123,5 +122,5 @@ pub fn build(test_def: &str) -> Builder {
 
     let graph = Graph::new(inputs, nodes, outputs);
 
-    Builder::new(map_name_to_id, initializers, graph)
+    Builder::new(map_input_name_to_id, initializers, graph)
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// hold the state of its corresponding model instance.
 pub struct ModelInstanceState<D> {
     graph: Arc<Graph<Definition>>,
-    map_io_name_to_id: HashMap<String, usize>,
+    map_input_name_to_id: HashMap<String, usize>,
     _plan: Plan<D>,
 }
 
@@ -25,7 +25,7 @@ where
         map_io_name_to_id: HashMap<String, usize>,
     ) -> Self {
         Self {
-            map_io_name_to_id,
+            map_input_name_to_id: map_io_name_to_id,
             _plan: plan,
             graph: Arc::new(graph),
         }
@@ -39,7 +39,7 @@ where
         &self.graph
     }
 
-    pub fn get_io_node_id(&self, name: &String) -> Option<usize> {
-        self.map_io_name_to_id.get(name).copied()
+    pub fn get_input_node_id(&self, name: &String) -> Option<usize> {
+        self.map_input_name_to_id.get(name).copied()
     }
 }

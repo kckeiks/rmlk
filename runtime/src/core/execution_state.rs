@@ -243,19 +243,6 @@ where
         self.instance_state._plan().device(0).unwrap()
     }
 
-    // Todo: this is a helper that feels weird to have here.
-    pub fn compare_value_and_def_shape(&self, node_id: usize) -> Result<()> {
-        let tensor = self
-            .get_tensor_from_node_id(node_id)
-            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
-
-        let node = self
-            .get_node(node_id)
-            .ok_or(ExecutionStateError::ComparisonFailed { id: node_id })?;
-
-        utils::compare_shapes(&tensor.shape(), node)
-    }
-
     /// Get the tensor value given a node ID.
     fn get_tensor_from_node_id(&self, node_id: usize) -> Option<<T::Store as ValueStore>::Value> {
         self.tensor_store.get(node_id)
@@ -272,7 +259,6 @@ pub enum ExecutionStateError {
     InputTensorNotFound { id: usize },
     OutputTensorNotFound { id: usize },
     TensorNotFound { id: usize },
-    ComparisonFailed { id: usize },
 }
 
 impl Display for ExecutionStateError {
@@ -286,9 +272,6 @@ impl Display for ExecutionStateError {
             }
             ExecutionStateError::TensorNotFound { id } => {
                 write!(f, "Tensor not found: {}", id)
-            }
-            ExecutionStateError::ComparisonFailed { id } => {
-                write!(f, "Comparison failed for node `{}`", id)
             }
         }
     }
