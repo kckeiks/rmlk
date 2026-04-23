@@ -16,21 +16,19 @@ pub enum Error {
     Internal {
         error: Box<dyn std::error::Error>,
     },
+    InvalidInputs {
+        received: HashMap<String, Value>,
+        expected: Vec<String>,
+    },
     ModelDeserializationFailed,
-    NodeNotFound {
-        id: usize,
-    },
-    ExpectedName {
-        node_id: usize,
-    },
-    InvalidUserInput {
-        input: HashMap<String, Value>,
-    },
-    FailedToFindNodeId {
-        name: String,
-    },
     ModelBuildFailed {
         error: BuilderError,
+    },
+    OutputNameMissing {
+        node_id: usize,
+    },
+    UnknownInput {
+        name: String,
     },
 }
 

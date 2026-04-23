@@ -14,6 +14,7 @@ pub fn build(test_def: &str) -> Builder {
         tensors,
     } = serde_json::from_str(test_def).unwrap();
 
+    let mut map_name_to_id = HashMap::new();
     let mut map_io_name_to_id = HashMap::new();
     let mut nodes = Vec::new();
     for node in node_defs {
@@ -52,12 +53,12 @@ pub fn build(test_def: &str) -> Builder {
             }
         }
 
-        map_io_name_to_id.insert(schema_node.name.clone().unwrap(), id);
+        map_name_to_id.insert(schema_node.name.clone().unwrap(), id);
 
         let mut schema_inputs = Vec::new();
         if let Some(inputs) = node.input {
             for input in inputs {
-                let input_id = map_io_name_to_id.get(&input).unwrap();
+                let input_id = map_name_to_id.get(&input).unwrap();
                 schema_inputs.push(*input_id);
             }
             // We don't give ownership of inputs to the schema node because
@@ -68,7 +69,7 @@ pub fn build(test_def: &str) -> Builder {
         let mut schema_outputs = Vec::new();
         if let Some(outputs) = node.output {
             for output in outputs {
-                let output_id = map_io_name_to_id.get(&output).unwrap();
+                let output_id = map_name_to_id.get(&output).unwrap();
                 schema_outputs.push(*output_id);
             }
             // We don't give ownership of inputs to the schema node because
@@ -83,19 +84,21 @@ pub fn build(test_def: &str) -> Builder {
 
     let mut inputs = Vec::new();
     for input in named_inputs {
-        let input_id = map_io_name_to_id.get(&input).unwrap();
+        let input_id = map_name_to_id.get(&input).unwrap();
+        map_io_name_to_id.insert(input.clone(), *input_id);
         inputs.push(*input_id);
     }
 
     let mut outputs = Vec::new();
     for output in named_outputs {
-        let input_id = map_io_name_to_id.get(&output).unwrap();
-        outputs.push(*input_id);
+        let output_id = map_name_to_id.get(&output).unwrap();
+        map_io_name_to_id.insert(output, *output_id);
+        outputs.push(*output_id);
     }
 
     let mut initializers = HashMap::new();
     for tensor in tensors {
-        let id = map_io_name_to_id.get(&tensor.name).unwrap();
+        let id = map_name_to_id.get(&tensor.name).unwrap();
         let node_info = nodes.get(*id).unwrap();
         let node_def = node_info.value();
 
@@ -120,5 +123,5 @@ pub fn build(test_def: &str) -> Builder {
 
     let graph = Graph::new(inputs, nodes, outputs);
 
-    Builder::new(map_io_name_to_id, initializers, graph)
+    Builder::new(map_name_to_id, initializers, graph)
 }

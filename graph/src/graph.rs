@@ -46,6 +46,10 @@ impl<T> Graph<T> {
         self.inputs.iter().copied()
     }
 
+    pub fn input_count(&self) -> usize {
+        self.inputs.len()
+    }
+
     pub fn outputs(&self) -> impl Iterator<Item = usize> + '_ {
         self.outputs.iter().copied()
     }

@@ -4,7 +4,6 @@ use crate::core::instance_state::ModelInstanceState;
 use crate::core::value::{InnerValue, Value};
 use crate::utils;
 use anyhow::Result;
-use log::trace;
 use rmlk_graph::{Graph, Node};
 use rmlk_schema::Op;
 use rmlk_schema::{DataType, Definition};
@@ -78,9 +77,6 @@ where
                 }
             }
         }
-
-        trace!("node_values={:?}", node_values);
-        trace!("node_to_value_index_map={:?}", node_to_value_index_map);
 
         Ok(Self {
             tensor_store: store,

@@ -7,17 +7,163 @@ use crate::core::instance_state::ModelInstanceState;
 use crate::core::plan::Plan;
 use crate::core::value::Value;
 use crate::providers::cuda::Cuda;
+use anyhow::anyhow;
 use cudarc::driver::CudaContext;
-use log::debug;
 use rmlk_graph::Graph;
-#[cfg(feature = "verbose")]
-use rmlk_graph::Node;
 use rmlk_schema::{Definition, Op, Tensor, NAME_NOT_AVAILABLE};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, Error>;
+
+/// A model instance.
+///
+/// This object represents the model instantiated in the
+/// runtime.
+pub struct ModelInstance<D: DeviceService> {
+    instance_state: Arc<ModelInstanceState<D>>,
+    execution_state: ExecutionState<D>,
+}
+
+impl<D> ModelInstance<D>
+where
+    D: DeviceService,
+{
+    fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
+        if input.len() != self.instance_state.graph().input_count() {
+            let mut expected = Vec::new();
+            for input in self.instance_state.graph().inputs() {
+                match self
+                    .instance_state
+                    .graph()
+                    .get_node(input)
+                    .and_then(|n| n.value().name())
+                {
+                    Some(name) => expected.push(name.to_string()),
+                    None => {
+                        return Err(Error::Internal {
+                            error: anyhow!("failed to find expected input node with ID `{input}`")
+                                .into_boxed_dyn_error(),
+                        })
+                    }
+                }
+            }
+            return Err(Error::InvalidInputs {
+                received: input,
+                expected,
+            });
+        }
+
+        for (input_name, value) in input {
+            let node_id = match self.instance_state.get_io_node_id(&input_name) {
+                Some(node_id) => node_id,
+                None => return Err(Error::UnknownInput { name: input_name }),
+            };
+
+            if self.instance_state.graph().get_node(node_id).is_none() {
+                return Err(Error::Internal {
+                    error: anyhow!("failed to find node `{input_name}` with ID `{node_id}`")
+                        .into_boxed_dyn_error(),
+                });
+            }
+
+            self.execution_state
+                .load_value(node_id, value)
+                .map_err(|e| Error::Internal {
+                    error: e.into_boxed_dyn_error(),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    fn get_outputs(&mut self) -> Result<HashMap<String, Value>> {
+        let mut result = HashMap::new();
+        for output in self.instance_state.graph().outputs() {
+            match self.instance_state.graph().get_node(output) {
+                None => {
+                    return Err(Error::Internal {
+                        error: anyhow!("failed to find output node given ID `{output}`")
+                            .into_boxed_dyn_error(),
+                    });
+                }
+                Some(node) => {
+                    self.execution_state
+                        .compare_value_and_def_shape(output)
+                        .map_err(|e| Error::Internal {
+                            error: e.into_boxed_dyn_error(),
+                        })?;
+
+                    let value =
+                        self.execution_state
+                            .get_value(output)
+                            .map_err(|e| Error::Internal {
+                                error: e.into_boxed_dyn_error(),
+                            })?;
+
+                    result.insert(
+                        node.value()
+                            .name()
+                            .ok_or_else(|| Error::OutputNameMissing { node_id: output })?
+                            .to_string(),
+                        value,
+                    );
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn clean_up(&mut self) {
+        self.execution_state.scratch_alloc_mut().reset();
+        self.execution_state.clear();
+    }
+
+    pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
+        self.load_inputs(input)?;
+
+        let provider = self
+            .instance_state
+            ._plan()
+            .device(0)
+            .expect("we always have one device");
+
+        // Go through the nodes and execute the computation.
+        // Todo: use the Plan to know which nodes to compute the output.
+        for (id, node) in self.instance_state.graph().node_iter() {
+            let op = node.value().op();
+
+            if matches!(op, Op::NoOp | Op::Const) {
+                continue;
+            }
+
+            let mut ctx =
+                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
+                    error: e.into_boxed_dyn_error(),
+                })?;
+
+            if let Err(e) = provider.get_backend(op).and_then(|b| b.compute(&mut ctx)) {
+                return Err(Error::Computation {
+                    op,
+                    name: node
+                        .value()
+                        .name()
+                        .unwrap_or(NAME_NOT_AVAILABLE)
+                        .to_string(),
+                    error: e.into_boxed_dyn_error(),
+                });
+            }
+        }
+
+        let output = self.get_outputs()?;
+
+        self.clean_up();
+
+        Ok(output)
+    }
+}
 
 /// Builds an instance of a model for inference.
 pub struct Builder {
@@ -122,192 +268,6 @@ impl Builder {
             })?,
             instance_state,
         })
-    }
-}
-
-/// A model instance.
-///
-/// This object represents the model instantiated in the
-/// runtime.
-pub struct ModelInstance<D: DeviceService> {
-    instance_state: Arc<ModelInstanceState<D>>,
-    execution_state: ExecutionState<D>,
-}
-
-impl<D> ModelInstance<D>
-where
-    D: DeviceService,
-{
-    fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
-        if input.len() != self.instance_state.graph().inputs().count() {
-            debug!(
-                "user input: {input:?}: expected {:?}",
-                self.instance_state.graph().inputs().collect::<Vec<_>>()
-            );
-            return Err(Error::InvalidUserInput { input });
-        }
-
-        for (input_name, value) in input {
-            let node_id = self
-                .instance_state
-                .get_io_node_id(&input_name)
-                .ok_or_else(|| Error::FailedToFindNodeId { name: input_name })?;
-
-            if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::NodeNotFound { id: node_id });
-            }
-
-            self.execution_state
-                .load_value(node_id, value)
-                .map_err(|e| Error::Internal {
-                    error: e.into_boxed_dyn_error(),
-                })?;
-        }
-
-        Ok(())
-    }
-
-    fn get_outputs(&mut self) -> Result<HashMap<String, Value>> {
-        let mut result = HashMap::new();
-        for output in self.instance_state.graph().outputs() {
-            match self.instance_state.graph().get_node(output) {
-                None => {
-                    return Err(Error::NodeNotFound { id: output });
-                }
-                Some(node) => {
-                    // Todo: we need to validate the inputs and outputs.
-                    self.execution_state
-                        .compare_value_and_def_shape(output)
-                        .map_err(|e| Error::Internal {
-                            error: e.into_boxed_dyn_error(),
-                        })?;
-
-                    let value =
-                        self.execution_state
-                            .get_value(output)
-                            .map_err(|e| Error::Internal {
-                                error: e.into_boxed_dyn_error(),
-                            })?;
-
-                    result.insert(
-                        node.value()
-                            .name()
-                            .ok_or_else(|| Error::ExpectedName { node_id: output })?
-                            .to_string(),
-                        value,
-                    );
-                }
-            }
-        }
-
-        Ok(result)
-    }
-
-    fn clean_up(&mut self) {
-        self.execution_state.scratch_alloc_mut().reset();
-        self.execution_state.clear();
-    }
-
-    #[cfg(feature = "verbose")]
-    fn log_input_and_output_names(&self, node: &Node<Definition>) {
-        // Todo: refactor this helper.
-        // Maybe add a trait ext for the Node.
-        let input_node_names = node
-            .inputs()
-            .iter()
-            .map(|id| {
-                (
-                    id,
-                    self.instance_state
-                        .graph()
-                        .get_node(*id)
-                        .unwrap()
-                        .value()
-                        .name()
-                        .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let output_node_names = node
-            .outputs()
-            .iter()
-            .map(|id| {
-                (
-                    id,
-                    self.instance_state
-                        .graph()
-                        .get_node(*id)
-                        .unwrap()
-                        .value()
-                        .name()
-                        .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        debug!(
-            "[node={:?}][inputs={:?}][output={:?}]",
-            node.value()
-                .name()
-                .unwrap_or(NAME_NOT_AVAILABLE)
-                .to_string(),
-            input_node_names,
-            output_node_names
-        );
-    }
-
-    pub fn run(&mut self, input: HashMap<String, Value>) -> Result<HashMap<String, Value>> {
-        self.load_inputs(input)?;
-
-        let provider = self
-            .instance_state
-            ._plan()
-            .device(0)
-            .expect("we always have one device");
-
-        // Go through the nodes and execute the computation.
-        // Todo: use the Plan to know which nodes to compute the output.
-        for (id, node) in self.instance_state.graph().node_iter() {
-            let op = node.value().op();
-
-            if matches!(op, Op::NoOp | Op::Const) {
-                continue;
-            }
-
-            debug!(
-                "[node={id}][op={op:?}][name={:?}][inputs={:?}][outputs={:?}]",
-                node.value().name(),
-                node.inputs(),
-                node.outputs(),
-            );
-
-            #[cfg(feature = "verbose")]
-            self.log_input_and_output_names(node);
-
-            let mut ctx =
-                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
-                    error: e.into_boxed_dyn_error(),
-                })?;
-
-            if let Err(e) = provider.get_backend(op).and_then(|b| b.compute(&mut ctx)) {
-                return Err(Error::Computation {
-                    op,
-                    name: node
-                        .value()
-                        .name()
-                        .unwrap_or(NAME_NOT_AVAILABLE)
-                        .to_string(),
-                    error: e.into_boxed_dyn_error(),
-                });
-            }
-        }
-
-        let output = self.get_outputs()?;
-
-        self.clean_up();
-
-        Ok(output)
     }
 }
 
