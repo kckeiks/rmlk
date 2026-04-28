@@ -1,19 +1,19 @@
 use crate::core::backend::OperationBackend;
 use crate::core::context::Context;
 use crate::core::device_service::DeviceService;
-use crate::core::error::Error;
+use crate::core::error::{BuilderError, Error};
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
-use crate::core::plan::Plan;
 use crate::core::value::Value;
-use crate::providers::cuda::Cuda;
 use anyhow::anyhow;
+use rmlk_schema::{Definition, Op, Tensor};
+use std::collections::HashMap;
+use std::result;
+use std::sync::Arc;
 use cudarc::driver::CudaContext;
 use rmlk_graph::Graph;
-use rmlk_schema::{Definition, Op, Tensor, NAME_NOT_AVAILABLE};
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::sync::Arc;
+use crate::core::plan::Plan;
+use crate::providers::cuda::Cuda;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -42,9 +42,8 @@ where
                 {
                     Some(name) => expected.push(name.to_string()),
                     None => {
-                        return Err(Error::Internal {
+                        return Err(Error::InferenceError {
                             error: anyhow!("failed to find expected input node with ID `{input}`")
-                                .into_boxed_dyn_error(),
                         })
                     }
                 }
@@ -58,20 +57,19 @@ where
         for (input_name, value) in input {
             let node_id = match self.instance_state.get_input_node_id(&input_name) {
                 Some(node_id) => node_id,
-                None => return Err(Error::UnknownInput { name: input_name }),
+                None => return Err(Error::UnknownInputName { name: input_name }),
             };
 
             if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::Internal {
+                return Err(Error::InferenceError {
                     error: anyhow!("failed to find node `{input_name}` with ID `{node_id}`")
-                        .into_boxed_dyn_error(),
                 });
             }
 
             self.execution_state
                 .load_value(node_id, value)
-                .map_err(|e| Error::Internal {
-                    error: e.into_boxed_dyn_error(),
+                .map_err(|e| Error::InferenceError {
+                    error: e
                 })?;
         }
 
@@ -83,23 +81,22 @@ where
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {
                 None => {
-                    return Err(Error::Internal {
+                    return Err(Error::InferenceError {
                         error: anyhow!("failed to find output node given ID `{output}`")
-                            .into_boxed_dyn_error(),
                     });
                 }
                 Some(node) => {
                     let value =
                         self.execution_state
                             .get_value(output)
-                            .map_err(|e| Error::Internal {
-                                error: e.into_boxed_dyn_error(),
+                            .map_err(|e| Error::InferenceError {
+                                error: e,
                             })?;
 
                     result.insert(
                         node.value()
                             .name()
-                            .ok_or_else(|| Error::OutputNameMissing { node_id: output })?
+                            .expect("output nodes should always have a name")
                             .to_string(),
                         value,
                     );
@@ -134,20 +131,12 @@ where
             }
 
             let mut ctx =
-                Context::new(&mut self.execution_state, id).map_err(|e| Error::Internal {
-                    error: e.into_boxed_dyn_error(),
+                Context::new(&mut self.execution_state, id).map_err(|e| Error::InferenceError {
+                    error: e,
                 })?;
 
             if let Err(e) = provider.get_backend(op).and_then(|b| b.compute(&mut ctx)) {
-                return Err(Error::Computation {
-                    op,
-                    name: node
-                        .value()
-                        .name()
-                        .unwrap_or(NAME_NOT_AVAILABLE)
-                        .to_string(),
-                    error: e.into_boxed_dyn_error(),
-                });
+                return Err(Error::InferenceError { error: e });
             }
         }
 
@@ -159,6 +148,8 @@ where
     }
 }
 
+type BuilderResult<T> = result::Result<T, BuilderError>;
+
 /// Builds an instance of a model for inference.
 pub struct Builder {
     map_input_name_to_id: HashMap<String, usize>,
@@ -167,9 +158,9 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> Result<Self> {
+    pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> BuilderResult<Self> {
         let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
-            .map_err(|_| Error::ModelDeserializationFailed)?;
+            .map_err(|_| BuilderError::ModelDeserializationFailed)?;
 
         let mut map_input_name_to_id = HashMap::new();
 
@@ -216,24 +207,17 @@ impl Builder {
         }
     }
 
-    pub fn build(self) -> Result<ModelInstance<Cuda>> {
+    pub fn build(self) -> BuilderResult<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
             .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
 
-        // Todo: We don't always want to use the default stream.
+        // Todo: for now everything runs on the default stream.
         let default_stream = ctx.default_stream();
 
-        let provider = Cuda::new(default_stream).map_err(|e| Error::Internal {
-            error: e.into_boxed_dyn_error(),
-        })?;
-        let mut store = provider.store().map_err(|e| Error::Internal {
-            error: e.into_boxed_dyn_error(),
-        })?;
+        let provider = Cuda::new(default_stream)?;
+        let mut store = provider.store()?;
         store
-            .init(&self.graph, self.initializers)
-            .map_err(|e| Error::Internal {
-                error: e.into_boxed_dyn_error(),
-            })?;
+            .init(&self.graph, self.initializers)?;
 
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(
@@ -243,39 +227,8 @@ impl Builder {
         ));
 
         Ok(ModelInstance {
-            execution_state: ExecutionState::new(instance_state.clone(), store).map_err(|e| {
-                Error::Internal {
-                    error: e.into_boxed_dyn_error(),
-                }
-            })?,
+            execution_state: ExecutionState::new(instance_state.clone(), store)?,
             instance_state,
         })
-    }
-}
-
-#[derive(Debug)]
-pub enum BuilderError {
-    InputNodeNotFound { id: usize },
-    OutputNodeNotFound { id: usize },
-    MissingNodeName { id: usize },
-    UnexpectedDeviceFailure { error: rmlk_cuda::Error },
-}
-
-impl Display for BuilderError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BuilderError::InputNodeNotFound { id } => {
-                write!(f, "Node `{}` not found", id)
-            }
-            BuilderError::MissingNodeName { id } => {
-                write!(f, "Missing name for node `{}`", id)
-            }
-            BuilderError::UnexpectedDeviceFailure { error } => {
-                write!(f, "Unexpected device failure: {}", error)
-            }
-            BuilderError::OutputNodeNotFound { id } => {
-                write!(f, "Node `{}` not found", id)
-            }
-        }
     }
 }

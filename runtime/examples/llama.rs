@@ -1,4 +1,5 @@
-use rmlk_runtime::{Builder, Value};
+use rmlk_runtime::Builder;
+use rmlk_runtime::Value;
 use std::io::BufRead;
 use std::{collections::HashMap, fs};
 use tokenizers::Tokenizer;

@@ -1,277 +1,171 @@
-use crate::core::instance::BuilderError;
 use crate::Value;
 use rmlk_schema::{DataType, Op};
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 
 pub type Result<T> = std::result::Result<T, InternalError>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    Computation {
-        op: Op,
-        name: String,
-        error: Box<dyn std::error::Error>,
+    #[error("inference failed: {error}")]
+    InferenceError {
+        error: anyhow::Error,
     },
-    Internal {
-        error: Box<dyn std::error::Error>,
-    },
+    #[error("invalid inputs:\nreceived: {received:?}\nexpected input names: {expected:?}")]
     InvalidInputs {
         received: HashMap<String, Value>,
         expected: Vec<String>,
     },
-    ModelDeserializationFailed,
-    ModelBuildFailed {
-        error: BuilderError,
-    },
-    OutputNameMissing {
-        node_id: usize,
-    },
-    UnknownInput {
+    #[error("unknown input name `{name}`")]
+    UnknownInputName {
         name: String,
     },
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<InternalError> for Error {
-    fn from(value: InternalError) -> Self {
-        Self::Internal {
-            error: Box::new(value),
-        }
-    }
-}
-
-impl From<BuilderError> for Error {
-    fn from(value: BuilderError) -> Self {
-        Error::ModelBuildFailed { error: value }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InternalError {
+    #[error("attribute error: {inner}")]
     Attribute {
         inner: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
+    #[error("axis out of bounds: axis {axis}")]
     AxisOutOfBounds {
         axis: i64,
     },
+    #[error("buffer size mismatch: expected {expected} bytes, got {actual} bytes")]
     BufferSizeMismatch {
         expected: usize,
         actual: usize,
     },
+    #[error("device error: {error}")]
     Device {
         error: rmlk_cuda::Error,
     },
+    #[error("invalid execution state: {0}")]
     ExecutionState(String),
+    #[error("invalid byte length")]
     InvalidByteLength,
+    #[error("invalid tensor index: {index}")]
     InvalidTensorIndex {
         index: usize,
     },
+    #[error("invalid attribute: {name}")]
     InvalidAttribute {
         name: String,
     },
+    #[error("invalid data type for attribute: {name}")]
     InvalidAttributeDataType {
         name: String,
     },
+    #[error("invalid range: start {start}, end {end}")]
     InvalidRange {
         start: i64,
         end: i64,
     },
+    #[error("invalid tensor shape: {shape:?}")]
     InvalidTensorShape {
         shape: Vec<usize>,
     },
+    #[error("invalid memory allocation: {message}")]
     InvalidMemoryAllocation {
         message: String,
     },
+    #[error("incompatible tensor shapes: {shapes:?}")]
     IncompatibleTensorShape {
         shapes: HashMap<usize, Vec<usize>>,
     },
+    #[error("incompatible shapes for broadcast: {shapes:?}")]
     IncompatibleShapesForBroadcast {
         shapes: HashMap<usize, Vec<usize>>,
     },
+    #[error("invalid input {input} for op {op:?}: {message}")]
     InvalidInput {
         input: usize,
         op: Op,
         message: String,
     },
+    #[error("missing device data")]
     MissingDeviceData,
+    #[error("missing attributes")]
     MissingAttributes,
+    #[error("missing attribute: {name}")]
     MissingAttribute {
         name: String,
     },
+    #[error("missing node with id {id}")]
     MissingNode {
         id: usize,
     },
+    #[error("missing output node for op {op:?}")]
     MissingOutputNode {
         op: Op,
     },
+    #[error("expected node info `{info}` for node {node_id}")]
     ExpectedNodeInfo {
         info: String,
         node_id: usize,
     },
+    #[error("expected shape in definition for node {node_id}")]
     ExpectedShapeInDef {
         node_id: usize,
     },
+    #[error("expected data type in definition for node {node_id}")]
     ExpectedDataTypeInDef {
         node_id: usize,
     },
+    #[error("unsupported rank size: {message}")]
     UnsupportedRankSize {
         message: String,
     },
+    #[error("tensor store error: {0}")]
     TensorStore(String),
+    #[error("tensor not found for node {node_id}")]
     TensorNotFound {
         node_id: usize,
     },
+    #[error("tensor not found from index {id}")]
     TensorNotFoundFromIndex {
         id: usize,
     },
+    #[error("tensor index not found for node {node_id}")]
     TensorIndexNotFound {
         node_id: usize,
     },
+    #[error("unable to convert value")]
     UnableToConvertValue,
+    #[error("unexpected tensor data type: expected {expected:?}")]
     UnexpectedTensorDataType {
         expected: DataType,
     },
+    #[error("unsupported data type: {dtype:?}")]
     UnsupportedDataType {
         dtype: DataType,
     },
+    #[error("unsupported op: {op:?}")]
     UnsupportedOp {
         op: Op,
     },
+    #[error("unsupported input values: {message}")]
     UnsupportedInputValues {
         message: String,
     },
+    #[error("scalar inputs are not allowed")]
     ScalarInputsAreNotAllowed,
+    #[error("CUDA bump allocator failed")]
     CudaBumpAllocatorFailed,
 }
 
-impl InternalError {
-    pub fn boxed(self) -> Box<Self> {
-        Box::new(self)
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum BuilderError {
+    #[error("input node `{id}` not found")]
+    InputNodeNotFound { id: usize },
+    #[error("output node `{id}` not found")]
+    OutputNodeNotFound { id: usize },
+    #[error("missing name for node `{id}`")]
+    MissingNodeName { id: usize },
+    #[error("Unexpected device failure: {error}")]
+    UnexpectedDeviceFailure { error: rmlk_cuda::Error },
+    #[error("failed to deserialized")]
+    ModelDeserializationFailed,
+    #[error("build failure: {0}")]
+    Internal(#[from] anyhow::Error),
 }
-
-impl Display for InternalError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InternalError::Attribute { inner } => write!(f, "{}", inner),
-            InternalError::AxisOutOfBounds { axis } => {
-                write!(f, "invalid axis `{axis}`")
-            }
-            InternalError::TensorStore(msg) => {
-                write!(f, "tensor store error `{msg}`")
-            }
-            InternalError::ExecutionState(msg) => {
-                write!(f, "execution state error `{msg}`")
-            }
-            InternalError::ExpectedDataTypeInDef { node_id } => {
-                write!(f, "expected data type in node `{node_id}`")
-            }
-            InternalError::ExpectedShapeInDef { node_id } => {
-                write!(f, "expected shape in node `{node_id}`")
-            }
-            InternalError::ExpectedNodeInfo { info, node_id } => {
-                write!(f, "expected node info `{info}` from node `{node_id}`")
-            }
-            InternalError::Device { error: msg } => {
-                write!(f, "device error `{msg:?}`")
-            }
-            InternalError::TensorNotFound { node_id } => {
-                write!(f, "failed to find tensor: {node_id:?}")
-            }
-            InternalError::TensorNotFoundFromIndex { id } => {
-                write!(f, "failed to find tensor from index: {id:?}")
-            }
-            InternalError::TensorIndexNotFound { node_id } => {
-                write!(f, "failed to find tensor index: {node_id:?}")
-            }
-            InternalError::IncompatibleTensorShape { shapes } => {
-                write!(f, "incompatible shapes `{shapes:?}`")
-            }
-            InternalError::IncompatibleShapesForBroadcast { shapes } => {
-                write!(f, "incompatible shapes {shapes:?} for broadcast")
-            }
-            InternalError::InvalidByteLength => {
-                write!(f, "invalid byte length")
-            }
-            InternalError::InvalidRange { start, end } => {
-                write!(f, "invalid range start={start}, end={end}")
-            }
-            InternalError::InvalidTensorIndex { index } => {
-                write!(f, "invalid tensor index: {index:?}")
-            }
-            InternalError::InvalidInput { input, op, message } => {
-                write!(f, "invalid input `{input:?}` for op `{op:?}`: {message:?}")
-            }
-            InternalError::UnableToConvertValue => {
-                write!(f, "unable to convert value")
-            }
-            InternalError::MissingDeviceData => {
-                write!(f, "missing device data")
-            }
-            InternalError::MissingAttributes => {
-                write!(f, "missing attributes")
-            }
-            InternalError::MissingAttribute { name } => {
-                write!(f, "missing `{name}` attribute")
-            }
-            InternalError::MissingNode { id } => {
-                write!(f, "missing node `{id}`")
-            }
-            InternalError::MissingOutputNode { op } => {
-                write!(f, "missing output node `{op:?}`")
-            }
-            InternalError::InvalidAttribute { name } => {
-                write!(f, "invalid attribute `{name}`")
-            }
-            InternalError::InvalidAttributeDataType { name } => {
-                write!(f, "invalid data type for `{name}` attribute")
-            }
-            InternalError::UnexpectedTensorDataType { expected } => {
-                write!(
-                    f,
-                    "unexpected tensor data type when expected `{expected:?}`"
-                )
-            }
-            InternalError::UnsupportedDataType { dtype } => {
-                write!(f, "unsupported `{dtype:?}` data type")
-            }
-            InternalError::UnsupportedOp { op } => {
-                write!(f, "unsupported `{op:?}` op")
-            }
-            InternalError::UnsupportedRankSize { message } => {
-                write!(f, "unsupported rank size `{message}`")
-            }
-            InternalError::InvalidTensorShape { shape } => {
-                write!(f, "invalid tensor shape `{shape:?}`")
-            }
-            InternalError::InvalidMemoryAllocation { message } => {
-                write!(f, "invalid memory allocation `{message}`")
-            }
-            InternalError::BufferSizeMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "expected buffer of size `{expected}` instead of `{actual}`"
-                )
-            }
-            InternalError::UnsupportedInputValues { message } => {
-                write!(f, "unsupported input values `{message}`")
-            }
-            InternalError::ScalarInputsAreNotAllowed => {
-                write!(f, "scalar inputs are not allowed")
-            }
-            InternalError::CudaBumpAllocatorFailed => {
-                write!(f, "cuda-bump allocator failed")
-            }
-        }
-    }
-}
-
-impl std::error::Error for InternalError {}

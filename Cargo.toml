@@ -5,6 +5,7 @@ members = ["cuda", "graph", "rocky", "runtime", "schema"]
 [workspace.dependencies]
 # Ergonomic error handling
 anyhow = "1.0"
+thiserror = "2.0"
 
 # Lightweight structured logging.
 log = "0.4"

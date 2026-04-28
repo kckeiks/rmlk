@@ -1,6 +1,7 @@
 use image::GenericImageView;
 use ndarray::Array;
-use rmlk_runtime::{Builder, Value};
+use rmlk_runtime::Builder;
+use rmlk_runtime::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
