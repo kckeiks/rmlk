@@ -130,7 +130,7 @@ impl<'a> Builder<'a> {
                     )?;
                     // self.cuda_alloc
                     //     .alloc_from_slice::<f16>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<f16>(&on_host_data)?;
                 }
                 DataType::Float => {
@@ -148,7 +148,7 @@ impl<'a> Builder<'a> {
                     };
                     // self.cuda_alloc
                     //     .alloc_from_slice::<f32>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<f32>(&on_host_data)?;
                 }
                 DataType::Double => {
@@ -166,7 +166,7 @@ impl<'a> Builder<'a> {
                     };
                     // self.cuda_alloc
                     //     .alloc_from_slice::<f64>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<f64>(&on_host_data)?;
                 }
                 DataType::Int32 => {
@@ -184,7 +184,7 @@ impl<'a> Builder<'a> {
                     };
                     // self.cuda_alloc
                     //     .alloc_from_slice::<i32>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<i32>(&on_host_data)?;
                 }
                 DataType::Int64 => {
@@ -213,7 +213,7 @@ impl<'a> Builder<'a> {
 
                     // self.cuda_alloc
                     //     .alloc_from_slice::<i64>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<i64>(&on_host_data)?;
                 }
                 DataType::Bool => {
@@ -233,7 +233,7 @@ impl<'a> Builder<'a> {
 
                     // self.cuda_alloc
                     //     .alloc_from_slice::<bool>(&on_host_data)
-                    //     .ok_or(InternalError::CudaBumpAllocatorFailed)?
+                    //     ?
                     tensor.write_payload_from_slice::<bool>(&on_host_data)?;
                 }
                 _ => {

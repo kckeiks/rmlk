@@ -1,5 +1,5 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -67,7 +67,7 @@ impl UnsqueezeBackend {
             DataType::Double => self.compute_unsqueeze::<f64>(ctx),
             DataType::Int32 => self.compute_unsqueeze::<i32>(ctx),
             DataType::Int64 => self.compute_unsqueeze::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

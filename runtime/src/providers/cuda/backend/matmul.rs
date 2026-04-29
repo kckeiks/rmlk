@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 use crate::providers::cuda::data::CudaData;
@@ -64,21 +64,17 @@ impl MatMulBackend {
     {
         let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
         let data = if params.gemm.b > 1 && target_size != size {
-            let mut on_dev_buf = cuda_bump
-                .alloc_with_fallback::<T>(params.gemm.b * size)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let mut on_dev_buf = cuda_bump.alloc_with_fallback::<T>(params.gemm.b * size)?;
             {
                 let mut slice = on_dev_buf.data_mut();
                 for batch_i in 0..params.gemm.b {
                     let payload = tensor.payload();
                     let data = payload.data::<T>();
                     assert_eq!(size, data.len());
-                    self.stream
-                        .memcpy_dtod(
-                            data.as_ref(),
-                            &mut slice.slice_mut(batch_i * size..batch_i * size + size),
-                        )
-                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                    self.stream.memcpy_dtod(
+                        data.as_ref(),
+                        &mut slice.slice_mut(batch_i * size..batch_i * size + size),
+                    )?;
                 }
             }
             Some(on_dev_buf)
@@ -230,7 +226,7 @@ impl MatMulBackend {
         match dtype {
             DataType::Float16 => self.compute_matmul::<f16>(ctx),
             DataType::Float => self.compute_matmul::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

@@ -1,6 +1,6 @@
-use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::providers::cuda::data::CudaData;
+use crate::providers::cuda::error::CudaError;
+use anyhow::Result;
 use cudarc::driver::{sys, CudaStream, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::DataTypeMap;
 use std::cell::Cell;
@@ -15,9 +15,7 @@ pub struct CudaBump {
 
 impl CudaBump {
     pub fn new(stream: Arc<CudaStream>, size: usize) -> Result<Self> {
-        let slice = stream
-            .alloc_zeros::<u8>(size)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        let slice = stream.alloc_zeros::<u8>(size)?;
         let len = slice.len();
         let ptr = slice.leak();
 
@@ -81,7 +79,7 @@ impl CudaBump {
         Some(cuda_data)
     }
 
-    pub fn alloc_from_slice_with_fallback<T>(&self, src: &[T]) -> Option<CudaData>
+    pub fn alloc_from_slice_with_fallback<T>(&self, src: &[T]) -> Result<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
@@ -91,54 +89,44 @@ impl CudaBump {
             .memcpy_htod(src, cuda_data.data_mut().as_mut())
             .unwrap();
 
-        Some(cuda_data)
+        Ok(cuda_data)
     }
 
     // Todo: mark as unsafe.
-    pub fn alloc_with_fallback<T>(&self, len: usize) -> Option<CudaData>
+    pub fn alloc_with_fallback<T>(&self, len: usize) -> Result<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
         let cuda_data = match self.alloc::<T>(len) {
             Some(data) => data,
-            None => {
-                // Todo: we should return an error from this.
-                unsafe { self.alloc_fallback::<T>(len).unwrap() }
-            }
+            None => unsafe { self.alloc_fallback::<T>(len)? },
         };
 
-        Some(cuda_data)
+        Ok(cuda_data)
     }
 
-    pub fn alloc_with_fallback_zeroed<T>(&self, len: usize) -> Option<CudaData>
+    pub fn alloc_with_fallback_zeroed<T>(&self, len: usize) -> Result<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
         let cuda_data = match self.alloc::<T>(len) {
             Some(mut data) => {
-                // Todo: We should return an error.
                 self.stream
                     .memset_zeros(data.data_mut::<T>().as_mut())
                     .unwrap();
                 data
             }
-            None => {
-                // Todo: we should return an error from this.
-                self.alloc_fallback_zeroed::<T>(len).unwrap()
-            }
+            None => self.alloc_fallback_zeroed::<T>(len)?,
         };
 
-        Some(cuda_data)
+        Ok(cuda_data)
     }
 
     fn alloc_fallback_zeroed<T>(&self, len: usize) -> Result<CudaData>
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
-        let raw_cuda_slice = self
-            .stream
-            .alloc_zeros::<T>(len)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        let raw_cuda_slice = self.stream.alloc_zeros::<T>(len).map_err(CudaError::from)?;
         Ok(CudaData::new(raw_cuda_slice))
     }
 
@@ -146,10 +134,7 @@ impl CudaBump {
     where
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
-        let raw_cuda_slice = self
-            .stream
-            .alloc::<T>(len)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        let raw_cuda_slice = self.stream.alloc::<T>(len).map_err(CudaError::from)?;
         Ok(CudaData::new(raw_cuda_slice))
     }
 

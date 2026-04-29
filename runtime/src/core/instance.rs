@@ -1,21 +1,21 @@
 use crate::core::backend::OperationBackend;
 use crate::core::context::Context;
 use crate::core::device_service::DeviceService;
-use crate::core::error::{BuilderError, Error};
+use crate::core::error::{BuilderError, InferenceError};
 use crate::core::execution_state::ExecutionState;
 use crate::core::instance_state::ModelInstanceState;
+use crate::core::plan::Plan;
 use crate::core::value::Value;
+use crate::providers::cuda::Cuda;
 use anyhow::anyhow;
+use cudarc::driver::CudaContext;
+use rmlk_graph::Graph;
 use rmlk_schema::{Definition, Op, Tensor};
 use std::collections::HashMap;
 use std::result;
 use std::sync::Arc;
-use cudarc::driver::CudaContext;
-use rmlk_graph::Graph;
-use crate::core::plan::Plan;
-use crate::providers::cuda::Cuda;
 
-type Result<T> = std::result::Result<T, Error>;
+type Result<T> = result::Result<T, InferenceError>;
 
 /// A model instance.
 ///
@@ -32,45 +32,24 @@ where
 {
     fn load_inputs(&mut self, input: HashMap<String, Value>) -> Result<()> {
         if input.len() != self.instance_state.graph().input_count() {
-            let mut expected = Vec::new();
-            for input in self.instance_state.graph().inputs() {
-                match self
-                    .instance_state
-                    .graph()
-                    .get_node(input)
-                    .and_then(|n| n.value().name())
-                {
-                    Some(name) => expected.push(name.to_string()),
-                    None => {
-                        return Err(Error::InferenceError {
-                            error: anyhow!("failed to find expected input node with ID `{input}`")
-                        })
-                    }
-                }
-            }
-            return Err(Error::InvalidInputs {
-                received: input,
-                expected,
-            });
+            return Err(InferenceError(anyhow!("invalid number of inputs")));
         }
 
         for (input_name, value) in input {
             let node_id = match self.instance_state.get_input_node_id(&input_name) {
                 Some(node_id) => node_id,
-                None => return Err(Error::UnknownInputName { name: input_name }),
+                None => {
+                    return Err(InferenceError(anyhow!("unknown input: {}", input_name)));
+                }
             };
 
             if self.instance_state.graph().get_node(node_id).is_none() {
-                return Err(Error::InferenceError {
-                    error: anyhow!("failed to find node `{input_name}` with ID `{node_id}`")
-                });
+                return Err(InferenceError(anyhow!(
+                    "failed to find node for `{input_name}` with ID `{node_id}`"
+                )));
             }
 
-            self.execution_state
-                .load_value(node_id, value)
-                .map_err(|e| Error::InferenceError {
-                    error: e
-                })?;
+            self.execution_state.load_value(node_id, value)?;
         }
 
         Ok(())
@@ -81,17 +60,12 @@ where
         for output in self.instance_state.graph().outputs() {
             match self.instance_state.graph().get_node(output) {
                 None => {
-                    return Err(Error::InferenceError {
-                        error: anyhow!("failed to find output node given ID `{output}`")
-                    });
+                    return Err(InferenceError(anyhow!(
+                        "failed to find output node given ID `{output}`"
+                    )));
                 }
                 Some(node) => {
-                    let value =
-                        self.execution_state
-                            .get_value(output)
-                            .map_err(|e| Error::InferenceError {
-                                error: e,
-                            })?;
+                    let value = self.execution_state.get_value(output)?;
 
                     result.insert(
                         node.value()
@@ -130,13 +104,10 @@ where
                 continue;
             }
 
-            let mut ctx =
-                Context::new(&mut self.execution_state, id).map_err(|e| Error::InferenceError {
-                    error: e,
-                })?;
+            let mut ctx = Context::new(&mut self.execution_state, id)?;
 
             if let Err(e) = provider.get_backend(op).and_then(|b| b.compute(&mut ctx)) {
-                return Err(Error::InferenceError { error: e });
+                return Err(InferenceError(e));
             }
         }
 
@@ -216,8 +187,7 @@ impl Builder {
 
         let provider = Cuda::new(default_stream)?;
         let mut store = provider.store()?;
-        store
-            .init(&self.graph, self.initializers)?;
+        store.init(&self.graph, self.initializers)?;
 
         let plan = Plan::new(Box::new([provider]));
         let instance_state = Arc::new(ModelInstanceState::new(

@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::data::CudaData;
 #[cfg(feature = "dump")]
@@ -13,6 +13,7 @@ use num_traits::Num;
 use rmlk_cuda::kernels::expand;
 use rmlk_cuda::kernels::expand::ExpandKernel;
 use rmlk_schema::{DataType, DataTypeMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct ExpandBackend {
@@ -36,7 +37,7 @@ impl ExpandBackend {
             DataType::Int64 => ExpandKernel::FwdI64,
             DataType::Uint64 => ExpandKernel::FwdU64,
             _ => {
-                return Err(InternalError::UnsupportedDataType { dtype }.into());
+                return Err(UnsupportedDataType(dtype).into());
             }
         };
 
@@ -117,7 +118,7 @@ impl ExpandBackend {
             DataType::Uint32 => self.compute_expand::<u32>(ctx),
             DataType::Int64 => self.compute_expand::<i64>(ctx),
             DataType::Uint64 => self.compute_expand::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -155,7 +156,7 @@ fn compute_output_shape(ctx: &Context<Cuda>) -> Result<()> {
     let output_shape = scratch_alloc.allocate(rank)?;
 
     if !utils::compute_broadcast_output_shape(&input_tensor.shape(), target_shape, output_shape) {
-        return Err(InternalError::IncompatibleShapesForBroadcast {
+        return Err(ExpandError::IncompatibleShapesForBroadcast {
             shapes: [
                 (0, input_tensor.shape().to_vec()),
                 (1, shape_tensor.shape().to_vec()),
@@ -208,7 +209,11 @@ fn create_info(ctx: &Context<Cuda>) -> Result<CudaData> {
     }
 
     let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-    Ok(cuda_bump
-        .alloc_from_slice_with_fallback(info)
-        .ok_or(InternalError::CudaBumpAllocatorFailed)?)
+    Ok(cuda_bump.alloc_from_slice_with_fallback(info)?)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExpandError {
+    #[error("incompatible shapes for broadcast: {shapes:?}")]
+    IncompatibleShapesForBroadcast { shapes: HashMap<usize, Vec<usize>> },
 }

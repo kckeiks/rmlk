@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 #[cfg(feature = "dump")]
@@ -32,7 +32,7 @@ impl AdditionBackend {
             DataType::Double => AddKernel::FwdF64,
             DataType::Int32 => AddKernel::FwdI32,
             DataType::Int64 => AddKernel::FwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -72,7 +72,7 @@ impl AdditionBackend {
             DataType::Uint32 => self.compute_addition::<u32>(ctx),
             DataType::Int64 => self.compute_addition::<i64>(ctx),
             DataType::Uint64 => self.compute_addition::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

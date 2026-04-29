@@ -1,4 +1,5 @@
-use crate::core::error::InternalError;
+use crate::attributes::error::AttributeError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 #[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
@@ -51,15 +52,13 @@ impl ConcatBackend {
                             let output_offset =
                                 (outer_i * output_outer_block_size) + (axis_offset + j) * step;
 
-                            self.stream
-                                .memcpy_dtod(
-                                    &input_data.slice(
-                                        (outer_i * outer_block_size) + (j * step)
-                                            ..(outer_i * outer_block_size) + (j * step) + step,
-                                    ),
-                                    &mut output_data.slice_mut(output_offset..output_offset + step),
-                                )
-                                .map_err(|e| InternalError::Device { error: e.into() })?;
+                            self.stream.memcpy_dtod(
+                                &input_data.slice(
+                                    (outer_i * outer_block_size) + (j * step)
+                                        ..(outer_i * outer_block_size) + (j * step) + step,
+                                ),
+                                &mut output_data.slice_mut(output_offset..output_offset + step),
+                            )?;
                         }
                     }
                     axis_offset += dim;
@@ -91,12 +90,12 @@ impl ConcatBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
+            .ok_or(AttributeError::MissingAttributes)
             .map_err(Box::new)?;
 
         // Todo: validate axis.
         let raw_axis = attributes::concat::get_axis(&attrs).ok_or_else(|| {
-            InternalError::MissingAttribute {
+            AttributeError::MissingAttribute {
                 name: "`axis` is missing".to_string(),
             }
         })?;
@@ -138,7 +137,7 @@ impl ConcatBackend {
             DataType::Uint32 => self.compute_concat::<u32>(ctx),
             DataType::Int64 => self.compute_concat::<i64>(ctx),
             DataType::Uint64 => self.compute_concat::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

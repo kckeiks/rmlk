@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda;
 #[cfg(feature = "dump")]
@@ -13,6 +13,7 @@ use num_traits::Num;
 use rmlk_cuda::kernels::whereop;
 use rmlk_cuda::kernels::whereop::WhereKernel;
 use rmlk_schema::{DataType, DataTypeMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct WhereBackend {
@@ -33,7 +34,7 @@ impl WhereBackend {
             DataType::Double => WhereKernel::WhereFwdF64,
             DataType::Int32 => WhereKernel::WhereFwdI32,
             DataType::Int64 => WhereKernel::WhereFwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         whereop::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -148,9 +149,7 @@ impl WhereBackend {
         trace!("[info_on_host={:?}]", info_on_host);
 
         let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-        let info = cuda_bump
-            .alloc_from_slice_with_fallback(info_on_host)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
         let info_data = info.data::<usize>();
 
         {
@@ -190,7 +189,7 @@ impl WhereBackend {
             DataType::Double => self.compute_where::<f64>(ctx),
             DataType::Int32 => self.compute_where::<i32>(ctx),
             DataType::Int64 => self.compute_where::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -240,7 +239,7 @@ fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
             let inter_shape = alloc.allocate_fill(rank, 0)?;
 
             if !utils::compute_broadcast_output_shape(&x.shape(), &y.shape(), inter_shape) {
-                return Err(InternalError::IncompatibleShapesForBroadcast {
+                return Err(WhereError::IncompatibleShapesForBroadcast {
                     shapes: [(1, x.shape().to_vec()), (2, y.shape().to_vec())]
                         .try_into()
                         .expect("Small map so should succeed"),
@@ -252,7 +251,7 @@ fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
 
             if !utils::compute_broadcast_output_shape(inter_shape, &condition.shape(), output_shape)
             {
-                return Err(InternalError::IncompatibleShapesForBroadcast {
+                return Err(WhereError::IncompatibleShapesForBroadcast {
                     shapes: [(0, y.shape().to_vec())]
                         .try_into()
                         .expect("Small map so should succeed"),
@@ -266,4 +265,10 @@ fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WhereError {
+    #[error("incompatible shapes for broadcast: {shapes:?}")]
+    IncompatibleShapesForBroadcast { shapes: HashMap<usize, Vec<usize>> },
 }

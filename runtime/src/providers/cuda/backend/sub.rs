@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 #[cfg(feature = "dump")]
@@ -33,7 +33,7 @@ impl SubBackend {
             DataType::Double => SubKernel::SubFwdF64,
             DataType::Int32 => SubKernel::SubFwdI32,
             DataType::Int64 => SubKernel::SubFwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -71,7 +71,7 @@ impl SubBackend {
             DataType::Double => self.compute_sub::<f64>(ctx),
             DataType::Int32 => self.compute_sub::<i32>(ctx),
             DataType::Int64 => self.compute_sub::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

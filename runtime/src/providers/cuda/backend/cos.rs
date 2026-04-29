@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 #[cfg(feature = "dump")]
@@ -30,7 +30,7 @@ impl CosBackend {
             DataType::Float16 => CosKernel::CosFwdF16,
             DataType::Float => CosKernel::CosFwdF32,
             DataType::Double => CosKernel::CosFwdF64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -65,7 +65,7 @@ impl CosBackend {
             DataType::Float => self.compute_cos::<f32>(ctx),
             DataType::Int32 => self.compute_cos::<i32>(ctx),
             DataType::Int64 => self.compute_cos::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

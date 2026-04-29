@@ -1,5 +1,6 @@
 use crate::attributes;
-use crate::core::error::InternalError;
+use crate::attributes::error::AttributeError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::Cuda;
 use crate::utils::FromBytes;
@@ -78,7 +79,7 @@ impl ConstantBackend {
     pub fn compute(mut self, ctx: &mut Context<Cuda>) -> Result<()> {
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
+            .ok_or(AttributeError::MissingAttributes)
             .map_err(Box::new)?;
 
         debug!("[attributes={:?}]", attrs);
@@ -87,40 +88,40 @@ impl ConstantBackend {
             return match dtype {
                 DataType::Float16 => self.load_from_bytes::<f16>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Float => self.load_from_bytes::<f32>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Double => self.load_from_bytes::<f64>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Int32 => self.load_from_bytes::<i32>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Uint32 => self.load_from_bytes::<u32>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Int64 => self.load_from_bytes::<i64>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
                 DataType::Uint64 => self.load_from_bytes::<u64>(
                     shape,
-                    bytes.ok_or(InternalError::MissingAttributes)?,
+                    bytes.ok_or(AttributeError::MissingAttributes)?,
                     ctx,
                 ),
-                _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+                _ => Err(UnsupportedDataType(dtype).into()),
             };
         }
 
@@ -140,6 +141,6 @@ impl ConstantBackend {
             return self.load_from_values::<i32>(value, ctx, false);
         }
 
-        Err(InternalError::MissingAttributes.into())
+        Err(AttributeError::MissingAttributes.into())
     }
 }

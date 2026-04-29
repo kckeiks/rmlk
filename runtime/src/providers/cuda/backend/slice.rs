@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -38,7 +38,7 @@ impl SliceBackend {
             (DataType::Int32, DataType::Int64) => SliceKernel::FwdI32WithIndexI64,
             (DataType::Int64, DataType::Int32) => SliceKernel::FwdI64WithIndexI32,
             (DataType::Int64, DataType::Int64) => SliceKernel::FwdI64WithIndexI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -111,9 +111,7 @@ impl SliceBackend {
 
             let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
 
-            let info = cuda_bump
-                .alloc_from_slice_with_fallback(info_on_host)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
             let info_data = info.data::<usize>();
 
             let func = self.load_cuda_function(T::data_type(), Tind::data_type())?;
@@ -144,10 +142,7 @@ impl SliceBackend {
                     let steps_ptr = steps.payload();
                     let steps_data = steps_ptr.data::<Tind>();
 
-                    let null_axes = self
-                        .stream
-                        .null::<Tind>()
-                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                    let null_axes = self.stream.null::<Tind>()?;
 
                     unsafe {
                         slice::compute(
@@ -168,10 +163,7 @@ impl SliceBackend {
                     let axes_ptr = axes.payload();
                     let axes_data = axes_ptr.data::<Tind>();
 
-                    let null_steps = self
-                        .stream
-                        .null::<Tind>()
-                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                    let null_steps = self.stream.null::<Tind>()?;
 
                     unsafe {
                         slice::compute(
@@ -189,14 +181,8 @@ impl SliceBackend {
                     }
                 }
                 (Err(_), Err(_)) => {
-                    let null_axes = self
-                        .stream
-                        .null::<Tind>()
-                        .map_err(|e| InternalError::Device { error: e.into() })?;
-                    let null_steps = self
-                        .stream
-                        .null::<Tind>()
-                        .map_err(|e| InternalError::Device { error: e.into() })?;
+                    let null_axes = self.stream.null::<Tind>()?;
+                    let null_steps = self.stream.null::<Tind>()?;
 
                     unsafe {
                         slice::compute(
@@ -242,7 +228,7 @@ impl SliceBackend {
             (DataType::Int32, DataType::Int64) => self.compute_slice::<i32, i64>(ctx),
             (DataType::Int64, DataType::Int32) => self.compute_slice::<i64, i32>(ctx),
             (DataType::Int64, DataType::Int64) => self.compute_slice::<i64, i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype: input_dtype }.into()),
+            _ => Err(UnsupportedDataType(input_dtype).into()),
         }
     }
 }
@@ -408,14 +394,11 @@ where
 
     for (axes_idx, raw_axis) in axes.iter().copied().enumerate() {
         let axis = if raw_axis.is_negative() {
-            let rank =
-                T::try_from(input_shape.len()).map_err(|_| InternalError::UnableToConvertValue)?;
+            let rank = T::try_from(input_shape.len()).map_err(|_| ConversionError)?;
             let diff = rank + raw_axis;
-            diff.to_usize().ok_or(InternalError::UnableToConvertValue)?
+            diff.to_usize().ok_or(ConversionError)?
         } else {
-            raw_axis
-                .to_usize()
-                .ok_or(InternalError::UnableToConvertValue)?
+            raw_axis.to_usize().ok_or(ConversionError)?
         };
 
         if axis >= input_shape.len() {
@@ -429,8 +412,7 @@ where
 
         // The downstream cuda kernel assumes that output_shape[d] <= i32::MAX, i64::MAX.
         // This conversion is important and must not be removed carelessly.
-        let dim =
-            T::try_from(input_shape[axis]).map_err(|_| InternalError::UnableToConvertValue)?;
+        let dim = T::try_from(input_shape[axis]).map_err(|_| ConversionError)?;
 
         let mut start = starts[axes_idx];
         if start.is_negative() {
@@ -465,16 +447,14 @@ where
                 let diff = end
                     .checked_sub(&start)
                     .ok_or(Box::new(SliceError::InvalidDifference))?;
-                output_shape[axis] = ceil_div(diff, step)
-                    .to_usize()
-                    .ok_or(InternalError::UnableToConvertValue)?;
+                output_shape[axis] = ceil_div(diff, step).to_usize().ok_or(ConversionError)?;
             } else {
                 let diff = start
                     .checked_sub(&end)
                     .ok_or(Box::new(SliceError::InvalidDifference))?;
                 output_shape[axis] = ceil_div(diff, step.abs())
                     .to_usize()
-                    .ok_or(InternalError::UnableToConvertValue)?;
+                    .ok_or(ConversionError)?;
             }
         }
     }
@@ -575,7 +555,8 @@ mod tests {
         let err =
             compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[4], Some(&[0]), &mut out)
                 .unwrap_err();
-        matches!(err.downcast(), Ok(InternalError::InvalidInput { .. }));
+        let err = err.downcast::<SliceError>().unwrap();
+        matches!(err, SliceError::ZeroStep);
     }
 
     #[test]
@@ -585,7 +566,8 @@ mod tests {
         let err =
             compute_output_shape_helper::<i64>(&shape, &[0], &[0], &[4], Some(&[1, 2]), &mut out)
                 .unwrap_err();
-        matches!(err.downcast(), Ok(InternalError::InvalidInput { .. }));
+        let err = err.downcast::<SliceError>().unwrap();
+        matches!(err, SliceError::StepsAndAxesLengthMismatch);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 #[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
@@ -88,7 +88,7 @@ impl GatherBackend {
                 )?;
             }
             _ => {
-                return Err(InternalError::UnsupportedDataType { dtype }.into());
+                return Err(UnsupportedDataType(dtype).into());
             }
         }
 
@@ -144,7 +144,7 @@ impl GatherBackend {
             DataType::Uint32 => self.run_gather::<u32>(ctx),
             DataType::Int64 => self.run_gather::<i64>(ctx),
             DataType::Uint64 => self.run_gather::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -248,9 +248,7 @@ where
                 .slice_mut(slice_count * batch_size..slice_count * batch_size + batch_size);
 
             // Write to the output slice.
-            stream
-                .memcpy_dtod(&subslice, &mut out_slice)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
+            stream.memcpy_dtod(&subslice, &mut out_slice)?;
 
             slice_count += 1;
         }

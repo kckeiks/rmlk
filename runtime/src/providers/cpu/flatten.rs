@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
@@ -27,7 +27,7 @@ impl FlattenTemplate {
             DataType::Uint32 => compute::<u32>(ctx),
             DataType::Int64 => compute::<i64>(ctx),
             DataType::Uint64 => compute::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

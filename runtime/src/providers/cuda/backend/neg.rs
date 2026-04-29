@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 #[cfg(feature = "dump")]
@@ -32,7 +32,7 @@ impl NegBackend {
             DataType::Float => NegKernel::NegFwdF32,
             DataType::Double => NegKernel::NegFwdF64,
             DataType::Int32 => NegKernel::NegFwdI32,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -69,7 +69,7 @@ impl NegBackend {
             DataType::Double => self.compute_neg::<f64>(ctx),
             DataType::Int32 => self.compute_neg::<i32>(ctx),
             DataType::Int64 => self.compute_neg::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

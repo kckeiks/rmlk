@@ -1,5 +1,4 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
 use crate::core::Context;
 use crate::providers::cuda;
 use crate::providers::cuda::allocator::CudaBump;
@@ -12,6 +11,7 @@ use log::debug;
 use rmlk_cuda::kernels::binary;
 use rmlk_schema::DataTypeMap;
 use std::cmp;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -127,9 +127,7 @@ fn create_info_data_on_dev(
     info_buffer[rank..2 * rank].copy_from_slice(a_stride);
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
-    Ok(cuda_alloc
-        .alloc_from_slice_with_fallback(info_buffer)
-        .ok_or(InternalError::CudaBumpAllocatorFailed)?)
+    Ok(cuda_alloc.alloc_from_slice_with_fallback(info_buffer)?)
 }
 
 fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
@@ -149,7 +147,7 @@ fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
             let c_shape = alloc.allocate_fill(rank, 0)?;
 
             if !utils::compute_broadcast_output_shape(&a.shape(), &b.shape(), c_shape) {
-                return Err(InternalError::IncompatibleTensorShape {
+                return Err(BinaryOpError::IncompatibleTensorShape {
                     shapes: [(0, a.shape().to_vec()), (1, b.shape().to_vec())]
                         .try_into()
                         .expect("Small map so should succeed"),
@@ -163,4 +161,10 @@ fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BinaryOpError {
+    #[error("incompatible tensor shapes: {shapes:?}")]
+    IncompatibleTensorShape { shapes: HashMap<usize, Vec<usize>> },
 }

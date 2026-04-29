@@ -1,5 +1,5 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
+use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
 use crate::providers::cuda::backend::common;
@@ -105,7 +105,7 @@ impl ActivationBackend {
             DataType::Double => self.compute_activation::<f64, T>(ctx),
             DataType::Int32 => self.compute_activation::<i32, T>(ctx),
             DataType::Int64 => self.compute_activation::<i64, T>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -140,9 +140,7 @@ fn alloc_shape_and_stride<'a>(
         let stride_tmp = scratch_alloc.allocate_fill::<i32>(4, 0)?;
         let start = 4 - x.shape().len();
         for i in 0..x.shape().len() {
-            shape_tmp[start + i] = x.shape()[i]
-                .to_i32()
-                .ok_or(InternalError::UnableToConvertValue)?;
+            shape_tmp[start + i] = x.shape()[i].to_i32().ok_or(ConversionError)?;
         }
         utils::compute_stride(shape_tmp, stride_tmp);
         (shape_tmp, stride_tmp)

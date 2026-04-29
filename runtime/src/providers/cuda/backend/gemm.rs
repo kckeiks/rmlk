@@ -1,5 +1,5 @@
 use crate::attributes::gemm::GemmAttributes;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 use crate::providers::cuda::Cuda;
@@ -16,7 +16,6 @@ use rmlk_cuda::kernels::{add, binary, gemm};
 use rmlk_cuda::params::CudaParamMap;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::cmp;
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct GemmBackend {
@@ -35,7 +34,7 @@ impl GemmBackend {
             DataType::Float16 => AddKernel::FwdAlphaBetaF16,
             DataType::Float => AddKernel::FwdAlphaBetaF32,
             DataType::Double => AddKernel::FwdAlphaBetaF64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         add::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
@@ -73,9 +72,7 @@ impl GemmBackend {
         info_on_host[2 * rank..].copy_from_slice(&y.stride());
 
         let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-        let info = cuda_bump
-            .alloc_from_slice_with_fallback(info_on_host)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
         let info_data = info.data::<usize>();
 
         unsafe {
@@ -177,7 +174,7 @@ impl GemmBackend {
         match dtype {
             DataType::Float16 => self.compute_gemm::<f16>(ctx),
             DataType::Float => self.compute_gemm::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -200,8 +197,8 @@ fn prepare_gemm_params(attrs: &GemmAttributes, ctx: &Context<Cuda>) -> Result<Ge
     let output_ndims = cmp::max(a.shape().len(), b.shape().len());
     if output_ndims != 2 {
         return Err(GemmError::Expected2DInputs {
-            a_shape: a.shape().to_vec(),
-            b_shape: b.shape().to_vec(),
+            actual_a_shape: a.shape().to_vec(),
+            actual_b_shape: b.shape().to_vec(),
         }
         .into());
     }
@@ -239,29 +236,20 @@ fn compute_bias_shape(shape: &[usize], params: &GemmParams) -> Result<([usize; 2
             let second_dim_stride = if shape[0] == 1 { 0 } else { shape[0] };
             Ok(([shape[0], shape[1]], [first_dim_stride, second_dim_stride]))
         }
-        _ => Err(InternalError::InvalidTensorShape {
+        _ => Err(GemmError::InvalidTensorShape {
             shape: shape.to_vec(),
         }
         .into()),
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum GemmError {
+    #[error("expected inputs with rank 2: A shape `{actual_a_shape:?}` and B shape `{actual_b_shape:?}`")]
     Expected2DInputs {
-        a_shape: Vec<usize>,
-        b_shape: Vec<usize>,
+        actual_a_shape: Vec<usize>,
+        actual_b_shape: Vec<usize>,
     },
+    #[error("invalid tensor shape: {shape:?}")]
+    InvalidTensorShape { shape: Vec<usize> },
 }
-
-impl Display for GemmError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GemmError::Expected2DInputs { a_shape, b_shape } => {
-                write!(f, "expected 2d inputs, got {:?} and {:?}", a_shape, b_shape)
-            }
-        }
-    }
-}
-
-impl std::error::Error for GemmError {}

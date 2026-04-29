@@ -1,6 +1,6 @@
 use crate::attributes;
 use crate::attributes::scatter_nd::Reduction;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -14,7 +14,6 @@ use num_traits::Num;
 use rmlk_cuda::kernels::scatter_nd;
 use rmlk_cuda::kernels::scatter_nd::ScatterNdKernel;
 use rmlk_schema::{DataType, DataTypeMap};
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct ScatterNdBackend {
@@ -70,7 +69,7 @@ impl ScatterNdBackend {
             Some(Reduction::Min) if matches!(dtype, DataType::Double) => ScatterNdKernel::MinFwdF64,
             Some(Reduction::Min) if matches!(dtype, DataType::Int32) => ScatterNdKernel::MinFwdI32,
             Some(Reduction::Min) if matches!(dtype, DataType::Int64) => ScatterNdKernel::MinFwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         scatter_nd::load_kernel(self.stream.context(), kernel).map_err(Into::into)
@@ -94,7 +93,7 @@ impl ScatterNdBackend {
             );
 
             if data_tensor.is_scalar() {
-                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+                return Err(ScatterNdError::ScalarInputsAreNotAllowed.into());
             }
 
             let indices_tensor = ctx.get_input(1)?;
@@ -107,7 +106,7 @@ impl ScatterNdBackend {
             );
 
             if indices_tensor.is_scalar() {
-                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+                return Err(ScatterNdError::ScalarInputsAreNotAllowed.into());
             }
 
             let updates_tensor = ctx.get_input(2)?;
@@ -120,7 +119,7 @@ impl ScatterNdBackend {
             );
 
             if updates_tensor.is_scalar() {
-                return Err(InternalError::ScalarInputsAreNotAllowed.into());
+                return Err(ScatterNdError::ScalarInputsAreNotAllowed.into());
             }
 
             let output_tensor = ctx.get_output(0)?;
@@ -174,14 +173,10 @@ impl ScatterNdBackend {
             );
 
             let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-            let info = cuda_bump
-                .alloc_from_slice_with_fallback(info_on_host)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
             let info_data = info.data::<usize>();
 
-            let mut error = cuda_bump
-                .alloc_with_fallback_zeroed::<i32>(1)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let mut error = cuda_bump.alloc_with_fallback_zeroed::<i32>(1)?;
             let mut error_data = error.data_mut::<i32>();
 
             unsafe {
@@ -201,9 +196,7 @@ impl ScatterNdBackend {
             }
 
             let error_buf = scratch_alloc.allocate::<i32>(1)?;
-            self.stream
-                .memcpy_dtoh(error_data.as_ref(), error_buf)
-                .map_err(|e| InternalError::Device { error: e.into() })?;
+            self.stream.memcpy_dtoh(error_data.as_ref(), error_buf)?;
 
             if error_buf[0] != 0 {
                 return Err(ScatterNdError::KernelFailed { code: error_buf[0] }.into());
@@ -227,22 +220,15 @@ impl ScatterNdBackend {
             DataType::Uint32 => self.compute_scatter_nd::<u32>(ctx),
             DataType::Int64 => self.compute_scatter_nd::<i64>(ctx),
             DataType::Uint64 => self.compute_scatter_nd::<u64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ScatterNdError {
+    #[error("kernel failed with code {code}")]
     KernelFailed { code: i32 },
+    #[error("scalar inputs are not allowed")]
+    ScalarInputsAreNotAllowed,
 }
-
-impl Display for ScatterNdError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScatterNdError::KernelFailed { code } => write!(f, "kernel failed: {}", code),
-        }
-    }
-}
-
-impl std::error::Error for ScatterNdError {}

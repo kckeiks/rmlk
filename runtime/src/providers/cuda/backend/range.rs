@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -128,7 +128,7 @@ impl RangeBackend {
             DataType::Double => self.compute_range::<f64>(ctx),
             DataType::Int32 => self.compute_range::<i32>(ctx),
             DataType::Int64 => self.compute_range::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -140,14 +140,14 @@ pub trait ElementCount {
 impl ElementCount for i32 {
     fn element_count(start: i32, limit: i32, delta: i32) -> Result<usize> {
         let count = ((limit - start) / delta).max(0);
-        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue.into())
+        usize::try_from(count).map_err(|_| ConversionError.into())
     }
 }
 
 impl ElementCount for i64 {
     fn element_count(start: i64, limit: i64, delta: i64) -> Result<usize> {
         let count = ((limit - start) / delta).max(0);
-        usize::try_from(count).map_err(|_| InternalError::UnableToConvertValue.into())
+        usize::try_from(count).map_err(|_| ConversionError.into())
     }
 }
 
@@ -155,15 +155,13 @@ impl ElementCount for f16 {
     fn element_count(start: f16, limit: f16, delta: f16) -> Result<usize> {
         let count = ((limit - start) / delta).ceil();
         if count < f16::from_f32(0.0) {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
         // Todo: circle back about this.
         if count > f16::MAX {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
-        count
-            .to_usize()
-            .ok_or(InternalError::UnableToConvertValue.into())
+        count.to_usize().ok_or(ConversionError.into())
     }
 }
 
@@ -171,10 +169,10 @@ impl ElementCount for f32 {
     fn element_count(start: f32, limit: f32, delta: f32) -> Result<usize> {
         let count = ((limit - start) / delta).ceil();
         if count < 0.0 {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
         if count > (usize::MAX as f32) {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
         Ok(count as usize)
     }
@@ -184,10 +182,10 @@ impl ElementCount for f64 {
     fn element_count(start: f64, limit: f64, delta: f64) -> Result<usize> {
         let count = ((limit - start) / delta).ceil();
         if count < 0.0 {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
         if count > (usize::MAX as f64) {
-            return Err(InternalError::UnableToConvertValue.into());
+            return Err(ConversionError.into());
         }
         Ok(count as usize)
     }
@@ -199,7 +197,7 @@ where
     T: Copy + Num + NumCast,
 {
     for idx in 0..elem_count {
-        let i = T::from(idx).ok_or(InternalError::UnableToConvertValue)?;
+        let i = T::from(idx).ok_or(ConversionError)?;
         output[idx] = start + (i * delta);
     }
 

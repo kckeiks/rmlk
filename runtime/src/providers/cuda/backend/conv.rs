@@ -1,6 +1,7 @@
 use crate::attributes::conv::ConvAttributes;
+use crate::attributes::error::AttributeError;
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::{Cuda, Tensor};
 use crate::utils;
@@ -37,7 +38,7 @@ impl ConvolutionBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
+            .ok_or(AttributeError::MissingAttributes)
             .map_err(Box::new)?;
 
         let conv_attrs =
@@ -98,7 +99,7 @@ impl ConvolutionBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
+            .ok_or(AttributeError::MissingAttributes)
             .map_err(Box::new)?;
 
         let conv_attrs =
@@ -204,7 +205,7 @@ impl ConvolutionBackend {
             DataType::Double => self.compute_convolution::<f64>(ctx),
             DataType::Int32 => self.compute_convolution::<i32>(ctx),
             DataType::Int64 => self.compute_convolution::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

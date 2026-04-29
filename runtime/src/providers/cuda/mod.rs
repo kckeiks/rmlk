@@ -4,6 +4,7 @@ mod data;
 #[cfg(feature = "dump")]
 pub mod debug;
 mod device_service;
+mod error;
 mod store;
 mod tensor;
 mod utils;

@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 #[cfg(feature = "dump")]
@@ -86,7 +86,7 @@ impl PowBackend {
             (DataType::Int64, DataType::Float16) => PowKernel::PowFwdI64F16,
             (DataType::Int64, DataType::Float) => PowKernel::PowFwdI64F32,
             (DataType::Int64, DataType::Double) => PowKernel::PowFwdI64F64,
-            (_, dtype2) => return Err(InternalError::UnsupportedDataType { dtype: dtype2 }.into()),
+            (_, dtype2) => return Err(UnsupportedDataType(dtype2).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -176,7 +176,7 @@ impl PowBackend {
             // (DataType::Float16, DataType::Uint64) => self.compute_pow::<f16, u64>(ctx),
             // (DataType::Float16, DataType::Int8) => self.compute_pow::<f16, i8>(ctx),
             // (DataType::Float16, DataType::Int16) => self.compute_pow::<f16, i16>(ctx),
-            (_, dtype2) => Err(InternalError::UnsupportedDataType { dtype: dtype2 }.into()),
+            (_, dtype2) => Err(UnsupportedDataType(dtype2).into()),
         }
     }
 }

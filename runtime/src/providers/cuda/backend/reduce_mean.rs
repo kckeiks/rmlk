@@ -1,5 +1,5 @@
 use crate::attributes::reduce_mean;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 use crate::providers::cuda;
@@ -33,7 +33,7 @@ impl ReduceMeanBackend {
             DataType::Double => ReduceKernel::FwdF64,
             DataType::Int32 => ReduceKernel::FwdI32,
             DataType::Int64 => ReduceKernel::FwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel);
@@ -173,14 +173,10 @@ impl ReduceMeanBackend {
             info_on_host[rank..2 * rank].copy_from_slice(&input_stride);
 
             let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-            let info = cuda_bump
-                .alloc_from_slice_with_fallback(info_on_host)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
             let info_data = info.data::<usize>();
 
-            let axes = cuda_bump
-                .alloc_from_slice_with_fallback(axes)
-                .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+            let axes = cuda_bump.alloc_from_slice_with_fallback(axes)?;
             let axes_data = axes.data::<usize>();
 
             let input_payload = input.payload();
@@ -231,7 +227,7 @@ impl ReduceMeanBackend {
             DataType::Double => self.compute_reduce_mean::<f64>(ctx),
             DataType::Int32 => self.compute_reduce_mean::<i32>(ctx),
             DataType::Int64 => self.compute_reduce_mean::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

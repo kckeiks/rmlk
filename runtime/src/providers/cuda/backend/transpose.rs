@@ -1,6 +1,6 @@
 use crate::attributes::transpose;
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
+use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -33,7 +33,7 @@ impl TransposeBackend {
             DataType::Double => TransposeKernel::FwdF64,
             DataType::Int32 => TransposeKernel::FwdI32,
             DataType::Int64 => TransposeKernel::FwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -58,9 +58,7 @@ impl TransposeBackend {
         let (perm, output_shape) = compute_perm_and_output_shape(ctx, &scratch_alloc)?;
 
         let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-        let perm_on_dev = cuda_bump
-            .alloc_from_slice_with_fallback(perm)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let perm_on_dev = cuda_bump.alloc_from_slice_with_fallback(perm)?;
         let perm_data = perm_on_dev.data::<usize>();
 
         let input = ctx.get_input(0)?;
@@ -92,9 +90,7 @@ impl TransposeBackend {
         info_on_host[rank..2 * rank].copy_from_slice(&input.stride());
         info_on_host[2 * rank..].copy_from_slice(&output.stride());
 
-        let info = cuda_bump
-            .alloc_from_slice_with_fallback(info_on_host)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
         let info_data = info.data::<usize>();
 
         {
@@ -130,7 +126,7 @@ impl TransposeBackend {
             DataType::Double => self.compute_transpose::<f64>(ctx),
             DataType::Int32 => self.compute_transpose::<i32>(ctx),
             DataType::Int64 => self.compute_transpose::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -166,7 +162,7 @@ fn compute_perm_and_output_shape<'a>(
 
             for (dst_i, dim_i) in perm.iter().enumerate() {
                 // Todo: add a more detailed error message.
-                let i = usize::try_from(*dim_i).map_err(|_| InternalError::UnableToConvertValue)?;
+                let i = usize::try_from(*dim_i).map_err(|_| ConversionError)?;
                 if i >= output_shape.len() {
                     return Err(TransposeError::PermIndexOutOfBounds { index: *dim_i }.into());
                 }

@@ -1,5 +1,5 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
+use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
 use crate::providers::cuda::backend::common;
@@ -43,7 +43,7 @@ impl SoftmaxBackend {
 
         // We only support these two axis options.
         if !(axis == -1 || (axis == 1 && rank == 4)) {
-            return Err(InternalError::UnsupportedInputValues {
+            return Err(SoftmaxError::UnsupportedInputValues {
                 message: format!("unsupported inputs axis `{axis}` and rank `{rank}"),
             }
             .into());
@@ -113,7 +113,7 @@ impl SoftmaxBackend {
 
         match dtype {
             DataType::Float => self.compute_softmax::<f32>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -152,7 +152,13 @@ where
 {
     let rank = shape.len();
     let batch_dim = shape[..rank - 1].iter().product::<usize>();
-    dst[0] = T::try_from(batch_dim).map_err(|_| InternalError::UnableToConvertValue)?;
-    dst[1] = T::try_from(shape[rank - 1]).map_err(|_| InternalError::UnableToConvertValue)?;
+    dst[0] = T::try_from(batch_dim).map_err(|_| ConversionError)?;
+    dst[1] = T::try_from(shape[rank - 1]).map_err(|_| ConversionError)?;
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SoftmaxError {
+    #[error("unsupported input values: {message}")]
+    UnsupportedInputValues { message: String },
 }

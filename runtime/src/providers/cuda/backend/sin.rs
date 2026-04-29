@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 #[cfg(feature = "dump")]
@@ -31,7 +31,7 @@ impl SinBackend {
             DataType::Float16 => SinKernel::SinFwdF16,
             DataType::Float => SinKernel::SinFwdF32,
             DataType::Double => SinKernel::SinFwdF64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -68,7 +68,7 @@ impl SinBackend {
             DataType::Float16 => self.compute_sin::<f16>(ctx),
             DataType::Float => self.compute_sin::<f32>(ctx),
             DataType::Double => self.compute_sin::<f64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

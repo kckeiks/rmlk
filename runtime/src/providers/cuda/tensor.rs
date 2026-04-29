@@ -1,8 +1,7 @@
-use crate::core::error::InternalError;
-use crate::core::error::Result;
 use crate::providers::cuda::allocator::CudaBump;
 use crate::providers::cuda::data::{CudaData, DataView};
 use crate::utils::Shape;
+use anyhow::{anyhow, Result};
 use cudarc::driver::{DeviceRepr, ValidAsZeroBits};
 use log::debug;
 use rmlk_schema::{DataType, DataTypeMap};
@@ -101,12 +100,12 @@ impl Tensor {
         assert_eq!(self.dtype(), T::data_type());
 
         let ref_mut = self.payload.borrow();
-        let cuda_data = ref_mut.as_ref().ok_or(InternalError::MissingDeviceData)?;
+        let cuda_data = ref_mut
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing device data"))?;
         let data = cuda_data.data::<T>();
         let stream = data.stream().clone();
-        Ok(stream
-            .memcpy_dtoh(data.as_ref(), dst)
-            .map_err(|e| InternalError::Device { error: e.into() })?)
+        Ok(stream.memcpy_dtoh(data.as_ref(), dst)?)
     }
 
     pub fn write_payload<T>(&self, src: &DataView<T>) -> Result<()>
@@ -115,14 +114,9 @@ impl Tensor {
     {
         let mut ref_mut = self.payload.borrow_mut();
 
-        let mut cuda_data = self
-            .allocator
-            .alloc_with_fallback::<T>(src.len())
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let mut cuda_data = self.allocator.alloc_with_fallback::<T>(src.len())?;
         let stream = cuda_data.data::<T>().stream().clone();
-        stream
-            .memcpy_dtod(src.as_ref(), cuda_data.data_mut::<T>().as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        stream.memcpy_dtod(src.as_ref(), cuda_data.data_mut::<T>().as_mut())?;
 
         ref_mut.replace(cuda_data);
 
@@ -135,14 +129,9 @@ impl Tensor {
     {
         let mut ref_mut = self.payload.borrow_mut();
 
-        let mut cuda_data = self
-            .allocator
-            .alloc_with_fallback::<T>(src.len())
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let mut cuda_data = self.allocator.alloc_with_fallback::<T>(src.len())?;
         let stream = cuda_data.data::<T>().stream().clone();
-        stream
-            .memcpy_htod(src, cuda_data.data_mut::<T>().as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        stream.memcpy_htod(src, cuda_data.data_mut::<T>().as_mut())?;
 
         ref_mut.replace(cuda_data);
 
@@ -154,10 +143,7 @@ impl Tensor {
         T: DataTypeMap + DeviceRepr + ValidAsZeroBits,
     {
         let mut ref_mut = self.payload.borrow_mut();
-        let cuda_data = self
-            .allocator
-            .alloc_with_fallback::<T>(len)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let cuda_data = self.allocator.alloc_with_fallback::<T>(len)?;
         ref_mut.replace(cuda_data);
         Ok(())
     }

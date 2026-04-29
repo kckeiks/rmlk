@@ -1,7 +1,7 @@
 use crate::attributes::cast;
-use crate::core::error::InternalError;
 use crate::core::Context;
 
+use crate::attributes::error::AttributeError;
 use crate::providers::cuda::backend::common;
 #[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
@@ -130,7 +130,7 @@ impl CastBackend {
             .map(|attrs| cast::get_value(&attrs))
             .transpose()
             .map(Option::flatten)?
-            .ok_or_else(|| InternalError::MissingAttribute {
+            .ok_or_else(|| AttributeError::MissingAttribute {
                 name: "missing `to` cast attribute".to_string(),
             })?;
 

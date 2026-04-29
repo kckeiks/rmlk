@@ -1,5 +1,5 @@
 use crate::core::device_service::DeviceData;
-use crate::core::error::{InternalError, Result};
+use anyhow::Result;
 use cudarc::driver::sys::CUdeviceptr;
 use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use rmlk_schema::{DataType, DataTypeMap};
@@ -89,9 +89,7 @@ impl CudaData {
         T: DataTypeMap + ValidAsZeroBits + DeviceRepr,
     {
         let stream = self.stream.clone();
-        stream
-            .memset_zeros(self.data_mut::<T>().as_mut())
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        stream.memset_zeros(self.data_mut::<T>().as_mut())?;
         Ok(())
     }
 

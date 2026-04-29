@@ -1,5 +1,4 @@
 use crate::core::device_service::DeviceService;
-use crate::core::error::InternalError;
 use crate::providers::cpu::flatten::FlattenTemplate;
 use crate::providers::cuda::activation::ActivationBackend;
 use crate::providers::cuda::add::AdditionBackend;
@@ -76,10 +75,7 @@ impl Cuda {
     where
         T: Unpin + DeviceRepr + DataTypeMap,
     {
-        let ptr = self
-            .stream
-            .memcpy_stod::<T, _>(&data)
-            .map_err(|e| InternalError::Device { error: e.into() })?;
+        let ptr = self.stream.memcpy_stod::<T, _>(&data)?;
         Ok(CudaData::new(ptr))
     }
 
@@ -88,10 +84,7 @@ impl Cuda {
         T: Clone + Default + Unpin + DeviceRepr + DataTypeMap,
     {
         let ptr = data.data::<T>();
-        Ok(self
-            .stream
-            .memcpy_dtov::<T, _>(ptr.as_ref())
-            .map_err(|e| InternalError::Device { error: e.into() })?)
+        Ok(self.stream.memcpy_dtov::<T, _>(ptr.as_ref())?)
     }
 }
 
@@ -205,7 +198,6 @@ impl DeviceService for Cuda {
     fn alloc_zeros_float(&self, len: usize) -> Result<CudaData> {
         self.stream
             .alloc_zeros::<f32>(len)
-            .map_err(|e| InternalError::Device { error: e.into() })
             .map_err(Into::into)
             .map(CudaData::new)
     }

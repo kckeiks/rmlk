@@ -1,7 +1,8 @@
 use crate::attributes::pooling::MaxPoolAttributes;
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
+use crate::attributes::error::AttributeError;
 use crate::providers::cuda::Cuda;
 use anyhow::Result;
 use cudarc::cudnn::CudnnDataType;
@@ -42,7 +43,7 @@ impl MaxPoolBackend {
 
         let attrs = ctx
             .get_attributes()
-            .ok_or(InternalError::MissingAttributes)
+            .ok_or(AttributeError::MissingAttributes)
             .map_err(Box::new)?;
         let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
 
@@ -93,7 +94,7 @@ impl MaxPoolBackend {
             DataType::Double => self.compute_max_pool::<f64>(ctx),
             DataType::Int32 => self.compute_max_pool::<i32>(ctx),
             DataType::Int64 => self.compute_max_pool::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -113,7 +114,7 @@ fn comput_output_shape(ctx: &Context<Cuda>) -> Result<()> {
 
     let attrs = ctx
         .get_attributes()
-        .ok_or(InternalError::MissingAttributes)
+        .ok_or(AttributeError::MissingAttributes)
         .map_err(Box::new)?;
     let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
 

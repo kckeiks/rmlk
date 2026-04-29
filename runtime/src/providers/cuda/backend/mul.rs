@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 #[cfg(feature = "dump")]
@@ -32,7 +32,7 @@ impl MulBackend {
             DataType::Double => MulKernel::FwdF64,
             DataType::Int32 => MulKernel::FwdI32,
             DataType::Int64 => MulKernel::FwdI64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -70,7 +70,7 @@ impl MulBackend {
             DataType::Double => self.compute_mul::<f64>(ctx),
             DataType::Int32 => self.compute_mul::<i32>(ctx),
             DataType::Int64 => self.compute_mul::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

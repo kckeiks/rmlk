@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 #[cfg(feature = "dump")]
@@ -50,7 +50,7 @@ impl ShapeBackend {
             .map(|attrs| attributes::shape::get_start(attrs.as_ref()))
             .unwrap_or(0);
         let raw_end = match attrs.and_then(|attrs| attributes::shape::get_end(&attrs)) {
-            None => rank.to_i32().ok_or(InternalError::UnsupportedRankSize {
+            None => rank.to_i32().ok_or(ShapeError::UnsupportedRankSize {
                 message: format!("failed to convert `{rank}` to i32"),
             })?,
             Some(end) => end,
@@ -94,7 +94,7 @@ impl ShapeBackend {
             DataType::Double => self.compute_shape::<f64>(ctx),
             DataType::Int32 => self.compute_shape::<i32>(ctx),
             DataType::Int64 => self.compute_shape::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }
@@ -105,4 +105,10 @@ pub fn compute_output_shape(start: usize, end: usize, ctx: &Context<Cuda>) -> Re
     let tensor = ctx.get_output(0)?;
     tensor.copy_shape_from_slice(tensor_shape_buf);
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ShapeError {
+    #[error("unsupported rank size: {message}")]
+    UnsupportedRankSize { message: String },
 }

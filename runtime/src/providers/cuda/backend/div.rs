@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::binary;
 #[cfg(feature = "dump")]
@@ -33,7 +33,7 @@ impl DivBackend {
             DataType::Int32 => DivKernel::DivFwdI32,
             DataType::Int64 => DivKernel::DivFwdI64,
             _ => {
-                return Err(InternalError::UnsupportedDataType { dtype }.into());
+                return Err(UnsupportedDataType(dtype).into());
             }
         };
 
@@ -72,7 +72,7 @@ impl DivBackend {
             DataType::Double => self.compute_div::<f64>(ctx),
             DataType::Int32 => self.compute_div::<i32>(ctx),
             DataType::Int64 => self.compute_div::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

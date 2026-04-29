@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 use crate::providers::cuda::backend::unary;
 #[cfg(feature = "dump")]
@@ -30,7 +30,7 @@ impl SqrtBackend {
             DataType::Float16 => SqrtKernel::FwdF16,
             DataType::Float => SqrtKernel::FwdF32,
             DataType::Double => SqrtKernel::FwdF64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -66,7 +66,7 @@ impl SqrtBackend {
             DataType::Float16 => self.compute_sqrt::<f16>(ctx),
             DataType::Float => self.compute_sqrt::<f32>(ctx),
             DataType::Double => self.compute_sqrt::<f64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

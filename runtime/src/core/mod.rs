@@ -11,6 +11,6 @@ pub mod device_service;
 pub mod error;
 
 pub use context::Context;
+pub use instance::Builder;
 pub use instance::ModelInstance;
 pub use value::Value;
-pub use instance::Builder;

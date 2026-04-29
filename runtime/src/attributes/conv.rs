@@ -1,5 +1,4 @@
 use crate::core::allocators::ScratchAllocator;
-use crate::core::error::InternalError;
 use anyhow::Result;
 use rmlk_schema::Attribute;
 use std::collections::HashMap;
@@ -103,11 +102,3 @@ impl Display for ConvAttributesError {
 }
 
 impl std::error::Error for ConvAttributesError {}
-
-impl From<ConvAttributesError> for InternalError {
-    fn from(value: ConvAttributesError) -> Self {
-        InternalError::Attribute {
-            inner: Box::new(value),
-        }
-    }
-}

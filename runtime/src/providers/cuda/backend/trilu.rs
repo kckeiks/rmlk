@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 #[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
@@ -37,7 +37,7 @@ impl TriluBackend {
             DataType::Uint32 => TriluKernel::FwdU32,
             DataType::Int64 => TriluKernel::FwdI64,
             DataType::Uint64 => TriluKernel::FwdU64,
-            _ => return Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => return Err(UnsupportedDataType(dtype).into()),
         };
 
         debug!("[kernel={:?}]", kernel_name);
@@ -115,9 +115,7 @@ impl TriluBackend {
         info_on_host[TENSOR_3D_RANK..].copy_from_slice(&batch_stride);
 
         let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-        let info = cuda_bump
-            .alloc_from_slice_with_fallback(info_on_host)
-            .ok_or(InternalError::CudaBumpAllocatorFailed)?;
+        let info = cuda_bump.alloc_from_slice_with_fallback(info_on_host)?;
         let info_data = info.data::<usize>();
 
         let input_ptr = input_tensor.payload();
@@ -156,7 +154,7 @@ impl TriluBackend {
             DataType::Double => self.compute_trilu::<f64>(ctx),
             DataType::Int32 => self.compute_trilu::<i32>(ctx),
             DataType::Int64 => self.compute_trilu::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

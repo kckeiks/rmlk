@@ -1,4 +1,4 @@
-use crate::core::error::InternalError;
+use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
 use crate::providers::cuda::Cuda;
@@ -89,7 +89,7 @@ impl GlobalAverageBackend {
             DataType::Double => self.compute_global_average_pool::<f64>(ctx),
             DataType::Int32 => self.compute_global_average_pool::<i32>(ctx),
             DataType::Int64 => self.compute_global_average_pool::<i64>(ctx),
-            _ => Err(InternalError::UnsupportedDataType { dtype }.into()),
+            _ => Err(UnsupportedDataType(dtype).into()),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::core::error::Error;
+use crate::core::error::InferenceError;
 use half::f16;
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub(crate) enum InnerValue {
 }
 
 impl TryFrom<Value> for Vec<f16> {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
@@ -29,7 +29,7 @@ impl TryFrom<Value> for Vec<f16> {
 }
 
 impl TryFrom<Value> for Vec<f32> {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
@@ -41,9 +41,9 @@ impl TryFrom<Value> for Vec<f32> {
 
 impl<T> TryFrom<Value> for (Vec<T>, Vec<usize>)
 where
-    Vec<T>: TryFrom<Value, Error = Error>,
+    Vec<T>: TryFrom<Value, Error = InferenceError>,
 {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(mut value: Value) -> Result<Self, Self::Error> {
         // It's ok to take here because value gets dropped after this.
@@ -54,7 +54,7 @@ where
 }
 
 impl TryFrom<Value> for Vec<i32> {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
@@ -65,7 +65,7 @@ impl TryFrom<Value> for Vec<i32> {
 }
 
 impl TryFrom<Value> for Vec<i64> {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
@@ -76,7 +76,7 @@ impl TryFrom<Value> for Vec<i64> {
 }
 
 impl TryFrom<Value> for Vec<bool> {
-    type Error = Error;
+    type Error = InferenceError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value.inner {
