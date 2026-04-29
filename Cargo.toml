@@ -20,7 +20,7 @@ num-traits = "0.2"
 criterion = { version = "0.5", default-features = false }
 
 # Safe CUDA abstractions.
-cudarc = {  git = "https://github.com/kckeiks/cudarc", branch = "softmax-support", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16", "dynamic-loading", "std"]}
+cudarc = {  version = "0.19", default-features = false, features = ["cublas", "cudnn", "cuda-version-from-build-system", "driver", "f16", "dynamic-loading", "nvrtc", "std"]}
 
 # f16 / bf16 support for mixed‑precision.
 half = "2.4"

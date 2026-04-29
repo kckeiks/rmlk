@@ -308,12 +308,12 @@ mod test {
         let lhs_shape = vec![1, 2, 2];
         let mut lhs_stride = vec![0; lhs_shape.len()];
         utils::calculate_stride(&lhs_shape, &mut lhs_stride);
-        let lhs_dev_ptr = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let lhs_dev_ptr = stream.clone_htod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let rhs_shape = vec![1, 2, 2];
         let mut rhs_stride = vec![0; rhs_shape.len()];
         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
-        let rhs_dev_ptr = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let rhs_dev_ptr = stream.clone_htod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let output_shape = vec![1, 2, 2];
 
@@ -334,7 +334,7 @@ mod test {
 
         compute::<f32>(&stream, &lhs_dev_ptr, &rhs_dev_ptr, &mut out, config).unwrap();
 
-        let result = stream.memcpy_dtov(&out).unwrap();
+        let result = stream.clone_dtoh(&out).unwrap();
 
         assert_eq!(result, vec![7.0, 10.0, 15.0, 22.0])
     }

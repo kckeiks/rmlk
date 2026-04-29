@@ -75,7 +75,7 @@ impl Cuda {
     where
         T: Unpin + DeviceRepr + DataTypeMap,
     {
-        let ptr = self.stream.memcpy_stod::<T, _>(&data)?;
+        let ptr = self.stream.clone_htod::<T, _>(&data)?;
         Ok(CudaData::new(ptr))
     }
 
@@ -84,7 +84,7 @@ impl Cuda {
         T: Clone + Default + Unpin + DeviceRepr + DataTypeMap,
     {
         let ptr = data.data::<T>();
-        Ok(self.stream.memcpy_dtov::<T, _>(ptr.as_ref())?)
+        Ok(self.stream.clone_dtoh::<T, _>(ptr.as_ref())?)
     }
 }
 

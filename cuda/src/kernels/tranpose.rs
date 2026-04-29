@@ -125,10 +125,10 @@ mod tests {
         info_buffer.extend_from_slice(&output_shape);
         info_buffer.extend_from_slice(&input_strides);
         info_buffer.extend_from_slice(&output_strides);
-        let info = stream.memcpy_stod(&info_buffer).unwrap();
+        let info = stream.clone_htod(&info_buffer).unwrap();
 
-        let d_perm = stream.memcpy_stod(perm).unwrap();
-        let d_input = stream.memcpy_stod(input).unwrap();
+        let d_perm = stream.clone_htod(perm).unwrap();
+        let d_input = stream.clone_htod(input).unwrap();
 
         let elem_count = output_shape.iter().product::<usize>();
 
@@ -147,7 +147,7 @@ mod tests {
             .unwrap();
         }
 
-        stream.memcpy_dtov(&d_output).unwrap()
+        stream.clone_dtoh(&d_output).unwrap()
     }
 
     #[test]

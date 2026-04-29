@@ -54,12 +54,12 @@ mod test {
         let x_shape = vec![2, 2];
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let x_on_dev = stream.clone_htod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let y_shape = vec![2, 2];
         let mut y_stride = vec![0; y_shape.len()];
         utils::calculate_stride(&y_shape, &mut y_stride);
-        let y_on_dev = stream.memcpy_stod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y_on_dev = stream.clone_htod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
         let f = super::load_kernel(ctx.clone(), AddKernel::FwdF32).unwrap();
 
@@ -69,7 +69,7 @@ mod test {
             .unwrap();
 
         let info = create_info_buffer(&output_shape, &x_stride, &y_stride);
-        let info = stream.memcpy_stod(&info).unwrap();
+        let info = stream.clone_htod(&info).unwrap();
 
         unsafe {
             compute::<f32>(
@@ -84,7 +84,7 @@ mod test {
             .unwrap();
         }
 
-        let result = stream.memcpy_dtov(&out_data).unwrap();
+        let result = stream.clone_dtoh(&out_data).unwrap();
 
         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0])
     }

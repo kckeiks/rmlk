@@ -259,15 +259,15 @@ mod test {
 
         let mut indices_stride = vec![0; indices_shape.len()];
         utils::calculate_stride(&indices_shape, &mut indices_stride);
-        let indices = stream.memcpy_stod(&indices_data).unwrap();
+        let indices = stream.clone_htod(&indices_data).unwrap();
 
         let mut updates_stride = vec![0; updates_shape.len()];
         utils::calculate_stride(&updates_shape, &mut updates_stride);
-        let updates = stream.memcpy_stod(&updates_data).unwrap();
+        let updates = stream.clone_htod(&updates_data).unwrap();
 
         let mut output_stride = vec![0; data_shape.len()];
         utils::calculate_stride(&data_shape, &mut output_stride);
-        let mut output = stream.memcpy_stod(&data).unwrap();
+        let mut output = stream.clone_htod(&data).unwrap();
 
         let f = load_kernel(&ctx, ScatterNdKernel::FwdF32).unwrap();
 
@@ -279,7 +279,7 @@ mod test {
             &updates_shape,
             &updates_stride,
         );
-        let info = stream.memcpy_stod(&info).unwrap();
+        let info = stream.clone_htod(&info).unwrap();
 
         let mut error = stream.alloc_zeros(1).unwrap();
 
@@ -310,10 +310,10 @@ mod test {
             .unwrap();
         }
 
-        let error_data = stream.memcpy_dtov(&error).unwrap();
+        let error_data = stream.clone_dtoh(&error).unwrap();
         assert_eq!(error_data[0], 0);
 
-        let result = stream.memcpy_dtov(&output).unwrap();
+        let result = stream.clone_dtoh(&output).unwrap();
         assert_eq!(result, expected_output);
     }
 

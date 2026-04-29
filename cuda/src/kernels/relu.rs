@@ -53,7 +53,7 @@ mod tests {
         )
         .unwrap();
 
-        let output = stream.memcpy_dtov(&output_dev).unwrap();
+        let output = stream.clone_dtoh(&output_dev).unwrap();
 
         for (o, e) in output.iter().zip(expected.iter()) {
             assert_abs_diff_eq!(*o, *e, epsilon = 1e-6);

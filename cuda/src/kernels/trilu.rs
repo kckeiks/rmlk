@@ -112,9 +112,9 @@ mod tests {
         let mut info_buffer = Vec::new();
         info_buffer.extend_from_slice(shape);
         info_buffer.extend_from_slice(strides.as_ref());
-        let info = stream.memcpy_stod(&info_buffer).unwrap();
+        let info = stream.clone_htod(&info_buffer).unwrap();
 
-        let input = stream.memcpy_stod(input).unwrap();
+        let input = stream.clone_htod(input).unwrap();
 
         let mut output = stream.alloc_zeros::<T>(input.len()).unwrap();
 
@@ -132,7 +132,7 @@ mod tests {
             .unwrap();
         }
 
-        stream.memcpy_dtov(&output).unwrap()
+        stream.clone_dtoh(&output).unwrap()
     }
 
     #[test]

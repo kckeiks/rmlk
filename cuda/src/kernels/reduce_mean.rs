@@ -122,15 +122,15 @@ mod tests {
 
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
-        let x_dev_ptr = stream.memcpy_stod(&x_data).unwrap();
+        let x_dev_ptr = stream.clone_htod(&x_data).unwrap();
 
         let output_len = output_shape.iter().product();
         let mut output_dev_ptr = stream.alloc_zeros(output_len).unwrap();
 
         let info = create_info_buffer(&x_shape, &x_stride);
-        let info = stream.memcpy_stod(&info).unwrap();
+        let info = stream.clone_htod(&info).unwrap();
 
-        let axes = stream.memcpy_stod(axes).unwrap();
+        let axes = stream.clone_htod(axes).unwrap();
 
         let num_elements = x_shape.iter().product();
 
@@ -148,7 +148,7 @@ mod tests {
             .unwrap();
         }
 
-        let result = stream.memcpy_dtov(&output_dev_ptr).unwrap();
+        let result = stream.clone_dtoh(&output_dev_ptr).unwrap();
 
         assert_eq!(result, expected);
     }

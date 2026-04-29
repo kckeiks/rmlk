@@ -160,21 +160,21 @@ mod tests {
         info.extend_from_slice(&in_strides);
         info.extend_from_slice(output_shape);
         info.extend_from_slice(&out_strides);
-        let info = stream.memcpy_stod(&info).unwrap();
+        let info = stream.clone_htod(&info).unwrap();
 
-        let starts_dev = stream.memcpy_stod(starts).unwrap();
-        let ends_dev = stream.memcpy_stod(ends).unwrap();
+        let starts_dev = stream.clone_htod(starts).unwrap();
+        let ends_dev = stream.clone_htod(ends).unwrap();
         let axes_dev = if axes.is_empty() {
             stream.null().unwrap()
         } else {
-            stream.memcpy_stod(axes).unwrap()
+            stream.clone_htod(axes).unwrap()
         };
         let steps_dev = if steps.is_empty() {
             stream.null().unwrap()
         } else {
-            stream.memcpy_stod(steps).unwrap()
+            stream.clone_htod(steps).unwrap()
         };
-        let input_dev = stream.memcpy_stod(input).unwrap();
+        let input_dev = stream.clone_htod(input).unwrap();
         let elem_count = output_shape.iter().product::<usize>();
         let mut d_output = stream.alloc_zeros::<T>(elem_count).unwrap();
 
@@ -194,7 +194,7 @@ mod tests {
             .unwrap();
         }
 
-        stream.memcpy_dtov(&d_output).unwrap()
+        stream.clone_dtoh(&d_output).unwrap()
     }
 
     #[test]

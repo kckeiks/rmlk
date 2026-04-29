@@ -33,7 +33,7 @@ impl CudaData {
         }
     }
 
-    pub fn data<T>(&self) -> DataView<T>
+    pub fn data<T>(&self) -> DataView<'_, T>
     where
         T: DataTypeMap,
     {
@@ -52,7 +52,7 @@ impl CudaData {
         }
     }
 
-    pub fn data_mut<T>(&mut self) -> DataViewMut<T>
+    pub fn data_mut<T>(&mut self) -> DataViewMut<'_, T>
     where
         T: DataTypeMap,
     {

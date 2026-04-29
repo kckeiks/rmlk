@@ -350,7 +350,7 @@ mod test {
 
                     let x_shape = vec![2, 2];
                     let x_on_host = vec![$($input),*];
-                    let x_dev_ptr = stream.memcpy_stod(&x_on_host).unwrap();
+                    let x_dev_ptr = stream.clone_htod(&x_on_host).unwrap();
 
                     let f = super::load_kernel(&ctx, $variant).unwrap();
 
@@ -362,7 +362,7 @@ mod test {
                         unary::explicit_io_types_compute(&stream, f, &x_dev_ptr, &mut out_data).unwrap();
                     }
 
-                    let result = stream.memcpy_dtov(&out_data).unwrap();
+                    let result = stream.clone_dtoh(&out_data).unwrap();
 
                     assert_eq!(result, vec![$($expected),*]);
                 }
@@ -1391,7 +1391,7 @@ mod test {
         let mut x_stride = vec![0; x_shape.len()];
         utils::calculate_stride(&x_shape, &mut x_stride);
         let x_data = stream
-            .memcpy_stod(&vec![1e40, -1e40, f64::NAN, -f64::NAN, 1.0])
+            .clone_htod(&vec![1e40, -1e40, f64::NAN, -f64::NAN, 1.0])
             .unwrap();
 
         let f = super::load_kernel(&ctx, CastKernel::F64ToF32).unwrap();
@@ -1405,7 +1405,7 @@ mod test {
             unary::explicit_io_types_compute(&stream, f, &x_data, &mut out_data).unwrap();
         }
 
-        let result: Vec<f32> = stream.memcpy_dtov(&out_data).unwrap();
+        let result: Vec<f32> = stream.clone_dtoh(&out_data).unwrap();
         assert_eq!(result[0], f32::INFINITY);
         assert_eq!(result[1], f32::NEG_INFINITY);
         assert!(result[2].is_nan());

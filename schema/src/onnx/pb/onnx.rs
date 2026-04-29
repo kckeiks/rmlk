@@ -14,6 +14,7 @@ use quick_protobuf::{MessageInfo, MessageRead, MessageWrite, BytesReader, Writer
 use quick_protobuf::sizeofs::*;
 use super::*;
 
+#[allow(unused)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Version {
     _START_VERSION = 0,
@@ -68,38 +69,6 @@ impl<'a> From<&'a str> for Version {
             "IR_VERSION_2021_7_30" => Version::IR_VERSION_2021_7_30,
             "IR_VERSION_2023_5_5" => Version::IR_VERSION_2023_5_5,
             "IR_VERSION" => Version::IR_VERSION,
-            _ => Self::default(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum OperatorStatus {
-    EXPERIMENTAL = 0,
-    STABLE = 1,
-}
-
-impl Default for OperatorStatus {
-    fn default() -> Self {
-        OperatorStatus::EXPERIMENTAL
-    }
-}
-
-impl From<i32> for OperatorStatus {
-    fn from(i: i32) -> Self {
-        match i {
-            0 => OperatorStatus::EXPERIMENTAL,
-            1 => OperatorStatus::STABLE,
-            _ => Self::default(),
-        }
-    }
-}
-
-impl<'a> From<&'a str> for OperatorStatus {
-    fn from(s: &'a str) -> Self {
-        match s {
-            "EXPERIMENTAL" => OperatorStatus::EXPERIMENTAL,
-            "STABLE" => OperatorStatus::STABLE,
             _ => Self::default(),
         }
     }

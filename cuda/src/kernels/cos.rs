@@ -45,7 +45,7 @@ mod test {
         utils::calculate_stride(&x_shape, &mut x_stride);
 
         let x_data = stream
-            .memcpy_stod(&vec![
+            .clone_htod(&vec![
                 0.0, 1.5707963, 3.1415927, 1.0471976, 0.7853982, 0.5235988,
             ])
             .unwrap();
@@ -60,7 +60,7 @@ mod test {
         unsafe {
             compute::<f32>(stream.clone(), f, &x_data, &mut out_data).unwrap();
         }
-        let result = stream.memcpy_dtov(&out_data).unwrap();
+        let result = stream.clone_dtoh(&out_data).unwrap();
         let expected = vec![1.0, 0.0, -1.0, 0.5, 0.7071068, 0.8660254];
 
         for (r, e) in result.iter().zip(expected.iter()) {

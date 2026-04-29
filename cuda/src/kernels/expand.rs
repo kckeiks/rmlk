@@ -126,9 +126,9 @@ mod test {
         info_buffer.extend_from_slice(&input_strides);
         info_buffer.extend_from_slice(output_shape);
         info_buffer.extend_from_slice(&output_strides);
-        let info = stream.memcpy_stod(&info_buffer).unwrap();
+        let info = stream.clone_htod(&info_buffer).unwrap();
 
-        let input_dev_ptr = stream.memcpy_stod(input).unwrap();
+        let input_dev_ptr = stream.clone_htod(input).unwrap();
 
         let output_len = output_shape.iter().product();
         let mut output_dev_ptr = stream.alloc_zeros::<T>(output_len).unwrap();
@@ -147,7 +147,7 @@ mod test {
             .unwrap();
         }
 
-        stream.memcpy_dtov(&output_dev_ptr).unwrap()
+        stream.clone_dtoh(&output_dev_ptr).unwrap()
     }
 
     #[test]

@@ -46,7 +46,7 @@ where
     let tensor_ptr = tensor.payload();
     let tensor_view = tensor_ptr.data::<T>();
 
-    let data = stream.memcpy_dtov(tensor_view.as_ref()).unwrap();
+    let data = stream.clone_dtoh(tensor_view.as_ref()).unwrap();
 
     json!({
         "shape":  tensor.shape().as_ref(),

@@ -225,8 +225,8 @@ mod tests {
         let func = load_kernel(&ctx, kernel).unwrap();
         let info = info_for_shape(&shape);
 
-        let a_dev = stream.memcpy_stod::<X, _>(a_host).unwrap();
-        let b_dev = stream.memcpy_stod::<Y, _>(b_host).unwrap();
+        let a_dev = stream.clone_htod::<X, _>(a_host).unwrap();
+        let b_dev = stream.clone_htod::<Y, _>(b_host).unwrap();
         let mut c_dev = stream.alloc_zeros(a_host.len()).unwrap();
 
         unsafe {
@@ -242,7 +242,7 @@ mod tests {
             .unwrap();
         }
 
-        stream.memcpy_dtov(&c_dev).unwrap()
+        stream.clone_dtoh(&c_dev).unwrap()
     }
 
     #[test]
