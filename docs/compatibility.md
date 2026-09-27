@@ -128,7 +128,8 @@ set:
    commit any fixture diffs that are still within expected tolerance policy.
 5. Re-run the manual full-model e2e suite (ResNet, Llama) against the new oracle.
 6. Refresh remote artifact sidecars so they record the new IR, opset, and ORT
-   version, and update checksums if model bytes changed.
+   version, and update checksums if model bytes changed. Layout and env vars:
+   [`e2e-artifacts.md`](e2e-artifacts.md).
 
 Do not bump the oracle in the same commit as an unrelated kernel change. If a
 kernel fix and an oracle bump both change fixtures, land them separately so
