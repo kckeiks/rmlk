@@ -152,3 +152,97 @@ impl Display for UnsqueezeError {
 }
 
 impl std::error::Error for UnsqueezeError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    fn zeros() -> Vec<f32> {
+        vec![0.0f32; 3 * 4 * 5]
+    }
+
+    #[test]
+    fn start() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([1], vec![0i64])
+            .output([1, 3, 4, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn mid() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([1], vec![1i64])
+            .output([3, 1, 4, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn end() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([1], vec![3i64])
+            .output([3, 4, 5, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn multiple() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([2], vec![0i64, 2])
+            .output([1, 3, 1, 4, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn any_order() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([2], vec![2i64, 0])
+            .output([1, 3, 1, 4, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn negative_axes() {
+        let data = zeros();
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([2], vec![-1i64, -5])
+            .output([1, 3, 4, 5, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn validate_data() {
+        let data = vec![1.1f32; 3 * 4 * 5];
+        let out = OpTest::new(Op::Unsqueeze)
+            .input([3, 4, 5], data.clone())
+            .input([1], vec![0i64])
+            .output([1, 3, 4, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+}

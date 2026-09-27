@@ -288,4 +288,19 @@ mod tests {
         compute_output(0.0, 0.333, count, &mut output).unwrap();
         assert!((output[3] < 1.0));
     }
+
+    #[test]
+    fn cuda_basic() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let out = OpTest::new(Op::Range)
+            .input([1], vec![0i32])
+            .input([1], vec![5i32])
+            .input([1], vec![1i32])
+            .output([5])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![0, 1, 2, 3, 4]);
+    }
 }

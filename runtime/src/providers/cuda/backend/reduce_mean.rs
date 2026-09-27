@@ -324,3 +324,77 @@ impl Display for ReduceMeanError {
 }
 
 impl std::error::Error for ReduceMeanError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn simple_axes_input() {
+        let out = OpTest::new(Op::ReduceMean)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([1], vec![0i64])
+            .output([1, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.5, 3.5, 4.5]);
+    }
+
+    #[test]
+    fn axes_in_attrs() {
+        let out = OpTest::new(Op::ReduceMean)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .attr("keepdims", AttributeType::Int(1))
+            .attr("axes", AttributeType::Ints(vec![-1]))
+            .output([2, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 5.0]);
+    }
+
+    #[test]
+    fn scalar_no_axes() {
+        let out = OpTest::new(Op::ReduceMean)
+            .input([], vec![5.6f32])
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![5.6]);
+    }
+
+    #[test]
+    fn scalar_noop_empty_axes_attr() {
+        let out = OpTest::new(Op::ReduceMean)
+            .input([], vec![4.6f32])
+            .attr("noop_with_empty_axes", AttributeType::Int(1))
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![4.6]);
+    }
+
+    #[test]
+    fn scalar_with_empty_axes_input() {
+        let out = OpTest::new(Op::ReduceMean)
+            .input([], vec![6.9f32])
+            .input([0], Vec::<i64>::new())
+            .attr("noop_with_empty_axes", AttributeType::Int(0))
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![6.9]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::ReduceMean)
+            .input([2], vec![true, false])
+            .output([])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

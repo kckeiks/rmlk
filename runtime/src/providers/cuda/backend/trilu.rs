@@ -171,3 +171,119 @@ impl Display for TriluError {
 }
 
 impl std::error::Error for TriluError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn k_zero_lower() {
+        let out = OpTest::new(Op::Trilu)
+            .input(
+                [2, 3, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                    15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .input([], vec![0i64])
+            .attr("upper", AttributeType::Int(0))
+            .output([2, 3, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 0.0, 0.0, 4.0, 5.0, 0.0, 7.0, 8.0, 9.0, 10.0, 0.0, 0.0, 13.0, 14.0, 0.0, 16.0,
+                17.0, 18.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn no_k_lower() {
+        let out = OpTest::new(Op::Trilu)
+            .input(
+                [2, 3, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                    15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .attr("upper", AttributeType::Int(0))
+            .output([2, 3, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 0.0, 0.0, 4.0, 5.0, 0.0, 7.0, 8.0, 9.0, 10.0, 0.0, 0.0, 13.0, 14.0, 0.0, 16.0,
+                17.0, 18.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn one_k_upper() {
+        let out = OpTest::new(Op::Trilu)
+            .input(
+                [1, 3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([], vec![1i64])
+            .attr("upper", AttributeType::Int(1))
+            .output([1, 3, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![0.0, 2.0, 3.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0, 0.0, 0.0, 12.0]
+        );
+    }
+
+    #[test]
+    fn no_attribute() {
+        let out = OpTest::new(Op::Trilu)
+            .input(
+                [1, 3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([], vec![1i64])
+            .output([1, 3, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![0.0, 2.0, 3.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0, 0.0, 0.0, 12.0]
+        );
+    }
+
+    #[test]
+    fn large_upper_k1() {
+        let out = OpTest::new(Op::Trilu)
+            .input([3, 3], vec![0.0f32, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .input([], vec![1i64])
+            .attr("upper", AttributeType::Int(1))
+            .output([3, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![0.0, 1.0, 2.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Trilu)
+            .input([2, 2], vec![true, false, true, false])
+            .output([2, 2])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

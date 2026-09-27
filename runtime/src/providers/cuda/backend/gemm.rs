@@ -253,3 +253,36 @@ pub enum GemmError {
     #[error("invalid tensor shape: {shape:?}")]
     InvalidTensorShape { shape: Vec<usize> },
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn simple() {
+        let out = OpTest::new(Op::Gemm)
+            .input([3, 2], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2, 4], vec![7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0])
+            .output([3, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![29.0, 32.0, 35.0, 38.0, 65.0, 72.0, 79.0, 86.0, 101.0, 112.0, 123.0, 134.0]
+        );
+    }
+
+    #[test]
+    fn rejects_i32() {
+        let err = OpTest::new(Op::Gemm)
+            .input([2, 2], vec![1i32, 2, 3, 4])
+            .input([2, 2], vec![1i32, 0, 0, 1])
+            .output([2, 2])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

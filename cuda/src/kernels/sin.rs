@@ -67,12 +67,7 @@ mod test {
             compute::<f32>(stream.clone(), f, &x_data, &mut out_data).unwrap();
         }
         let result = stream.clone_dtoh(&out_data).unwrap();
-        let expected = [0.0,
-            0.5,
-            1.0,
-            0.0,
-            consts::FRAC_1_SQRT_2,
-            -0.8660254];
+        let expected = [0.0, 0.5, 1.0, 0.0, consts::FRAC_1_SQRT_2, -0.8660254];
 
         for (r, e) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(*r, *e, epsilon = 1e-6);

@@ -273,3 +273,68 @@ impl Display for ConvError {
 }
 
 impl std::error::Error for ConvError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn oneshot_scale() {
+        // 1x1 conv scales every element by 2.
+        // pads must be length >= 4 so ConvAttributes::pads() (pads[2..]) is spatial.
+        let out = OpTest::new(Op::Conv)
+            .input([1, 1, 2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([1, 1, 1, 1], vec![2.0f32])
+            .attr("pads", AttributeType::Ints(vec![0, 0, 0, 0]))
+            .attr("strides", AttributeType::Ints(vec![1, 1]))
+            .attr("dilations", AttributeType::Ints(vec![1, 1]))
+            .output([1, 1, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn three_by_three_all_ones() {
+        let out = OpTest::new(Op::Conv)
+            .input([1, 1, 3, 3], vec![1.0f32; 9])
+            .input([1, 1, 3, 3], vec![1.0f32; 9])
+            .attr("pads", AttributeType::Ints(vec![0, 0, 0, 0]))
+            .attr("strides", AttributeType::Ints(vec![1, 1]))
+            .attr("dilations", AttributeType::Ints(vec![1, 1]))
+            .output([1, 1, 1, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![9.0]);
+    }
+
+    #[test]
+    fn with_bias() {
+        let out = OpTest::new(Op::Conv)
+            .input([1, 1, 2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([1, 1, 1, 1], vec![1.0f32])
+            .input([1], vec![10.0f32])
+            .attr("pads", AttributeType::Ints(vec![0, 0, 0, 0]))
+            .attr("strides", AttributeType::Ints(vec![1, 1]))
+            .attr("dilations", AttributeType::Ints(vec![1, 1]))
+            .output([1, 1, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.0, 12.0, 13.0, 14.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Conv)
+            .input([1, 1, 1, 1], vec![true])
+            .input([1, 1, 1, 1], vec![true])
+            .attr("pads", AttributeType::Ints(vec![0, 0, 0, 0]))
+            .output([1, 1, 1, 1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

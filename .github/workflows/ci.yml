@@ -54,6 +54,63 @@ jobs:
           CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         run: cargo check --workspace --all-targets
 
+  host-tests:
+    name: host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test host-only crates
+        run: cargo test -p rmlk-schema -p rmlk-graph -p rocky
+
+  coverage:
+    name: host coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage
+        run: >
+          cargo llvm-cov
+          -p rmlk-schema -p rmlk-graph -p rocky
+          --lcov --output-path lcov.info
+          --summary-only | tee coverage-summary.txt
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo '## Host crate coverage'
+            echo
+            echo '```'
+            cat coverage-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-lcov
+          path: lcov.info
+
   # Enable by setting the repo variable HAS_GPU_RUNNER=true and registering a
   # self-hosted runner labeled `gpu`. Left off until that runner exists.
   gpu-tests:

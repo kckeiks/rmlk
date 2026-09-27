@@ -162,3 +162,166 @@ pub enum SoftmaxError {
     #[error("unsupported input values: {message}")]
     UnsupportedInputValues { message: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{assert_close_eps, OpTest};
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn last_axis_2d() {
+        let out = OpTest::new(Op::Softmax)
+            .input([2, 3], vec![2.0f32, 1.0, 0.1, 1.0, 3.0, 0.5])
+            .attr("axis", AttributeType::Int(-1))
+            .output([2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[
+                0.6590011,
+                0.24243295,
+                0.09856589,
+                0.11116562,
+                0.82140905,
+                0.067425355,
+            ],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn last_axis_3d() {
+        let out = OpTest::new(Op::Softmax)
+            .input([2, 2, 2], vec![1.0f32, 2.0, 3.0, 4.0, 0.5, 1.5, 2.5, 3.5])
+            .attr("axis", AttributeType::Int(-1))
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[
+                0.2689414, 0.7310586, 0.26894143, 0.7310586, 0.26894143, 0.7310586, 0.2689414,
+                0.73105854,
+            ],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn chan_axis_4d() {
+        let out = OpTest::new(Op::Softmax)
+            .input(
+                [1, 3, 2, 2],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0,
+                ],
+            )
+            .attr("axis", AttributeType::Int(1))
+            .output([1, 3, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[
+                0.24472846,
+                0.46831053,
+                0.7053845,
+                0.86681336,
+                0.66524094,
+                0.46831053,
+                0.25949645,
+                0.117310435,
+                0.09003057,
+                0.06337894,
+                0.035119027,
+                0.015876241,
+            ],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn small() {
+        let out = OpTest::new(Op::Softmax)
+            .input([1, 1, 1, 4], vec![0.0f32, 1.0, 2.0, 3.0])
+            .attr("axis", AttributeType::Int(-1))
+            .output([1, 1, 1, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[0.032058604, 0.087144315, 0.23688282, 0.6439143],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn mask_with_large_negs() {
+        let out = OpTest::new(Op::Softmax)
+            .input(
+                [2, 1, 1, 3],
+                vec![0.0f32, -10_000.0, 0.5, -7.0, -7.0, -10_000.0],
+            )
+            .attr("axis", AttributeType::Int(-1))
+            .output([2, 1, 1, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[0.377_540_68, 0.0, 0.622_459_35, 0.5, 0.5, 0.0],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn two_head_uneq_logits() {
+        let out = OpTest::new(Op::Softmax)
+            .input([1, 2, 1, 3], vec![-1.0f32, -1.0, -1.0, -2.0, 0.0, 2.0])
+            .attr("axis", AttributeType::Int(-1))
+            .output([1, 2, 1, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(
+            &out,
+            &[
+                0.333_333_34,
+                0.333_333_34,
+                0.333_333_34,
+                0.015_876_24,
+                0.117_310_43,
+                0.866_813_36,
+            ],
+            1e-5,
+        );
+    }
+
+    #[test]
+    fn large() {
+        let input: Vec<f32> = (0..4096).map(|i| ((i % 79) as f32) * 0.01 - 3.0).collect();
+        let max = input.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let exps: Vec<f32> = input.iter().map(|v| (v - max).exp()).collect();
+        let sum: f32 = exps.iter().sum();
+        let expected: Vec<f32> = exps.into_iter().map(|e| e / sum).collect();
+
+        let out = OpTest::new(Op::Softmax)
+            .input([1, 1, 1, 4096], input)
+            .attr("axis", AttributeType::Int(-1))
+            .output([1, 1, 1, 4096])
+            .run::<f32>()
+            .unwrap();
+        assert_close_eps(&out, &expected, 1e-5);
+    }
+
+    #[test]
+    fn rejects_i32() {
+        let err = OpTest::new(Op::Softmax)
+            .input([2], vec![1i32, 2])
+            .output([2])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

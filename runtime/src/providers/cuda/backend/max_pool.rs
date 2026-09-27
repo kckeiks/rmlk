@@ -138,3 +138,56 @@ fn comput_output_shape(ctx: &Context<Cuda>) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn two_by_two_stride_two() {
+        let out = OpTest::new(Op::MaxPool)
+            .input(
+                [1, 1, 4, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                    15.0, 16.0,
+                ],
+            )
+            .attr("kernel_shape", AttributeType::Ints(vec![2, 2]))
+            .attr("strides", AttributeType::Ints(vec![2, 2]))
+            .attr("pads", AttributeType::Ints(vec![0, 0, 0, 0]))
+            .output([1, 1, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![6.0, 8.0, 14.0, 16.0]);
+    }
+
+    #[test]
+    fn kernel_equals_spatial() {
+        let out = OpTest::new(Op::MaxPool)
+            .input(
+                [1, 2, 2, 2],
+                vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            )
+            .attr("kernel_shape", AttributeType::Ints(vec![2, 2]))
+            .attr("strides", AttributeType::Ints(vec![1, 1]))
+            .output([1, 2, 1, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![4.0, 8.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::MaxPool)
+            .input([1, 1, 2, 2], vec![true, false, true, false])
+            .attr("kernel_shape", AttributeType::Ints(vec![2, 2]))
+            .output([1, 1, 1, 1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

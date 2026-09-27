@@ -34,9 +34,6 @@ image = "0.24"
 # N‑dimensional array helpers.
 ndarray = "0.15"
 
-# Derive macros for test structs.
-serde = { workspace = true }
-
 # Tokenizers for examples.
 tokenizers = "0.21"
 

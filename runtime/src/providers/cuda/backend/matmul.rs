@@ -369,3 +369,236 @@ impl Display for MatMulError {
 }
 
 impl std::error::Error for MatMulError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn d1_d1() {
+        let out = OpTest::new(Op::MatMul)
+            .input([4], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([4], vec![5.0f32, 6.0, 7.0, 8.0])
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![70.0]);
+    }
+
+    #[test]
+    fn d1_d2() {
+        let out = OpTest::new(Op::MatMul)
+            .input([3], vec![1.0f32, 2.0, 3.0])
+            .input(
+                [3, 4],
+                vec![
+                    4.0f32, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                ],
+            )
+            .output([4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![56.0, 62.0, 68.0, 74.0]);
+    }
+
+    #[test]
+    fn d1_d3() {
+        let out = OpTest::new(Op::MatMul)
+            .input([3], vec![1.0f32, 2.0, 3.0])
+            .input(
+                [2, 3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 2.0, 4.0,
+                    6.0, 8.0, 1.0, 3.0, 5.0, 7.0, 0.0, -1.0, -2.0, -3.0,
+                ],
+            )
+            .output([2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![38.0, 44.0, 50.0, 56.0, 4.0, 7.0, 10.0, 13.0]);
+    }
+
+    #[test]
+    fn d2_d1() {
+        let out = OpTest::new(Op::MatMul)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([3], vec![7.0f32, 8.0, 9.0])
+            .output([2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![50.0, 122.0]);
+    }
+
+    #[test]
+    fn d2_d2() {
+        let out = OpTest::new(Op::MatMul)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input(
+                [3, 4],
+                vec![
+                    7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .output([2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![74.0, 80.0, 86.0, 92.0, 173.0, 188.0, 203.0, 218.0]
+        );
+    }
+
+    #[test]
+    fn d2_d3() {
+        let out = OpTest::new(Op::MatMul)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input(
+                [2, 3, 2],
+                vec![
+                    7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![58.0, 64.0, 139.0, 154.0, 94.0, 100.0, 229.0, 244.0]
+        );
+    }
+
+    #[test]
+    fn d3_d1() {
+        let out = OpTest::new(Op::MatMul)
+            .input(
+                [2, 3, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0,
+                    3.0, 2.0, 1.0,
+                ],
+            )
+            .input([3], vec![1.0f32, 2.0, 3.0])
+            .output([2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![14.0, 32.0, 50.0, 46.0, 28.0, 10.0]);
+    }
+
+    #[test]
+    fn d3_d2() {
+        let out = OpTest::new(Op::MatMul)
+            .input(
+                [2, 2, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([3, 2], vec![13.0f32, 14.0, 15.0, 16.0, 17.0, 18.0])
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![94.0, 100.0, 229.0, 244.0, 364.0, 388.0, 499.0, 532.0]
+        );
+    }
+
+    #[test]
+    fn d3_d3() {
+        let out = OpTest::new(Op::MatMul)
+            .input(
+                [2, 2, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input(
+                [2, 3, 2],
+                vec![
+                    13.0f32, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                ],
+            )
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![94.0, 100.0, 229.0, 244.0, 508.0, 532.0, 697.0, 730.0]
+        );
+    }
+
+    #[test]
+    fn d4_shape_and_values() {
+        // Former matmul_4d only asserted output shape via Shape; check values too.
+        let out = OpTest::new(Op::MatMul)
+            .input([1, 24, 6, 6], vec![1.0f32; 24 * 6 * 6])
+            .input([1, 24, 6, 128], vec![13.0f32; 24 * 6 * 128])
+            .output([1, 24, 6, 128])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out.len(), 24 * 6 * 128);
+        assert!(out.iter().all(|&x| x == 78.0));
+    }
+
+    #[test]
+    fn broadcast_batch() {
+        let out = OpTest::new(Op::MatMul)
+            .input([1, 2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input(
+                [2, 3, 2],
+                vec![
+                    7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![58.0, 64.0, 139.0, 154.0, 94.0, 100.0, 229.0, 244.0]
+        );
+    }
+
+    #[test]
+    fn batched_2d_vs_reference() {
+        // Former matmul_large (was commented out); small [1,4,8] x [8,6].
+        const N_MID: usize = 4;
+        const K: usize = 8;
+        const N: usize = 6;
+        let a: Vec<f32> = (0..N_MID * K).map(|i| i as f32).collect();
+        // Integer-valued B so GPU and host f32 agree exactly.
+        let b: Vec<f32> = (0..K)
+            .flat_map(|r| (0..N).map(move |c| (r + c) as f32))
+            .collect();
+        let mut expected = vec![0f32; N_MID * N];
+        for i in 0..N_MID {
+            for k in 0..K {
+                let a_val = a[i * K + k];
+                for j in 0..N {
+                    expected[i * N + j] += a_val * b[k * N + j];
+                }
+            }
+        }
+        let out = OpTest::new(Op::MatMul)
+            .input([1, N_MID, K], a)
+            .input([K, N], b)
+            .output([1, N_MID, N])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn rejects_i32() {
+        let err = OpTest::new(Op::MatMul)
+            .input([2, 2], vec![1i32, 2, 3, 4])
+            .input([2, 2], vec![1i32, 0, 0, 1])
+            .output([2, 2])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

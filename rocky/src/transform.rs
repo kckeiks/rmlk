@@ -3,164 +3,137 @@ use crate::traverse::{OnnxGraphTraverser, TraversalError};
 use anyhow::anyhow;
 use log::debug;
 use rmlk_schema::onnx::{ModelProto, NodeProto, TensorProto, ValueInfoProto};
-use rmlk_schema::{Attribute, Node, Op, Tensor, TypeValue};
-use std::collections::HashMap;
+use rmlk_schema::{Attribute, DataType, GraphBuildError, GraphBuilder, Op, TypeValue};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 struct ModelFromOnnx {
-    nodes: Vec<Node>,
-    inputs: Vec<usize>,
-    outputs: Vec<usize>,
-    initializers: HashMap<usize, Tensor>,
-    name_to_id: HashMap<String, usize>,
+    builder: GraphBuilder,
+    /// Names already registered with the builder (inputs, constants, values).
+    declared: HashSet<String>,
+    /// Graph output names, registered after all ops are wired.
+    graph_outputs: Vec<String>,
     base_url: Option<PathBuf>,
 }
 
 impl ModelFromOnnx {
-    pub fn new(base_url: Option<PathBuf>) -> Self {
+    fn new(base_url: Option<PathBuf>) -> Self {
         Self {
+            builder: GraphBuilder::new(),
+            declared: HashSet::new(),
+            graph_outputs: Vec::new(),
             base_url,
-            nodes: Default::default(),
-            inputs: Default::default(),
-            outputs: Default::default(),
-            initializers: Default::default(),
-            name_to_id: Default::default(),
         }
     }
 
-    pub fn create_and_get_node(&mut self) -> &mut Node {
-        let id = self.nodes.len();
-        let node = Node::new(id);
-        self.nodes.push(node);
-        self.nodes.get_mut(id).expect("We just inserted the node")
+    fn ensure_value_inferred(&mut self, name: &str) -> traverse::Result<()> {
+        if self.declared.contains(name) {
+            return Ok(());
+        }
+        self.builder.value_inferred(name).map_err(map_build_err)?;
+        self.declared.insert(name.to_string());
+        Ok(())
     }
+}
 
-    pub fn get_node_mut(&mut self, id: usize) -> Option<&mut Node> {
-        self.nodes.get_mut(id)
-    }
+fn map_build_err(e: GraphBuildError) -> TraversalError {
+    TraversalError::InvalidValue(format!("{e:?}"))
+}
 
-    pub fn add_input(&mut self, input: usize) {
-        self.inputs.push(input);
-    }
-
-    pub fn add_output(&mut self, output: usize) {
-        self.outputs.push(output);
-    }
-
-    pub fn add_initializer(&mut self, id: usize, initializers: Tensor) -> Option<Tensor> {
-        self.initializers.insert(id, initializers)
-    }
-
-    pub fn get_node_id(&self, name: &str) -> Option<usize> {
-        self.name_to_id.get(name).copied()
-    }
-
-    pub fn save_name_to_id(&mut self, name: String, id: usize) -> Option<usize> {
-        self.name_to_id.insert(name, id)
-    }
+fn type_value_to_dtype_dims(tv: TypeValue) -> traverse::Result<(DataType, Vec<usize>)> {
+    let dtype = DataType::try_from(tv.ty()).map_err(|e| {
+        TraversalError::InvalidValue(format!("unsupported dtype {}: {e:?}", tv.ty()))
+    })?;
+    Ok((dtype, tv.dims().clone()))
 }
 
 impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     fn check_input(&mut self, value_info_proto: ValueInfoProto<'a>) -> traverse::Result<bool> {
-        let node = self.create_and_get_node();
-        let node_id = node.id;
-
-        debug!("Assigning id={node_id} for input {value_info_proto:?}");
-
-        let name = {
-            
-            value_info_proto.name.ok_or_else(|| {
+        let name = value_info_proto
+            .name
+            .ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed inputs are not supported".to_string())
             })?
-        };
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-        node.set_op(Op::NoOp);
-        // Todo: Handle unwrap().
-        let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
-            .unwrap()
-            .unwrap();
-        node.set_type_value(type_value);
+            .into_owned();
 
-        self.add_input(node_id);
-
-        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
-            return Err(TraversalError::InvalidValue(format!(
-                "found two inputs with the same for id: prev:[{old_id}] new:[{}]",
-                node_id
-            )));
+        // Initializers are visited first. An ONNX graph input that shares a name
+        // with an initializer is a defaulted input — keep the constant only.
+        if self.declared.contains(&name) {
+            debug!("Skipping graph input `{name}` already registered as initializer");
+            return Ok(false);
         }
 
+        debug!("Registering input `{name}`");
+
+        let type_value = TypeValue::from_type_proto(
+            value_info_proto
+                .type_pb
+                .ok_or_else(|| TraversalError::InvalidValue("input missing type".into()))?,
+        )
+        .map_err(|e| TraversalError::InvalidValue(format!("{e:?}")))?
+        .ok_or_else(|| TraversalError::InvalidValue("input type is empty".into()))?;
+
+        let (dtype, dims) = type_value_to_dtype_dims(type_value)?;
+        self.builder
+            .input(&name, dtype, &dims)
+            .map_err(map_build_err)?;
+        self.declared.insert(name);
         Ok(false)
     }
 
     fn check_output(&mut self, value_info_proto: ValueInfoProto<'a>) -> traverse::Result<bool> {
-        let node = self.create_and_get_node();
-        let node_id = node.id;
-
-        debug!("Assigning id={node_id} for output {value_info_proto:?}");
-
-        let name = {
-            
-            value_info_proto.name.ok_or_else(|| {
+        let name = value_info_proto
+            .name
+            .ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed outputs are not supported".to_string())
             })?
-        };
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-        node.set_op(Op::NoOp);
-        // Todo: Handle unwrap().
-        let type_value = TypeValue::from_type_proto(value_info_proto.type_pb.unwrap())
-            .unwrap()
-            .unwrap();
-        node.set_type_value(type_value);
+            .into_owned();
 
-        self.add_output(node_id);
+        debug!("Registering output value `{name}`");
 
-        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
-            return Err(TraversalError::InvalidValue(format!(
-                "found two outputs with the same for id: prev:[{old_id}] new:[{node_id}]"
-            )));
+        if !self.declared.contains(&name) {
+            let type_value = TypeValue::from_type_proto(
+                value_info_proto
+                    .type_pb
+                    .ok_or_else(|| TraversalError::InvalidValue("output missing type".into()))?,
+            )
+            .map_err(|e| TraversalError::InvalidValue(format!("{e:?}")))?
+            .ok_or_else(|| TraversalError::InvalidValue("output type is empty".into()))?;
+
+            let (dtype, dims) = type_value_to_dtype_dims(type_value)?;
+            self.builder
+                .value(&name, dtype, &dims)
+                .map_err(map_build_err)?;
+            self.declared.insert(name.clone());
         }
 
+        self.graph_outputs.push(name);
         Ok(false)
     }
 
     fn check_initializer(&mut self, initializer: TensorProto<'a>) -> traverse::Result<bool> {
         let base_url = self.base_url.clone();
+        let name = initializer
+            .name
+            .clone()
+            .ok_or_else(|| {
+                TraversalError::InvalidValue("unnamed tensors are not supported".to_string())
+            })?
+            .into_owned();
 
-        let node = self.create_and_get_node();
-        let node_id = node.id;
+        debug!("Registering initializer `{name}`");
 
-        debug!(
-            "Assigning id={node_id} for initializer {:?}",
-            initializer.name
-        );
+        let tensor = rmlk_schema::tensor_from_onnx_tensor(initializer, base_url)
+            .map_err(|e| TraversalError::InvalidValue(format!("{e:?}")))?;
 
-        let name = initializer.name.clone().ok_or_else(|| {
-            TraversalError::InvalidValue("unnamed tensors are not supported".to_string())
-        })?;
-        // Todo: avoid allocation.
-        node.set_name(name.to_string());
-        node.set_op(Op::NoOp);
-
-        let tensor = rmlk_schema::tensor_from_onnx_tensor(initializer, base_url).unwrap();
-
-        let type_value = TypeValue::Tensor {
-            ty: tensor.data_type as i32,
-            dims: tensor.dims.clone(),
-            has_dynamic_dims: false,
-        };
-        node.set_type_value(type_value);
-
-        self.add_initializer(node_id, tensor);
-
-        if let Some(old_id) = self.save_name_to_id(name.into_owned(), node_id) {
+        self.builder
+            .constant(&name, tensor)
+            .map_err(map_build_err)?;
+        if !self.declared.insert(name.clone()) {
             return Err(TraversalError::InvalidValue(format!(
-                "found two initializers with the same for id: prev:[{old_id}] new:[{node_id}]"
+                "duplicate initializer `{name}`"
             )));
         }
-
         Ok(false)
     }
 
@@ -172,60 +145,30 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             .ok_or(TraversalError::InvalidInnerNode)?
             .map_err(|_| TraversalError::InvalidInnerNode)?;
 
-        let node = self.create_and_get_node();
-        node.set_op(op);
-        // Todo: remove allocation.
-        node.set_name(node_proto.name.unwrap().to_string());
+        let input_names: Vec<String> = node_proto.input.iter().map(|s| s.to_string()).collect();
+        let output_names: Vec<String> = node_proto.output.iter().map(|s| s.to_string()).collect();
 
-        let mut attributes = Vec::new();
-        for attr_proto in node_proto.attribute {
-            attributes.push(Attribute::try_from(attr_proto).unwrap());
-        }
-
-        node.set_attributes(attributes);
-
-        let node_id = node.id;
-        let mut inputs = Vec::new();
-        for name in node_proto.input {
-            // Todo: Mapping one name to a single node id, we lose information,
-            // because a single node might have two outputs, how do we differentiate?
-            let input_node_id = self
-                .get_node_id(name.as_ref())
-                .ok_or(TraversalError::InvalidInnerNode)?;
-            inputs.push(input_node_id);
-        }
-        let node = self.get_node_mut(node_id).expect("We just inserted it");
-        node.set_inputs(inputs);
-
-        let mut output_node_ids = Vec::new();
-        for name in node_proto.output {
-            match self.get_node_id(&name) {
-                None => {
-                    let output_node = self.create_and_get_node();
-                    output_node.add_input(node_id);
-                    output_node.set_name(name.to_string());
-
-                    output_node_ids.push(output_node.id);
-
-                    let output_node_id = output_node.id;
-                    // Todo: remove clone.
-                    self.save_name_to_id(name.into_owned(), output_node_id);
-                }
-                Some(id) => {
-                    let node = self
-                        .get_node_mut(id)
-                        .ok_or(TraversalError::InvalidInnerNode)?;
-                    node.add_input(node_id);
-                    output_node_ids.push(id);
-                }
+        for name in &input_names {
+            if !self.declared.contains(name) {
+                return Err(TraversalError::InvalidInnerNode);
             }
         }
+        for name in &output_names {
+            self.ensure_value_inferred(name)?;
+        }
 
-        let node = self
-            .get_node_mut(node_id)
-            .expect("We just inserted it above.");
-        for id in output_node_ids {
-            node.add_output(id);
+        let input_refs: Vec<&str> = input_names.iter().map(String::as_str).collect();
+        let output_refs: Vec<&str> = output_names.iter().map(String::as_str).collect();
+
+        let mut op_builder = self
+            .builder
+            .op(op, &input_refs, &output_refs)
+            .map_err(map_build_err)?;
+
+        for attr_proto in node_proto.attribute {
+            let attr = Attribute::try_from(attr_proto)
+                .map_err(|e| TraversalError::InvalidValue(format!("{e:?}")))?;
+            op_builder = op_builder.attr(attr.name, attr.ty);
         }
 
         Ok(false)
@@ -249,12 +192,129 @@ pub fn graph_from_onnx_proto(
         &mut traverser,
     )
     .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
-    Ok(rmlk_schema::Graph {
-        node: traverser.nodes,
-        name: graph_name,
-        initializer: traverser.initializers,
-        input: traverser.inputs,
-        output: traverser.outputs,
-        quantization_annotation: None,
-    })
+
+    for name in &traverser.graph_outputs {
+        traverser
+            .builder
+            .output(name)
+            .map_err(|e| anyhow!("failed to register graph output `{name}`: {e}"))?;
+    }
+
+    let mut graph = traverser
+        .builder
+        .build()
+        .map_err(|e| anyhow!("GraphBuilder::build failed: {e}"))?;
+    graph.name = graph_name;
+    Ok(graph)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmlk_schema::onnx::{
+        tensor_proto, tensor_shape_proto, ty_proto, GraphProto, NodeProto, TensorShapeProto,
+        TypeProto, ValueInfoProto,
+    };
+    use rmlk_schema::{GraphBuilder, Op};
+    use std::borrow::Cow;
+
+    fn float_tensor_type(dims: &[i64]) -> TypeProto<'static> {
+        TypeProto {
+            value: ty_proto::OneOfvalue::tensor_type(ty_proto::Tensor {
+                elem_type: Some(tensor_proto::DataType::FLOAT as i32),
+                shape: Some(TensorShapeProto {
+                    dim: dims
+                        .iter()
+                        .map(|d| tensor_shape_proto::Dimension {
+                            value: tensor_shape_proto::mod_Dimension::OneOfvalue::dim_value(*d),
+                            denotation: None,
+                        })
+                        .collect(),
+                }),
+            }),
+            denotation: None,
+        }
+    }
+
+    fn value_info(name: &'static str, dims: &[i64]) -> ValueInfoProto<'static> {
+        ValueInfoProto {
+            name: Some(Cow::Borrowed(name)),
+            type_pb: Some(float_tensor_type(dims)),
+            doc_string: None,
+            metadata_props: vec![],
+        }
+    }
+
+    /// Two-op graph: Add then Relu. Importer topology must match GraphBuilder oracle.
+    #[test]
+    fn importer_matches_graph_builder_oracle() {
+        let model = ModelProto {
+            graph: Some(GraphProto {
+                name: Some(Cow::Borrowed("add_relu")),
+                input: vec![value_info("a", &[2, 2]), value_info("b", &[2, 2])],
+                output: vec![value_info("y", &[2, 2])],
+                node: vec![
+                    NodeProto {
+                        name: Some(Cow::Borrowed("add0")),
+                        op_type: Some(Cow::Borrowed("Add")),
+                        input: vec![Cow::Borrowed("a"), Cow::Borrowed("b")],
+                        output: vec![Cow::Borrowed("t")],
+                        ..Default::default()
+                    },
+                    NodeProto {
+                        name: Some(Cow::Borrowed("relu0")),
+                        op_type: Some(Cow::Borrowed("Relu")),
+                        input: vec![Cow::Borrowed("t")],
+                        output: vec![Cow::Borrowed("y")],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let imported = graph_from_onnx_proto(model, None).expect("import");
+
+        let mut g = GraphBuilder::new();
+        g.input("a", DataType::Float, [2, 2]).unwrap();
+        g.input("b", DataType::Float, [2, 2]).unwrap();
+        g.value_inferred("t").unwrap();
+        g.value("y", DataType::Float, [2, 2]).unwrap();
+        g.op(Op::Add, &["a", "b"], &["t"]).unwrap();
+        g.op(Op::Relu, &["t"], &["y"]).unwrap();
+        g.output("y").unwrap();
+        let mut oracle = g.build().unwrap();
+        oracle.name = Some("add_relu".into());
+
+        assert_eq!(imported.input.len(), oracle.input.len());
+        assert_eq!(imported.output.len(), oracle.output.len());
+        assert_eq!(imported.node.len(), oracle.node.len());
+        assert_eq!(imported.name, oracle.name);
+
+        let import_ops: Vec<_> = imported
+            .node
+            .iter()
+            .filter(|n| n.op_type != Op::NoOp)
+            .collect();
+        let oracle_ops: Vec<_> = oracle
+            .node
+            .iter()
+            .filter(|n| n.op_type != Op::NoOp)
+            .collect();
+        assert_eq!(import_ops.len(), 2);
+        assert_eq!(oracle_ops.len(), 2);
+        assert_eq!(import_ops[0].op_type, Op::Add);
+        assert_eq!(import_ops[1].op_type, Op::Relu);
+        assert_eq!(
+            import_ops[0].input.as_ref().map(Vec::len),
+            oracle_ops[0].input.as_ref().map(Vec::len)
+        );
+        assert_eq!(
+            import_ops[1].input.as_ref().map(Vec::len),
+            oracle_ops[1].input.as_ref().map(Vec::len)
+        );
+        assert_eq!(import_ops[0].output.as_ref().map(Vec::len), Some(1));
+        assert_eq!(import_ops[1].output.as_ref().map(Vec::len), Some(1));
+    }
 }

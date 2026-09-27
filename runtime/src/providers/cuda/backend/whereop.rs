@@ -268,3 +268,134 @@ pub enum WhereError {
     #[error("incompatible shapes for broadcast: {shapes:?}")]
     IncompatibleShapesForBroadcast { shapes: HashMap<usize, Vec<usize>> },
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn two_inputs() {
+        let out = OpTest::new(Op::Where)
+            .input([2, 2], vec![true, false, true, false])
+            .input([2, 2], vec![11.0f32, 22.0, 33.0, 44.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .output([2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.0, 2.0, 33.0, 4.0]);
+    }
+
+    #[test]
+    fn all_scalars() {
+        let out = OpTest::new(Op::Where)
+            .input([], vec![true])
+            .input([], vec![11.1f32])
+            .input([], vec![1.0f32])
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.1]);
+    }
+
+    #[test]
+    fn one_scalar() {
+        let out = OpTest::new(Op::Where)
+            .input([2, 1], vec![true, false])
+            .input([1, 2], vec![1.0f32, 2.0])
+            .input([], vec![0.0f32])
+            .output([2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn x_y_scalars() {
+        let out = OpTest::new(Op::Where)
+            .input([3], vec![true, false, true])
+            .input([], vec![11.1f32])
+            .input([], vec![1.0f32])
+            .output([3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.1, 1.0, 11.1]);
+    }
+
+    #[test]
+    fn broadcast_diff_shape_len() {
+        let out = OpTest::new(Op::Where)
+            .constant(
+                [2, 6],
+                vec![
+                    false, true, true, false, true, true, false, false, false, false, true, true,
+                ],
+            )
+            .input(
+                [3, 2, 1],
+                vec![
+                    0.40744543f32,
+                    0.09136569,
+                    0.72850689,
+                    0.33760798,
+                    0.802_622_4,
+                    0.41559307,
+                ],
+            )
+            .input(
+                [1, 6],
+                vec![
+                    0.698_947_4f32,
+                    0.53463184,
+                    0.809_403_2,
+                    0.864_580_3,
+                    0.34860543,
+                    0.67579115,
+                ],
+            )
+            .output([3, 2, 6])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                0.698_947_4,
+                0.40744543,
+                0.40744543,
+                0.864_580_3,
+                0.40744543,
+                0.40744543,
+                0.698_947_4,
+                0.53463184,
+                0.809_403_2,
+                0.864_580_3,
+                0.09136569,
+                0.09136569,
+                0.698_947_4,
+                0.72850689,
+                0.72850689,
+                0.864_580_3,
+                0.72850689,
+                0.72850689,
+                0.698_947_4,
+                0.53463184,
+                0.809_403_2,
+                0.864_580_3,
+                0.33760798,
+                0.33760798,
+                0.698_947_4,
+                0.802_622_4,
+                0.802_622_4,
+                0.864_580_3,
+                0.802_622_4,
+                0.802_622_4,
+                0.698_947_4,
+                0.53463184,
+                0.809_403_2,
+                0.864_580_3,
+                0.41559307,
+                0.41559307,
+            ]
+        );
+    }
+}

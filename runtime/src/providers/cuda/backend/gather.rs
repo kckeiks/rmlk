@@ -273,3 +273,194 @@ impl Display for GatherError {
 }
 
 impl std::error::Error for GatherError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn simple() {
+        let out = OpTest::new(Op::Gather)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([2], vec![0i32, 2])
+            .output([2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0, 9.0, 10.0, 11.0, 12.0]);
+    }
+
+    #[test]
+    fn simple_negative_indices() {
+        let out = OpTest::new(Op::Gather)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([2], vec![-3i32, -1])
+            .output([2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0, 9.0, 10.0, 11.0, 12.0]);
+    }
+
+    #[test]
+    fn with_axis() {
+        let out = OpTest::new(Op::Gather)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([2], vec![1i32, 3])
+            .attr("axis", AttributeType::Int(1))
+            .output([3, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
+    }
+
+    #[test]
+    fn negative_axis() {
+        let out = OpTest::new(Op::Gather)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([2], vec![1i32, 3])
+            .attr("axis", AttributeType::Int(-1))
+            .output([3, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
+    }
+
+    #[test]
+    fn scalar_index() {
+        let out = OpTest::new(Op::Gather)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([], vec![1i32])
+            .output([4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn scalar_output() {
+        let out = OpTest::new(Op::Gather)
+            .input([4], vec![10.0f32, 20.0, 30.0, 40.0])
+            .input([], vec![2i32])
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![30.0]);
+    }
+
+    #[test]
+    fn higher_dim() {
+        let data: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+        let out = OpTest::new(Op::Gather)
+            .input([2, 3, 4], data)
+            .input([2], vec![1i32, 2])
+            .attr("axis", AttributeType::Int(1))
+            .output([2, 2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
+                23.0, 24.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn higher_dim_negative_indices() {
+        let data: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+        let out = OpTest::new(Op::Gather)
+            .input([2, 3, 4], data)
+            .input([2], vec![-2i32, -1])
+            .attr("axis", AttributeType::Int(1))
+            .output([2, 2, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
+                23.0, 24.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn higher_dim_indices() {
+        let out = OpTest::new(Op::Gather)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2, 2], vec![0i32, 1, 1, 0])
+            .attr("axis", AttributeType::Int(0))
+            .output([2, 2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn higher_dim_indices_negative() {
+        let out = OpTest::new(Op::Gather)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2, 2], vec![0i32, -1, 1, -2])
+            .attr("axis", AttributeType::Int(0))
+            .output([2, 2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn i64_indices() {
+        let out = OpTest::new(Op::Gather)
+            .input([3, 2], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2], vec![0i64, 2])
+            .output([2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn rejects_bool_data() {
+        let err = OpTest::new(Op::Gather)
+            .input([2], vec![true, false])
+            .input([1], vec![0i32])
+            .output([1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

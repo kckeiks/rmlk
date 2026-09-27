@@ -197,3 +197,64 @@ impl Display for TransposeError {
 }
 
 impl std::error::Error for TransposeError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn scalar() {
+        let out = OpTest::new(Op::Transpose)
+            .input([], vec![1.2f32])
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.2]);
+    }
+
+    #[test]
+    fn default_reverse_data() {
+        let data = vec![1.0f32; 3 * 4 * 2];
+        let out = OpTest::new(Op::Transpose)
+            .input([3, 4, 2], data.clone())
+            .output([2, 4, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn default_reverse_shape() {
+        // All ones: values unchanged; checks reverse perm output shape [2,4,3].
+        let out = OpTest::new(Op::Transpose)
+            .input([3, 4, 2], vec![1.0f32; 3 * 4 * 2])
+            .output([2, 4, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out.len(), 3 * 4 * 2);
+    }
+
+    #[test]
+    fn with_perm() {
+        let out = OpTest::new(Op::Transpose)
+            .input([3, 4, 2], vec![1.0f32; 3 * 4 * 2])
+            .attr("perm", AttributeType::Ints(vec![1, 0, 2]))
+            .output([4, 3, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0; 3 * 4 * 2]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Transpose)
+            .input([2, 2], vec![true, false, true, false])
+            .output([2, 2])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

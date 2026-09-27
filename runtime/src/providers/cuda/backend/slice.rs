@@ -675,4 +675,115 @@ mod tests {
         compute_output_shape_helper::<i64>(&shape, &[0, 1, 2], &[0, 0], &[4, 4], None, &mut out)
             .unwrap();
     }
+
+    #[test]
+    fn cuda_basic_2d() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let out = OpTest::new(Op::Slice)
+            .input(
+                [3, 4],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([2], vec![1i32, 1])
+            .input([2], vec![3i32, 3])
+            .input([2], vec![0i32, 1])
+            .input([2], vec![1i32, 1])
+            .output([2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![6.0, 7.0, 10.0, 11.0]);
+    }
+
+    #[test]
+    fn cuda_basic_3d() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let out = OpTest::new(Op::Slice)
+            .input(
+                [3, 2, 3],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 1.03, 14.0,
+                    15.0, 16.0, 17.0, 18.0,
+                ],
+            )
+            .input([2], vec![0i32, 1])
+            .input([2], vec![3i32, 3])
+            .input([2], vec![0i32, 2])
+            .input([2], vec![1i32, 1])
+            .output([3, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![2.0, 3.0, 5.0, 6.0, 8.0, 9.0, 11.0, 12.0, 14.0, 15.0, 17.0, 18.0]
+        );
+    }
+
+    #[test]
+    fn cuda_basic_3d_neg_step() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let out = OpTest::new(Op::Slice)
+            .input(
+                [3, 2, 2],
+                vec![
+                    1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            )
+            .input([1], vec![2i32])
+            .input([1], vec![0i32])
+            .input([1], vec![0i32])
+            .input([1], vec![-1i32])
+            .output([2, 2, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![9.0, 10.0, 11.0, 12.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn cuda_empty_output() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let out = OpTest::new(Op::Slice)
+            .input([2, 2, 2], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .input([1], vec![1i32])
+            .input([1], vec![0i32])
+            .input([1], vec![1i32])
+            .input([1], vec![1i32])
+            .output([2, 0, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, Vec::<f32>::new());
+    }
+
+    #[test]
+    fn cuda_large() {
+        use crate::testing::OpTest;
+        use rmlk_schema::Op;
+
+        let data_len = 24 * 27 * 128;
+        let data_flat: Vec<f32> = (0..data_len).map(|x| x as f32).collect();
+        let mut expected = Vec::with_capacity(41_472);
+        for pos in 0..(24 * 27) {
+            let base = pos * 128;
+            expected.extend_from_slice(&data_flat[base + 64..base + 128]);
+        }
+        let out = OpTest::new(Op::Slice)
+            .input([1, 24, 27, 128], data_flat)
+            .input([1], vec![64i64])
+            .input([1], vec![i64::MAX])
+            .input([1], vec![3i64])
+            .input([1], vec![1i64])
+            .output([1, 24, 27, 64])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, expected);
+    }
 }

@@ -185,3 +185,68 @@ impl Display for ReshapeError {
 }
 
 impl std::error::Error for ReshapeError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let data = vec![11.1f32; 2 * 3 * 4];
+        let out = OpTest::new(Op::Reshape)
+            .input([2, 3, 4], data.clone())
+            .input([2], vec![4i64, 6])
+            .output([4, 6])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn scalar_to_1d() {
+        let out = OpTest::new(Op::Reshape)
+            .input([], vec![11.1f32])
+            .input([1], vec![1i64])
+            .output([1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.1]);
+    }
+
+    #[test]
+    fn to_scalar() {
+        // Empty 1-D shape tensor ([0]) means reshape to a scalar.
+        let out = OpTest::new(Op::Reshape)
+            .input([1], vec![2.0f32])
+            .input([0], Vec::<i64>::new())
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0]);
+    }
+
+    #[test]
+    fn with_neg_one() {
+        let data = vec![11.1f32; 2 * 3 * 4];
+        let out = OpTest::new(Op::Reshape)
+            .input([2, 3, 4], data.clone())
+            .input([2], vec![6i64, -1])
+            .output([6, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn with_zero_dim() {
+        let data = vec![11.1f32; 2 * 3 * 4];
+        let out = OpTest::new(Op::Reshape)
+            .input([2, 3, 4], data.clone())
+            .input([2], vec![0i64, -1])
+            .output([2, 12])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, data);
+    }
+}

@@ -115,3 +115,44 @@ fn comput_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn simple_nchw() {
+        let out = OpTest::new(Op::GlobalAveragePool)
+            .input(
+                [1, 2, 2, 2],
+                vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            )
+            .output([1, 2, 1, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.5, 6.5]);
+    }
+
+    #[test]
+    fn single_channel() {
+        let out = OpTest::new(Op::GlobalAveragePool)
+            .input([1, 1, 2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .output([1, 1, 1, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![3.5]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::GlobalAveragePool)
+            .input([1, 1, 2, 2], vec![true, false, true, false])
+            .output([1, 1, 1, 1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

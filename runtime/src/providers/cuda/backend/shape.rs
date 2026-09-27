@@ -119,3 +119,75 @@ pub enum ShapeError {
     #[error("unsupported rank size: {message}")]
     UnsupportedRankSize { message: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn simple() {
+        let out = OpTest::new(Op::Shape)
+            .input([3, 4, 2], vec![0.0f32; 3 * 4 * 2])
+            .output([3])
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![3, 4, 2]);
+    }
+
+    #[test]
+    fn scalar() {
+        let out = OpTest::new(Op::Shape)
+            .input([], vec![3.3f32])
+            .output([0])
+            .run::<i64>()
+            .unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn start_end() {
+        let out = OpTest::new(Op::Shape)
+            .input([3, 4, 2], vec![0.0f32; 3 * 4 * 2])
+            .attr("start", AttributeType::Int(0))
+            .attr("end", AttributeType::Int(2))
+            .output([2])
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![3, 4]);
+    }
+
+    #[test]
+    fn negative_start_end() {
+        let out = OpTest::new(Op::Shape)
+            .input([3, 4, 2], vec![0.0f32; 3 * 4 * 2])
+            .attr("start", AttributeType::Int(-2))
+            .attr("end", AttributeType::Int(-1))
+            .output([1])
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![4]);
+    }
+
+    #[test]
+    fn negative_start_only() {
+        let out = OpTest::new(Op::Shape)
+            .input([3, 4, 2], vec![0.0f32; 3 * 4 * 2])
+            .attr("start", AttributeType::Int(-2))
+            .output([2])
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![4, 2]);
+    }
+
+    #[test]
+    fn negative_end_only() {
+        let out = OpTest::new(Op::Shape)
+            .input([3, 4, 2], vec![0.0f32; 3 * 4 * 2])
+            .attr("end", AttributeType::Int(-1))
+            .output([2])
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![3, 4]);
+    }
+}
