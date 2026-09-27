@@ -1,7 +1,7 @@
-use crate::traverse::{OnnxGraphTraverser, Result};
 use rmlk_schema::onnx::{
     Category, NodeProto, NodeWithMetadata, NodeWithValue, TensorProto, ValueInfoProto,
 };
+use rmlk_schema::onnx_import::{OnnxGraphTraverser, Result};
 
 pub struct FindNode<'a> {
     pub target: &'a str,

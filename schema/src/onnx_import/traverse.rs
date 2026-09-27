@@ -1,4 +1,4 @@
-use rmlk_schema::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
+use crate::onnx::{GraphProto, NodeProto, TensorProto, ValueInfoProto};
 
 pub type Result<T> = std::result::Result<T, TraversalError>;
 
@@ -9,6 +9,17 @@ pub enum TraversalError {
     InvalidValue(String),
     InvalidInnerNode,
 }
+
+impl std::fmt::Display for TraversalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TraversalError::InvalidValue(msg) => write!(f, "invalid value: {msg}"),
+            TraversalError::InvalidInnerNode => write!(f, "invalid inner node"),
+        }
+    }
+}
+
+impl std::error::Error for TraversalError {}
 
 pub trait OnnxGraphTraverser<'a> {
     fn check_input(&mut self, input: ValueInfoProto<'a>) -> Result<bool>;

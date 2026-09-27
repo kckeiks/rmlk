@@ -1,11 +1,46 @@
-use crate::traverse;
-use crate::traverse::{OnnxGraphTraverser, TraversalError};
-use anyhow::anyhow;
+use super::traverse::{self, OnnxGraphTraverser, TraversalError};
+use crate::onnx::{ModelProto, NodeProto, TensorProto, ValueInfoProto};
+use crate::{
+    tensor_from_onnx_tensor, Attribute, DataType, Graph, GraphBuildError, GraphBuilder, Op,
+    TypeValue,
+};
 use log::debug;
-use rmlk_schema::onnx::{ModelProto, NodeProto, TensorProto, ValueInfoProto};
-use rmlk_schema::{Attribute, DataType, GraphBuildError, GraphBuilder, Op, TypeValue};
+use quick_protobuf::{BytesReader, MessageRead};
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+#[derive(Debug)]
+pub enum OnnxImportError {
+    MissingGraph,
+    Parse(String),
+    Traversal(TraversalError),
+    Build(GraphBuildError),
+    Output { name: String, message: String },
+}
+
+impl std::fmt::Display for OnnxImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OnnxImportError::MissingGraph => write!(f, "the model does not have a graph"),
+            OnnxImportError::Parse(msg) => write!(f, "failed to parse ONNX model: {msg}"),
+            OnnxImportError::Traversal(e) => write!(f, "error while traversing the onnx graph: {e}"),
+            OnnxImportError::Build(e) => write!(f, "GraphBuilder::build failed: {e}"),
+            OnnxImportError::Output { name, message } => {
+                write!(f, "failed to register graph output `{name}`: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for OnnxImportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            OnnxImportError::Traversal(e) => Some(e),
+            OnnxImportError::Build(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 struct ModelFromOnnx {
     builder: GraphBuilder,
@@ -123,7 +158,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
 
         debug!("Registering initializer `{name}`");
 
-        let tensor = rmlk_schema::tensor_from_onnx_tensor(initializer, base_url)
+        let tensor = tensor_from_onnx_tensor(initializer, base_url)
             .map_err(|e| TraversalError::InvalidValue(format!("{e:?}")))?;
 
         self.builder
@@ -175,10 +210,11 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
     }
 }
 
+/// Convert a parsed [`ModelProto`] into a [`Graph`] via [`GraphBuilder`].
 pub fn graph_from_onnx_proto(
     mut value: ModelProto,
     base_url: Option<PathBuf>,
-) -> anyhow::Result<rmlk_schema::Graph> {
+) -> Result<Graph, OnnxImportError> {
     let mut traverser = ModelFromOnnx::new(base_url);
     let graph_name = value
         .graph
@@ -186,36 +222,45 @@ pub fn graph_from_onnx_proto(
         .and_then(|g| g.name.take())
         .map(|name| name.into_owned());
     traverse::visit_onnx(
-        value
-            .graph
-            .ok_or(anyhow!("the model does not have a graph"))?,
+        value.graph.ok_or(OnnxImportError::MissingGraph)?,
         &mut traverser,
     )
-    .map_err(|e| anyhow!("an error ocurred while traversing the onnx graph: {e:?}"))?;
+    .map_err(OnnxImportError::Traversal)?;
 
     for name in &traverser.graph_outputs {
-        traverser
-            .builder
-            .output(name)
-            .map_err(|e| anyhow!("failed to register graph output `{name}`: {e}"))?;
+        traverser.builder.output(name).map_err(|e| OnnxImportError::Output {
+            name: name.clone(),
+            message: e.to_string(),
+        })?;
     }
 
     let mut graph = traverser
         .builder
         .build()
-        .map_err(|e| anyhow!("GraphBuilder::build failed: {e}"))?;
+        .map_err(OnnxImportError::Build)?;
     graph.name = graph_name;
     Ok(graph)
+}
+
+/// Parse ONNX model bytes and convert them to a [`Graph`].
+pub fn graph_from_onnx_bytes(
+    data: &[u8],
+    base_url: Option<PathBuf>,
+) -> Result<Graph, OnnxImportError> {
+    let mut reader = BytesReader::from_bytes(data);
+    let model_proto = ModelProto::from_reader(&mut reader, data)
+        .map_err(|e| OnnxImportError::Parse(e.to_string()))?;
+    graph_from_onnx_proto(model_proto, base_url)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmlk_schema::onnx::{
+    use crate::onnx::{
         tensor_proto, tensor_shape_proto, ty_proto, GraphProto, NodeProto, TensorShapeProto,
         TypeProto, ValueInfoProto,
     };
-    use rmlk_schema::{GraphBuilder, Op};
+    use crate::{GraphBuilder, Op};
     use std::borrow::Cow;
 
     fn float_tensor_type(dims: &[i64]) -> TypeProto<'static> {

@@ -6,5 +6,6 @@ authors = ["M. Meier <m.wiresurfer@gmail.com>"]
 
 [dependencies]
 half.workspace = true
+log = { workspace = true }
 serde = { version = "1.0.188", features = ["derive"] }
 quick-protobuf = "0.8"

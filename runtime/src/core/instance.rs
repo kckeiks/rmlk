@@ -171,6 +171,30 @@ impl Builder {
         Self::from_graph(graph_schema)
     }
 
+    /// Parse an ONNX model from bytes and build through [`Self::from_graph`].
+    ///
+    /// External weight files referenced by the model are not resolved; pass a
+    /// path via [`Self::from_onnx_path`] when initializers live beside the file.
+    pub fn from_onnx_bytes(bytes: &[u8]) -> BuilderResult<Self> {
+        let graph = rmlk_schema::graph_from_onnx_bytes(bytes, None)?;
+        Self::from_graph(graph)
+    }
+
+    /// Read an ONNX model from disk and build through [`Self::from_graph`].
+    ///
+    /// The parent directory of `path` is used as the base URL for external
+    /// tensor data, matching `rocky transform`.
+    pub fn from_onnx_path(path: impl AsRef<std::path::Path>) -> BuilderResult<Self> {
+        let path = path.as_ref();
+        let bytes = std::fs::read(path).map_err(|source| BuilderError::OnnxRead {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let base_url = path.parent().map(|p| p.to_path_buf());
+        let graph = rmlk_schema::graph_from_onnx_bytes(&bytes, base_url)?;
+        Self::from_graph(graph)
+    }
+
     pub fn build(self) -> BuilderResult<ModelInstance<Cuda>> {
         let ctx = CudaContext::new(0)
             .map_err(|e| BuilderError::UnexpectedDeviceFailure { error: e.into() })?;
@@ -194,5 +218,28 @@ impl Builder {
             execution_state: ExecutionState::new(instance_state.clone(), store)?,
             instance_state,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_onnx_bytes_rejects_garbage() {
+        match Builder::from_onnx_bytes(b"not-an-onnx-model") {
+            Err(BuilderError::OnnxImport(_)) => {}
+            Err(e) => panic!("expected OnnxImport, got {e:?}"),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn from_onnx_path_missing_file() {
+        match Builder::from_onnx_path("/no/such/model.onnx") {
+            Err(BuilderError::OnnxRead { .. }) => {}
+            Err(e) => panic!("expected OnnxRead, got {e:?}"),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
     }
 }

@@ -1,5 +1,5 @@
-use crate::traverse::{OnnxGraphTraverser, Result, TraversalError};
 use rmlk_schema::onnx::{NodeProto, TensorProto, ValueInfoProto};
+use rmlk_schema::onnx_import::{OnnxGraphTraverser, Result, TraversalError};
 use std::collections::HashSet;
 
 pub struct ListOps {

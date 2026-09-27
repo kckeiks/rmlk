@@ -2,19 +2,17 @@ mod args;
 mod find;
 mod list;
 mod list_ops;
-mod transform;
-mod traverse;
 
 use anyhow::anyhow;
 use clap::Parser;
 use quick_protobuf::{BytesReader, MessageRead};
 use rmlk_schema::onnx::ModelProto;
+use rmlk_schema::{graph_from_onnx_proto, visit_onnx};
 use std::collections::HashSet;
 use std::fs;
 
 use crate::list::List;
 use crate::list_ops::ListOps;
-use crate::transform::graph_from_onnx_proto;
 use args::{Args, Command};
 use find::FindNode;
 
@@ -29,7 +27,7 @@ fn main() -> anyhow::Result<()> {
                 target: target.as_ref(),
                 node: None,
             };
-            traverse::visit_onnx(
+            visit_onnx(
                 model_proto
                     .graph
                     .ok_or(anyhow!("the model does not have a graph"))?,
@@ -66,7 +64,7 @@ fn main() -> anyhow::Result<()> {
             let mut traverser = ListOps {
                 ops: HashSet::new(),
             };
-            traverse::visit_onnx(
+            visit_onnx(
                 model_proto
                     .graph
                     .ok_or(anyhow!("the model does not have a graph"))?,
@@ -80,7 +78,7 @@ fn main() -> anyhow::Result<()> {
             let mut reader = BytesReader::from_bytes(&model);
             let model_proto = ModelProto::from_reader(&mut reader, &model)?;
             let mut traverser = List { node: vec![] };
-            traverse::visit_onnx(
+            visit_onnx(
                 model_proto
                     .graph
                     .ok_or(anyhow!("the model does not have a graph"))?,
@@ -90,7 +88,6 @@ fn main() -> anyhow::Result<()> {
             for node in traverser.node {
                 println!("{:?}", node);
             }
-            // println!("{:?}", traverser.node.len());
         }
     }
 

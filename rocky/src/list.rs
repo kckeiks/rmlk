@@ -1,5 +1,5 @@
-use crate::traverse::{OnnxGraphTraverser, Result};
 use rmlk_schema::onnx::{NodeProto, TensorProto, ValueInfoProto};
+use rmlk_schema::onnx_import::{OnnxGraphTraverser, Result};
 
 pub struct List {
     pub node: Vec<String>,

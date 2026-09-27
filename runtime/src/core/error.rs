@@ -25,6 +25,14 @@ pub enum BuilderError {
     UnexpectedDeviceFailure { error: rmlk_cuda::Error },
     #[error("failed to deserialized")]
     ModelDeserializationFailed,
+    #[error("ONNX import failed: {0}")]
+    OnnxImport(#[from] rmlk_schema::OnnxImportError),
+    #[error("failed to read ONNX file `{path}`: {source}")]
+    OnnxRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("build failure: {0}")]
     Internal(#[from] anyhow::Error),
 }
