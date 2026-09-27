@@ -76,3 +76,51 @@ impl EqualBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Equal)
+            .input([2, 2], vec![1.0f32, 3.0, 3.001, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![true, false, false, true]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Equal)
+            .input([3], vec![1i32, 2, 3])
+            .input([3], vec![1i32, 0, 3])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![true, false, true]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Equal)
+            .input([2], vec![1.0f32, 2.0])
+            .input([2], vec![1.0f32, 3.0])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![true, false]);
+    }
+
+    #[test]
+    fn rejects_bool_inputs() {
+        let err = OpTest::new(Op::Equal)
+            .input([1], vec![true])
+            .input([1], vec![true])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

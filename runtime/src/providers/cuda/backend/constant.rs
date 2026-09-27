@@ -144,3 +144,63 @@ impl ConstantBackend {
         Err(AttributeError::MissingAttributes.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op, Tensor};
+
+    #[test]
+    fn value_float() {
+        let out = OpTest::new(Op::Constant)
+            .attr("value_float", AttributeType::Float(69.0))
+            .output([])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![69.0]);
+    }
+
+    #[test]
+    fn value_floats() {
+        let out = OpTest::new(Op::Constant)
+            .attr(
+                "value_floats",
+                AttributeType::Floats(vec![3.0, 5.0, 8.0, 11.0]),
+            )
+            .output([4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![3.0, 5.0, 8.0, 11.0]);
+    }
+
+    #[test]
+    fn value_int() {
+        let out = OpTest::new(Op::Constant)
+            .attr("value_int", AttributeType::Int(99))
+            .output([])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![99]);
+    }
+
+    #[test]
+    fn value_ints() {
+        let out = OpTest::new(Op::Constant)
+            .attr("value_ints", AttributeType::Ints(vec![45, 5, 2]))
+            .output([3])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![45, 5, 2]);
+    }
+
+    #[test]
+    fn value_raw_tensor() {
+        let tensor = Tensor::from_vec([3], vec![1i32, 0, 2]).unwrap();
+        let out = OpTest::new(Op::Constant)
+            .attr("value", AttributeType::Tensor(Box::new(tensor)))
+            .output([3])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![1, 0, 2]);
+    }
+}

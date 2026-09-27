@@ -70,3 +70,36 @@ impl SqrtBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{assert_close, OpTest};
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Sqrt)
+            .input([2, 2], vec![1.0f32, 4.0, 9.0, 5.0])
+            .run::<f32>()
+            .unwrap();
+        assert_close(&out, &[1.0, 2.0, 3.0, 5.0f32.sqrt()]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Sqrt)
+            .input([2], vec![4.0f32, 16.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 4.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Sqrt).input([1], vec![true]).run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

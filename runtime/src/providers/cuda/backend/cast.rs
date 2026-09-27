@@ -195,3 +195,69 @@ impl Display for CastError {
 }
 
 impl std::error::Error for CastError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    /// ONNX TensorProto.DataType.INT32
+    const TO_INT32: i32 = 6;
+    /// ONNX TensorProto.DataType.INT64
+    const TO_INT64: i32 = 7;
+    /// ONNX TensorProto.DataType.FLOAT
+    const TO_FLOAT: i32 = 1;
+
+    #[test]
+    fn float_to_int32() {
+        let out = OpTest::new(Op::Cast)
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .attr("to", AttributeType::Int(TO_INT32))
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn float_to_int64() {
+        let out = OpTest::new(Op::Cast)
+            .input([2], vec![1.5f32, -2.9])
+            .attr("to", AttributeType::Int(TO_INT64))
+            .run::<i64>()
+            .unwrap();
+        assert_eq!(out, vec![1, -2]);
+    }
+
+    #[test]
+    fn int32_to_float() {
+        let out = OpTest::new(Op::Cast)
+            .input([3], vec![1i32, 2, 3])
+            .attr("to", AttributeType::Int(TO_FLOAT))
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Cast)
+            .input([1], vec![42.0f32])
+            .attr("to", AttributeType::Int(TO_INT32))
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![42]);
+    }
+
+    #[test]
+    fn rejects_bool_to_int32() {
+        let err = OpTest::new(Op::Cast)
+            .input([1], vec![true])
+            .attr("to", AttributeType::Int(TO_INT32))
+            .run_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

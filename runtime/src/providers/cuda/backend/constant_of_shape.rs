@@ -124,3 +124,41 @@ impl Display for ConstOfShapeError {
 }
 
 impl std::error::Error for ConstOfShapeError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op, Tensor};
+
+    #[test]
+    fn simple_zeros() {
+        let out = OpTest::new(Op::ConstantOfShape)
+            .input([2], vec![3i64, 4])
+            .output([3, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![0.0; 12]);
+    }
+
+    #[test]
+    fn with_value_tensor() {
+        let value = Tensor::from_vec([], vec![1.0f32]).unwrap();
+        let out = OpTest::new(Op::ConstantOfShape)
+            .input([2], vec![2i64, 3])
+            .attr("value", AttributeType::Tensor(Box::new(value)))
+            .output([2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0; 6]);
+    }
+
+    #[test]
+    fn rank1_shape() {
+        let out = OpTest::new(Op::ConstantOfShape)
+            .input([1], vec![4i64])
+            .output([4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![0.0; 4]);
+    }
+}

@@ -75,3 +75,51 @@ impl SubBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{assert_close, OpTest};
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Sub)
+            .input([2, 2], vec![1.0f32, 2.01, 3.0, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.01, 2.0])
+            .run::<f32>()
+            .unwrap();
+        assert_close(&out, &[0.0, 0.00999999, -0.00999999, 2.0]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Sub)
+            .input([2], vec![10i32, 5])
+            .input([2], vec![3i32, 8])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![7, -3]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Sub)
+            .input([3], vec![5.0f32, 4.0, 3.0])
+            .input([3], vec![1.0f32, 1.0, 1.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![4.0, 3.0, 2.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Sub)
+            .input([1], vec![true])
+            .input([1], vec![false])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

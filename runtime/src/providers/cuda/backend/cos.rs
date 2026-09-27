@@ -69,3 +69,39 @@ impl CosBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+    use std::f32::consts::PI;
+
+    #[test]
+    fn basic() {
+        let input = vec![0.0f32, PI / 2.0, PI, 3.0 * PI / 2.0];
+        let expected: Vec<f32> = input.iter().map(|x| x.cos()).collect();
+        let out = OpTest::new(Op::Cos)
+            .input([2, 2], input)
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Cos)
+            .input([1], vec![0.0f32])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Cos).input([1], vec![true]).run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

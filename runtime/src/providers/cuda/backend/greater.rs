@@ -75,3 +75,51 @@ impl GreaterBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Greater)
+            .input([2, 2], vec![1.0f32, 3.0, 3.001, 1.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![false, true, true, false]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Greater)
+            .input([3], vec![1i32, 5, 3])
+            .input([3], vec![2i32, 4, 3])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![false, true, false]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Greater)
+            .input([2], vec![2.0f32, 1.0])
+            .input([2], vec![1.0f32, 3.0])
+            .run::<bool>()
+            .unwrap();
+        assert_eq!(out, vec![true, false]);
+    }
+
+    #[test]
+    fn rejects_bool_inputs() {
+        let err = OpTest::new(Op::Greater)
+            .input([1], vec![true])
+            .input([1], vec![false])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

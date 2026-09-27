@@ -30,3 +30,45 @@ impl ActivationKernel for SigmoidKernel {
         .map_err(Into::into)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{assert_close, OpTest};
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic_4d() {
+        let out = OpTest::new(Op::Sigmoid)
+            .input([2, 2, 1, 1], vec![0.5f32, -0.5, 2.0, -2.0])
+            .run::<f32>()
+            .unwrap();
+        assert_close(&out, &[0.62245935, 0.37754068, 0.880797, 0.11920292]);
+    }
+
+    #[test]
+    fn basic_3d() {
+        let out = OpTest::new(Op::Sigmoid)
+            .input([2, 2, 1], vec![0.5f32, -0.5, 2.0, -2.0])
+            .run::<f32>()
+            .unwrap();
+        assert_close(&out, &[0.62245935, 0.37754068, 0.880797, 0.11920292]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Sigmoid)
+            .input([1], vec![0.0f32])
+            .run::<f32>()
+            .unwrap();
+        assert_close(&out, &[0.5]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Sigmoid).input([1], vec![true]).run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

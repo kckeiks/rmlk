@@ -74,3 +74,51 @@ impl MulBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Mul)
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 4.0, 9.0, 16.0]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Mul)
+            .input([2], vec![2i32, 3])
+            .input([2], vec![4i32, 5])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![8, 15]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Mul)
+            .input([3], vec![2.0f32, 3.0, 4.0])
+            .input([3], vec![10.0f32, 10.0, 10.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![20.0, 30.0, 40.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Mul)
+            .input([1], vec![true])
+            .input([1], vec![false])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

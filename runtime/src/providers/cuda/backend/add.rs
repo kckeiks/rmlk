@@ -80,6 +80,7 @@ impl AdditionBackend {
 #[cfg(test)]
 mod tests {
     use crate::testing::{assert_close, OpTest};
+    use half::f16;
     use rmlk_schema::Op;
 
     #[test]
@@ -137,20 +138,42 @@ mod tests {
     }
 
     #[test]
-    fn broadcast() {
-        // (a + b) with const broadcast folded into a single Add: a + const.
-        let out = OpTest::new(Op::Add)
+    fn with_constant() {
+        // Former add_with_constants: (a + b) + const, expressed as two Adds.
+        let ab = OpTest::new(Op::Add)
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<f32>()
+            .unwrap();
+        let out = OpTest::new(Op::Add)
+            .input([2, 2], ab)
+            .constant([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![3.0, 6.0, 9.0, 12.0]);
+    }
+
+    #[test]
+    fn broadcast_with_constant() {
+        // Former add_broadcast: (a + b) + const[1, 2].
+        let ab = OpTest::new(Op::Add)
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<f32>()
+            .unwrap();
+        let out = OpTest::new(Op::Add)
+            .input([2, 2], ab)
             .constant([1, 2], vec![3.0f32, 4.0])
             .output([2, 2])
             .run::<f32>()
             .unwrap();
-        assert_eq!(out, vec![4.0, 6.0, 6.0, 8.0]);
+        assert_eq!(out, vec![5.0, 8.0, 9.0, 12.0]);
     }
 
     #[test]
     fn broadcast_diff_len_shapes() {
-        let out = OpTest::new(Op::Add)
+        // Former add_broadcast_diff_len_shapes: (a + b) + const[3].
+        let ab = OpTest::new(Op::Add)
             .input(
                 [2, 4, 1],
                 vec![10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
@@ -164,23 +187,57 @@ mod tests {
             .output([2, 4, 3])
             .run::<f32>()
             .unwrap();
+        let out = OpTest::new(Op::Add)
+            .input([2, 4, 3], ab)
+            .constant([3], vec![100.0f32, 200.0, 300.0])
+            .output([2, 4, 3])
+            .run::<f32>()
+            .unwrap();
         assert_close(
             &out,
             &[
-                11.1, 12.1, 13.1, 24.1, 25.1, 26.1, 37.1, 38.1, 39.1, 50.1, 51.1, 52.1, 51.1, 52.1,
-                53.1, 64.1, 65.1, 66.1, 77.1, 78.1, 79.1, 90.1, 91.1, 92.1,
+                111.1, 212.1, 313.1, 124.1, 225.1, 326.1, 137.1, 238.1, 339.1, 150.1, 251.1, 352.1,
+                151.1, 252.1, 353.1, 164.1, 265.1, 366.1, 177.1, 278.1, 379.1, 190.1, 291.1, 392.1,
             ],
         );
     }
 
     #[test]
-    fn with_constant() {
-        let out = OpTest::new(Op::Add)
+    fn three_inputs_chained() {
+        // Former add_three_inputs: (a + b) + c.
+        let ab = OpTest::new(Op::Add)
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
-            .constant([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
             .run::<f32>()
             .unwrap();
-        assert_eq!(out, vec![2.0, 4.0, 6.0, 8.0]);
+        let out = OpTest::new(Op::Add)
+            .input([2, 2], ab)
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![3.0, 6.0, 9.0, 12.0]);
+    }
+
+    // --- dtype / shape edge cases ---
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Add)
+            .input([4], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([4], vec![10.0f32, 20.0, 30.0, 40.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![11.0, 22.0, 33.0, 44.0]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Add)
+            .input([3], vec![1i32, 2, 3])
+            .input([3], vec![10i32, 20, 30])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![11, 22, 33]);
     }
 
     #[test]
@@ -194,15 +251,29 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "CudaData::drop panics on Float16 (TODO.md item 21)"]
+    fn f16_inputs() {
+        let a = [1.0f32, 2.0, 3.0, 4.0].map(f16::from_f32).to_vec();
+        let b = [1.0f32, 2.0, 3.0, 4.0].map(f16::from_f32).to_vec();
+        let out = OpTest::new(Op::Add)
+            .input([2, 2], a)
+            .input([2, 2], b)
+            .run::<f16>()
+            .unwrap();
+        let expected = [2.0f32, 4.0, 6.0, 8.0].map(f16::from_f32);
+        assert_eq!(out, expected);
+    }
+
+    #[test]
     fn rejects_bool() {
         let err = OpTest::new(Op::Add)
             .input([], vec![true])
             .input([], vec![false])
             .output([])
             .run_err();
-        let msg = err.to_string();
+        let msg = format!("{err:?}");
         assert!(
-            msg.contains("unsupported") || format!("{err:?}").contains("Unsupported"),
+            msg.to_lowercase().contains("unsupported"),
             "unexpected error: {err:?}"
         );
     }

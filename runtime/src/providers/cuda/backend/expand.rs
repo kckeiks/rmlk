@@ -220,3 +220,51 @@ pub enum ExpandError {
     #[error("incompatible shapes for broadcast: {shapes:?}")]
     IncompatibleShapesForBroadcast { shapes: HashMap<usize, Vec<usize>> },
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Expand)
+            .input([2, 1, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([3], vec![2i64, 4, 3])
+            .output([2, 4, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 4.0,
+                5.0, 6.0, 4.0, 5.0, 6.0, 4.0, 5.0, 6.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn scalar_input() {
+        // Input is a true scalar; expand uses init paths that tolerate empty input shape.
+        let out = OpTest::new(Op::Expand)
+            .input([], vec![5.0f32])
+            .input([2], vec![2i64, 3])
+            .output([2, 3])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![5.0; 6]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Expand)
+            .input([1, 1], vec![true])
+            .input([2], vec![1i64, 1])
+            .output([1, 1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

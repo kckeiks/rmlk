@@ -76,3 +76,51 @@ impl DivBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn basic() {
+        let out = OpTest::new(Op::Div)
+            .input([2, 2], vec![1.0f32, 2.0, 9.0, 5.0])
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 2.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 1.0, 3.0, 2.5]);
+    }
+
+    #[test]
+    fn i32_inputs() {
+        let out = OpTest::new(Op::Div)
+            .input([2], vec![10i32, 9])
+            .input([2], vec![2i32, 3])
+            .run::<i32>()
+            .unwrap();
+        assert_eq!(out, vec![5, 3]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Div)
+            .input([2], vec![8.0f32, 9.0])
+            .input([2], vec![2.0f32, 3.0])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![4.0, 3.0]);
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Div)
+            .input([1], vec![true])
+            .input([1], vec![false])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

@@ -223,3 +223,147 @@ impl Display for ConcatError {
 }
 
 impl std::error::Error for ConcatError {}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::{AttributeType, Op};
+
+    #[test]
+    fn rank2_axis0() {
+        let out = OpTest::new(Op::Concat)
+            .input([3, 2], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2, 2], vec![100.0f32, 101.0, 200.0, 201.0])
+            .attr("axis", AttributeType::Int(0))
+            .output([5, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 100.0, 101.0, 200.0, 201.0]
+        );
+    }
+
+    #[test]
+    fn rank2_axis1() {
+        let out = OpTest::new(Op::Concat)
+            .input([2, 3], vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .input([2, 2], vec![100.0f32, 101.0, 200.0, 201.0])
+            .attr("axis", AttributeType::Int(1))
+            .output([2, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![1.0, 2.0, 3.0, 100.0, 101.0, 4.0, 5.0, 6.0, 200.0, 201.0]
+        );
+    }
+
+    #[test]
+    fn rank3_axis1() {
+        let a: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+        let b: Vec<f32> = (100..=107).map(|x| x as f32).collect();
+        let out = OpTest::new(Op::Concat)
+            .input([2, 3, 4], a)
+            .input([2, 1, 4], b)
+            .attr("axis", AttributeType::Int(1))
+            .output([2, 4, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 100.0, 101.0, 102.0,
+                103.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                104.0, 105.0, 106.0, 107.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn rank3_axis2() {
+        let a: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+        let b: Vec<f32> = (100..=111).map(|x| x as f32).collect();
+        let out = OpTest::new(Op::Concat)
+            .input([2, 3, 4], a)
+            .input([2, 3, 2], b)
+            .attr("axis", AttributeType::Int(2))
+            .output([2, 3, 6])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 5.0, 6.0, 7.0, 8.0, 102.0, 103.0, 9.0, 10.0,
+                11.0, 12.0, 104.0, 105.0, 13.0, 14.0, 15.0, 16.0, 106.0, 107.0, 17.0, 18.0, 19.0,
+                20.0, 108.0, 109.0, 21.0, 22.0, 23.0, 24.0, 110.0, 111.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn rank4_axis2() {
+        let a: Vec<f32> = (1..=48).map(|x| x as f32).collect();
+        let b = vec![
+            101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0,
+            201.0, 202.0, 203.0, 204.0, 205.0, 206.0, 207.0, 208.0, 209.0, 210.0, 211.0, 212.0,
+        ];
+        let out = OpTest::new(Op::Concat)
+            .input([2, 3, 2, 4], a)
+            .input([2, 3, 1, 4], b)
+            .attr("axis", AttributeType::Int(2))
+            .output([2, 3, 3, 4])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 101.0, 102.0, 103.0, 104.0, 9.0, 10.0,
+                11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 105.0, 106.0, 107.0, 108.0, 17.0, 18.0, 19.0,
+                20.0, 21.0, 22.0, 23.0, 24.0, 109.0, 110.0, 111.0, 112.0, 25.0, 26.0, 27.0, 28.0,
+                29.0, 30.0, 31.0, 32.0, 201.0, 202.0, 203.0, 204.0, 33.0, 34.0, 35.0, 36.0, 37.0,
+                38.0, 39.0, 40.0, 205.0, 206.0, 207.0, 208.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0,
+                47.0, 48.0, 209.0, 210.0, 211.0, 212.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn rank4_axis3() {
+        let a: Vec<f32> = (1..=48).map(|x| x as f32).collect();
+        let b = vec![
+            101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0,
+        ];
+        let out = OpTest::new(Op::Concat)
+            .input([2, 3, 2, 4], a)
+            .input([2, 3, 2, 1], b)
+            .attr("axis", AttributeType::Int(3))
+            .output([2, 3, 2, 5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 101.0, 5.0, 6.0, 7.0, 8.0, 102.0, 9.0, 10.0, 11.0, 12.0, 103.0,
+                13.0, 14.0, 15.0, 16.0, 104.0, 17.0, 18.0, 19.0, 20.0, 105.0, 21.0, 22.0, 23.0,
+                24.0, 106.0, 25.0, 26.0, 27.0, 28.0, 107.0, 29.0, 30.0, 31.0, 32.0, 108.0, 33.0,
+                34.0, 35.0, 36.0, 109.0, 37.0, 38.0, 39.0, 40.0, 110.0, 41.0, 42.0, 43.0, 44.0,
+                111.0, 45.0, 46.0, 47.0, 48.0, 112.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_bool() {
+        let err = OpTest::new(Op::Concat)
+            .input([1, 1], vec![true])
+            .input([1, 1], vec![false])
+            .attr("axis", AttributeType::Int(0))
+            .output([2, 1])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}

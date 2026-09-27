@@ -180,3 +180,51 @@ impl PowBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::OpTest;
+    use rmlk_schema::Op;
+
+    #[test]
+    fn float_base_i32_exp() {
+        let out = OpTest::new(Op::Pow)
+            .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
+            .input([2, 2], vec![2i32, 2, 3, 2])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![1.0, 4.0, 27.0, 16.0]);
+    }
+
+    #[test]
+    fn float_base_float_exp() {
+        let out = OpTest::new(Op::Pow)
+            .input([2], vec![4.0f32, 9.0])
+            .input([2], vec![0.5f32, 0.5])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![2.0, 3.0]);
+    }
+
+    #[test]
+    fn rank1() {
+        let out = OpTest::new(Op::Pow)
+            .input([3], vec![2.0f32, 3.0, 4.0])
+            .input([3], vec![3i32, 2, 1])
+            .run::<f32>()
+            .unwrap();
+        assert_eq!(out, vec![8.0, 9.0, 4.0]);
+    }
+
+    #[test]
+    fn rejects_bool_base() {
+        let err = OpTest::new(Op::Pow)
+            .input([1], vec![true])
+            .input([1], vec![2i32])
+            .run_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("unsupported"),
+            "unexpected error: {err:?}"
+        );
+    }
+}
