@@ -4,3 +4,4 @@ Cargo.lock
 *.rmlk
 *.txt
 .venv-oracle/
+.cache/

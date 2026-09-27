@@ -97,6 +97,18 @@ The runtime only supports `.rmlk` files. You must convert your `.onnx` model fil
 $ rocky transform <ONNX_FILE> [OUTPUT]
 ```
 
+### ONNX node conformance (GPU)
+
+Discovers official ONNX node cases from the pinned `onnx` package, runs those
+whose ops rmlk supports, and reports passes, failures, and missing-op blockers.
+See `docs/compatibility.md`.
+
+```bash
+python3 -m pip install -r scripts/requirements-oracle.in
+python3 scripts/discover_onnx_node_cases.py
+cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
+```
+
 ### Running Inference
 
 Please see the examples under `runtime`.

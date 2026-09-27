@@ -56,6 +56,27 @@ The script exits if the installed `onnx` / `onnxruntime` versions do not match
 this profile. After changing the graphs in `runtime/tests/graphs/`, regenerate
 and commit any intentional fixture diffs.
 
+### Official ONNX node cases
+
+The harness discovers cases from this pin's installed `onnx` package (under
+`onnx/backend/test/data/node`), writes a local cache manifest, and runs every
+case whose op types are all supported by rmlk. Case bytes are not committed;
+bumping `onnx` and re-running discovery picks up the new suite. The summary
+lists ops that blocked the most cases so unsupported coverage is visible.
+
+```bash
+python3 scripts/discover_onnx_node_cases.py
+cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
+```
+
+If the manifest is missing, the test tries to run the discover script itself.
+Override the cache directory with `RMLK_ONNX_NODE_CACHE` if needed.
+
+`ConstantOfShape` cases are skipped for now: packed `TENSOR` attributes abort
+quick-protobuf on unaligned reads (item 45). Softmax cases that need axis 1 on
+rank-3 inputs remain runnable and will fail until that support lands (Nemotron
+ASR).
+
 Use the CPU package for regenerating small graph goldens. Use
 `onnxruntime-gpu` at the same version for manual full-model e2e on GPU. If the
 local CUDA toolkit is older than what that GPU wheel requires, keep the oracle

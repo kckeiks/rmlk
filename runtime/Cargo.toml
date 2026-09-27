@@ -34,6 +34,9 @@ image = "0.24"
 # N‑dimensional array helpers.
 ndarray = "0.15"
 
+# Parse ONNX TensorProto fixtures in node-suite tests.
+quick-protobuf = "0.8"
+
 # Tokenizers for examples.
 tokenizers = "0.21"
 
