@@ -1,0 +1,11 @@
+# Pinned numerical oracle for scripts and ORT-aligned tests.
+# Source of truth for versions: docs/compatibility.md
+#
+#   python3 -m pip install -r scripts/requirements-oracle.in
+#
+# For manual GPU e2e on a CUDA 13 machine, install the same ORT version with:
+#   python3 -m pip install onnxruntime-gpu==1.28.0
+# (Do not install both onnxruntime and onnxruntime-gpu in one env.)
+
+onnx==1.21.0
+onnxruntime==1.28.0
