@@ -80,6 +80,24 @@ cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 If the manifest is missing, the test runs the discover script automatically.
 Override the cache directory with `RMLK_ONNX_NODE_CACHE` if needed.
 
+### Node-suite results baseline
+
+Passed case names (and optionally `dtype_gap` names) are recorded under
+`runtime/tests/baselines/onnx_node-<onnx_version>.json`. The default GPU run
+diffs against that file and fails if any previously `ok` case regressed to
+`dtype_gap` or `FAIL`. New failures that were never in the baseline still fail
+the suite on their own.
+
+After an intentional improvement or onnx pin bump, rewrite the baseline:
+
+```bash
+RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
+```
+
+Commit the updated JSON in the same change as the improvement or pin bump.
+Host-only unit tests for the baseline format and regression check live in the
+same `onnx_node` test binary and do not need a GPU.
+
 Known gaps: `ConstantOfShape` cases are skipped until the protobuf reader can
 load packed tensor attributes (item 45). Softmax on axis 1 with rank-3 input
 still fails until that path is implemented (needed for Nemotron ASR).
@@ -103,7 +121,9 @@ set:
 1. Update the tables in this file and the pins in `scripts/requirements-oracle.in`.
 2. Update the README summary if it still mentions IR or opset.
 3. Re-run official ONNX node cases for every op you claim (section 11 / item 53),
-   once that harness exists.
+   once that harness exists. Re-bless
+   `runtime/tests/baselines/onnx_node-<version>.json` if the pin change is
+   intentional (`RMLK_ONNX_NODE_BLESS=1`).
 4. Regenerate ORT-based graph goldens (`scripts/gen_graph_fixtures.py`) and
    commit any fixture diffs that are still within expected tolerance policy.
 5. Re-run the manual full-model e2e suite (ResNet, Llama) against the new oracle.

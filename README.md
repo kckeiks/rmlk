@@ -107,6 +107,8 @@ See `docs/compatibility.md`.
 python3 -m pip install -r scripts/requirements-oracle.in
 python3 scripts/discover_onnx_node_cases.py
 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
+# after intentional progress, rewrite the committed baseline:
+RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 ```
 
 ### Running Inference

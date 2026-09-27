@@ -5,9 +5,17 @@
 //! `.pb` oracles, and prints a summary of passes, failures, and ops that blocked
 //! cases from running.
 //!
+//! Results are checked against a committed baseline under
+//! `runtime/tests/baselines/onnx_node-<onnx_version>.json`. A case that used to
+//! `ok` and now lands in `dtype_gap` or `FAIL` is a regression. Update the
+//! baseline only with an explicit bless after an intentional improvement or pin
+//! bump:
+//!
 //! ```text
 //! python3 scripts/discover_onnx_node_cases.py
 //! cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
+//! # after intentional progress:
+//! RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 //! ```
 
 use quick_protobuf::{BytesReader, MessageRead};
@@ -25,6 +33,7 @@ use std::process::Command;
 const ATOL: f32 = 1e-5;
 const RTOL: f32 = 1e-4;
 const MANIFEST_VERSION: u64 = 2;
+const BASELINE_SCHEMA_VERSION: u64 = 1;
 
 /// ONNX op type strings that rmlk can import today (`Op::from_str` names).
 const SUPPORTED_OPS: &[&str] = &[
@@ -92,6 +101,133 @@ fn cache_dir() -> PathBuf {
     std::env::var_os("RMLK_ONNX_NODE_CACHE")
         .map(PathBuf::from)
         .unwrap_or_else(default_cache_dir)
+}
+
+fn baselines_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/baselines")
+}
+
+fn baseline_path(onnx_version: &str) -> PathBuf {
+    baselines_dir().join(format!("onnx_node-{onnx_version}.json"))
+}
+
+fn bless_requested() -> bool {
+    matches!(
+        std::env::var("RMLK_ONNX_NODE_BLESS").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NodeBaseline {
+    schema_version: u64,
+    onnx_version: String,
+    /// Cases that compared equal to the ONNX `.pb` oracle.
+    ok: BTreeSet<String>,
+    /// Cases blocked only by an unimplemented dtype or cast path.
+    dtype_gap: BTreeSet<String>,
+}
+
+impl NodeBaseline {
+    fn new(onnx_version: impl Into<String>, ok: BTreeSet<String>, dtype_gap: BTreeSet<String>) -> Self {
+        Self {
+            schema_version: BASELINE_SCHEMA_VERSION,
+            onnx_version: onnx_version.into(),
+            ok,
+            dtype_gap,
+        }
+    }
+
+    fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        let schema_version = value
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if schema_version != BASELINE_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported baseline schema_version {schema_version} (want {BASELINE_SCHEMA_VERSION})"
+            ));
+        }
+        let onnx_version = value["onnx_version"]
+            .as_str()
+            .ok_or("baseline missing onnx_version")?
+            .to_string();
+        let ok = string_set_field(value, "ok")?;
+        let dtype_gap = string_set_field(value, "dtype_gap")?;
+        Ok(Self {
+            schema_version,
+            onnx_version,
+            ok,
+            dtype_gap,
+        })
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "schema_version": self.schema_version,
+            "onnx_version": self.onnx_version,
+            "ok": self.ok.iter().cloned().collect::<Vec<_>>(),
+            "dtype_gap": self.dtype_gap.iter().cloned().collect::<Vec<_>>(),
+        })
+    }
+}
+
+fn string_set_field(value: &serde_json::Value, field: &str) -> Result<BTreeSet<String>, String> {
+    let arr = value
+        .get(field)
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("baseline missing `{field}` array"))?;
+    let mut set = BTreeSet::new();
+    for item in arr {
+        let s = item
+            .as_str()
+            .ok_or_else(|| format!("baseline `{field}` entry is not a string"))?;
+        set.insert(s.to_string());
+    }
+    Ok(set)
+}
+
+fn load_baseline(path: &Path) -> Result<NodeBaseline, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    NodeBaseline::from_json(&value).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn write_baseline(path: &Path, baseline: &NodeBaseline) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&baseline.to_json())
+        .map_err(|e| format!("serialize baseline: {e}"))?
+        + "\n";
+    fs::write(path, text).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Outcome of one runnable node case after the suite finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaseStatus {
+    Ok,
+    DtypeGap,
+    Fail,
+}
+
+/// Cases that were `ok` in the baseline but are no longer `ok`.
+fn baseline_regressions(
+    baseline: &NodeBaseline,
+    outcomes: &BTreeMap<String, CaseStatus>,
+) -> Vec<(String, CaseStatus)> {
+    let mut regressions = Vec::new();
+    for name in &baseline.ok {
+        match outcomes.get(name).copied() {
+            Some(CaseStatus::Ok) => {}
+            Some(status) => regressions.push((name.clone(), status)),
+            // Case disappeared from the runnable set (pin change / skip list).
+            None => regressions.push((name.clone(), CaseStatus::Fail)),
+        }
+    }
+    regressions
 }
 
 fn run_discover() -> PathBuf {
@@ -455,6 +591,7 @@ fn run_discovered_node_cases() {
     let mut passed = 0usize;
     let mut dtype_cast_gaps: Vec<(String, String)> = Vec::new();
     let mut failures: Vec<(String, String)> = Vec::new();
+    let mut outcomes: BTreeMap<String, CaseStatus> = BTreeMap::new();
 
     for case in &runnable {
         let case_dir = manifest.node_data_root.join(&case.name);
@@ -463,23 +600,28 @@ fn run_discovered_node_cases() {
             Ok(Ok(())) => {
                 passed += 1;
                 println!("ok        {}", case.name);
+                outcomes.insert(case.name.clone(), CaseStatus::Ok);
             }
             Ok(Err(err)) if is_dtype_or_cast_gap(&err) => {
                 println!("dtype_gap {}: {err}", case.name);
                 dtype_cast_gaps.push((case.name.clone(), err));
+                outcomes.insert(case.name.clone(), CaseStatus::DtypeGap);
             }
             Ok(Err(err)) => {
                 println!("FAIL      {}: {err}", case.name);
                 failures.push((case.name.clone(), err));
+                outcomes.insert(case.name.clone(), CaseStatus::Fail);
             }
             Err(payload) => {
                 let err = format_catch_unwind_payload(payload);
                 if is_dtype_or_cast_gap(&err) {
                     println!("dtype_gap {}: {err}", case.name);
                     dtype_cast_gaps.push((case.name.clone(), err));
+                    outcomes.insert(case.name.clone(), CaseStatus::DtypeGap);
                 } else {
                     println!("FAIL      {}: {err}", case.name);
                     failures.push((case.name.clone(), err));
+                    outcomes.insert(case.name.clone(), CaseStatus::Fail);
                 }
             }
         }
@@ -519,9 +661,138 @@ fn run_discovered_node_cases() {
         for (name, err) in &failures {
             println!("  {name}: {err}");
         }
+    }
+
+    let baseline_file = baseline_path(&manifest.onnx_version);
+    let ok_names: BTreeSet<String> = outcomes
+        .iter()
+        .filter(|(_, s)| **s == CaseStatus::Ok)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let gap_names: BTreeSet<String> = outcomes
+        .iter()
+        .filter(|(_, s)| **s == CaseStatus::DtypeGap)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let fresh = NodeBaseline::new(&manifest.onnx_version, ok_names, gap_names);
+
+    if bless_requested() {
+        write_baseline(&baseline_file, &fresh).unwrap_or_else(|e| panic!("bless failed: {e}"));
+        println!();
+        println!(
+            "blessed baseline {} (ok={}, dtype_gap={})",
+            baseline_file.display(),
+            fresh.ok.len(),
+            fresh.dtype_gap.len()
+        );
+    } else {
+        assert!(
+            baseline_file.is_file(),
+            "missing node-suite baseline {}; run once with RMLK_ONNX_NODE_BLESS=1 to create it",
+            baseline_file.display()
+        );
+        let baseline =
+            load_baseline(&baseline_file).unwrap_or_else(|e| panic!("load baseline: {e}"));
+        assert_eq!(
+            baseline.onnx_version, manifest.onnx_version,
+            "baseline onnx_version {} != manifest {}",
+            baseline.onnx_version, manifest.onnx_version
+        );
+        let regressions = baseline_regressions(&baseline, &outcomes);
+        if !regressions.is_empty() {
+            println!();
+            println!("Baseline regressions (previously ok):");
+            for (name, status) in &regressions {
+                let label = match status {
+                    CaseStatus::Ok => "ok",
+                    CaseStatus::DtypeGap => "dtype_gap",
+                    CaseStatus::Fail => "FAIL",
+                };
+                println!("  {name}: ok -> {label}");
+            }
+            panic!(
+                "{} previously-ok node case(s) regressed; fix or re-bless with RMLK_ONNX_NODE_BLESS=1",
+                regressions.len()
+            );
+        }
+        println!();
+        println!(
+            "baseline ok:               {} (no regressions)",
+            baseline.ok.len()
+        );
+    }
+
+    if !failures.is_empty() {
         panic!(
             "{} runnable node case(s) failed; see summary above",
             failures.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod baseline_tests {
+    use super::*;
+
+    fn sample_baseline() -> NodeBaseline {
+        NodeBaseline::new(
+            "1.21.0",
+            ["test_add", "test_mul"].into_iter().map(str::to_string).collect(),
+            ["test_add_uint8"].into_iter().map(str::to_string).collect(),
+        )
+    }
+
+    #[test]
+    fn baseline_round_trip_json() {
+        let baseline = sample_baseline();
+        let parsed = NodeBaseline::from_json(&baseline.to_json()).unwrap();
+        assert_eq!(parsed, baseline);
+    }
+
+    #[test]
+    fn regressions_detect_ok_to_dtype_gap_and_fail() {
+        let baseline = sample_baseline();
+        let mut outcomes = BTreeMap::new();
+        outcomes.insert("test_add".into(), CaseStatus::DtypeGap);
+        outcomes.insert("test_mul".into(), CaseStatus::Fail);
+        let regs = baseline_regressions(&baseline, &outcomes);
+        assert_eq!(
+            regs,
+            vec![
+                ("test_add".into(), CaseStatus::DtypeGap),
+                ("test_mul".into(), CaseStatus::Fail),
+            ]
+        );
+    }
+
+    #[test]
+    fn regressions_ignore_new_failures_and_stable_ok() {
+        let baseline = sample_baseline();
+        let mut outcomes = BTreeMap::new();
+        outcomes.insert("test_add".into(), CaseStatus::Ok);
+        outcomes.insert("test_mul".into(), CaseStatus::Ok);
+        outcomes.insert("test_new".into(), CaseStatus::Fail);
+        assert!(baseline_regressions(&baseline, &outcomes).is_empty());
+    }
+
+    #[test]
+    fn regressions_when_baseline_case_missing_from_run() {
+        let baseline = sample_baseline();
+        let mut outcomes = BTreeMap::new();
+        outcomes.insert("test_add".into(), CaseStatus::Ok);
+        // test_mul absent
+        let regs = baseline_regressions(&baseline, &outcomes);
+        assert_eq!(regs, vec![("test_mul".into(), CaseStatus::Fail)]);
+    }
+
+    #[test]
+    fn rejects_wrong_schema_version() {
+        let value = serde_json::json!({
+            "schema_version": 999,
+            "onnx_version": "1.21.0",
+            "ok": [],
+            "dtype_gap": [],
+        });
+        assert!(NodeBaseline::from_json(&value).is_err());
     }
 }
