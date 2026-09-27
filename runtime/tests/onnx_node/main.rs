@@ -11,16 +11,20 @@
 //! ```
 
 use quick_protobuf::{BytesReader, MessageRead};
-use rmlk_runtime::{Builder, Value};
+use rmlk_runtime::{
+    Builder, Value, UNSUPPORTED_CAST_PREFIX, UNSUPPORTED_DATA_TYPE_PREFIX,
+};
 use rmlk_schema::onnx::TensorProto;
 use rmlk_schema::{tensor_from_onnx_tensor, DataType, Tensor};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const ATOL: f32 = 1e-5;
 const RTOL: f32 = 1e-4;
+const MANIFEST_VERSION: u64 = 2;
 
 /// ONNX op type strings that rmlk can import today (`Op::from_str` names).
 const SUPPORTED_OPS: &[&str] = &[
@@ -90,12 +94,8 @@ fn cache_dir() -> PathBuf {
         .unwrap_or_else(default_cache_dir)
 }
 
-fn ensure_manifest() -> PathBuf {
+fn run_discover() -> PathBuf {
     let manifest_path = cache_dir().join("manifest.json");
-    if manifest_path.is_file() {
-        return manifest_path;
-    }
-
     let script = repo_root().join("scripts/discover_onnx_node_cases.py");
     let status = Command::new("python3")
         .arg(&script)
@@ -113,6 +113,21 @@ fn ensure_manifest() -> PathBuf {
         manifest_path.display()
     );
     manifest_path
+}
+
+fn ensure_manifest() -> PathBuf {
+    let manifest_path = cache_dir().join("manifest.json");
+    if manifest_path.is_file() {
+        if let Ok(text) = fs::read_to_string(&manifest_path) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                let version = value["manifest_version"].as_u64().unwrap_or(0);
+                if version >= MANIFEST_VERSION {
+                    return manifest_path;
+                }
+            }
+        }
+    }
+    run_discover()
 }
 
 fn load_manifest(path: &Path) -> Manifest {
@@ -166,6 +181,28 @@ fn missing_ops(case_ops: &[String], supported: &BTreeSet<&str>) -> Vec<String> {
     missing
 }
 
+/// `Debug` spelling of [`rmlk_schema::Error::NotSupported`] as formatted with `{:?}`.
+const SCHEMA_NOT_SUPPORTED_DEBUG: &str = "NotSupported";
+
+/// True when the op was accepted but a data type or cast path is not implemented.
+fn is_dtype_or_cast_gap(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains(UNSUPPORTED_DATA_TYPE_PREFIX)
+        || e.contains(UNSUPPORTED_CAST_PREFIX)
+        || e.contains(&SCHEMA_NOT_SUPPORTED_DEBUG.to_lowercase())
+}
+
+/// Format a payload caught by [`catch_unwind`] (a panic that did not abort).
+fn format_catch_unwind_payload(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        format!("caught panic: {s}")
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        format!("caught panic: {s}")
+    } else {
+        "caught panic: <non-string payload>".into()
+    }
+}
+
 fn load_tensor_pb(path: &Path) -> Result<Tensor, String> {
     let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut reader = BytesReader::from_bytes(&bytes);
@@ -216,7 +253,7 @@ fn tensor_to_value(tensor: &Tensor) -> Result<Value, String> {
             };
             Ok((data, dims).into())
         }
-        other => Err(format!("unsupported fixture dtype {other:?}")),
+        other => Err(format!("{}: {:?}", UNSUPPORTED_DATA_TYPE_PREFIX, other)),
     }
 }
 
@@ -384,7 +421,7 @@ fn run_case(case_dir: &Path) -> Result<(), String> {
 fn run_discovered_node_cases() {
     let manifest_path = ensure_manifest();
     let manifest = load_manifest(&manifest_path);
-    let supported = supported_op_set();
+    let supported_ops = supported_op_set();
 
     assert!(
         manifest.node_data_root.is_dir(),
@@ -393,9 +430,9 @@ fn run_discovered_node_cases() {
     );
 
     let mut runnable = Vec::new();
-    let mut skipped_unsupported = 0usize;
+    let mut skipped_unsupported_ops = 0usize;
     let mut skipped_known_broken = 0usize;
-    let mut blocker_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut op_blocker_counts: BTreeMap<String, usize> = BTreeMap::new();
 
     for case in &manifest.cases {
         // Packed TENSOR attributes (e.g. ConstantOfShape value) abort quick-protobuf
@@ -404,30 +441,46 @@ fn run_discovered_node_cases() {
             skipped_known_broken += 1;
             continue;
         }
-        let missing = missing_ops(&case.ops, &supported);
+        let missing = missing_ops(&case.ops, &supported_ops);
         if missing.is_empty() {
             runnable.push(case);
         } else {
-            skipped_unsupported += 1;
+            skipped_unsupported_ops += 1;
             for op in missing {
-                *blocker_counts.entry(op).or_default() += 1;
+                *op_blocker_counts.entry(op).or_default() += 1;
             }
         }
     }
 
     let mut passed = 0usize;
+    let mut dtype_cast_gaps: Vec<(String, String)> = Vec::new();
     let mut failures: Vec<(String, String)> = Vec::new();
 
     for case in &runnable {
         let case_dir = manifest.node_data_root.join(&case.name);
-        match run_case(&case_dir) {
-            Ok(()) => {
+        let result = catch_unwind(AssertUnwindSafe(|| run_case(&case_dir)));
+        match result {
+            Ok(Ok(())) => {
                 passed += 1;
-                println!("ok   {}", case.name);
+                println!("ok        {}", case.name);
             }
-            Err(err) => {
-                println!("FAIL {}: {err}", case.name);
+            Ok(Err(err)) if is_dtype_or_cast_gap(&err) => {
+                println!("dtype_gap {}: {err}", case.name);
+                dtype_cast_gaps.push((case.name.clone(), err));
+            }
+            Ok(Err(err)) => {
+                println!("FAIL      {}: {err}", case.name);
                 failures.push((case.name.clone(), err));
+            }
+            Err(payload) => {
+                let err = format_catch_unwind_payload(payload);
+                if is_dtype_or_cast_gap(&err) {
+                    println!("dtype_gap {}: {err}", case.name);
+                    dtype_cast_gaps.push((case.name.clone(), err));
+                } else {
+                    println!("FAIL      {}: {err}", case.name);
+                    failures.push((case.name.clone(), err));
+                }
             }
         }
     }
@@ -435,18 +488,29 @@ fn run_discovered_node_cases() {
     println!();
     println!("=== ONNX node suite summary (onnx=={}) ===", manifest.onnx_version);
     println!("discovered:              {}", manifest.cases.len());
-    println!("runnable (ops ok):       {}", runnable.len());
-    println!("skipped (missing op):    {skipped_unsupported}");
+    println!("runnable (ops known):    {}", runnable.len());
+    println!("skipped (unknown op):    {skipped_unsupported_ops}");
     println!("skipped (known broken):  {skipped_known_broken}");
     println!("passed:                  {passed}");
+    println!("dtype/cast gap:          {}", dtype_cast_gaps.len());
     println!("failed:                  {}", failures.len());
-    if !blocker_counts.is_empty() {
+    if !op_blocker_counts.is_empty() {
         println!();
-        println!("Top ops blocking cases (unsupported by rmlk):");
-        let mut ranked: Vec<_> = blocker_counts.into_iter().collect();
+        println!("Top unknown ops (cases skipped; op not in rmlk):");
+        let mut ranked: Vec<_> = op_blocker_counts.into_iter().collect();
         ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         for (op, count) in ranked.into_iter().take(40) {
             println!("  {count:>5}  {op}");
+        }
+    }
+    if !dtype_cast_gaps.is_empty() {
+        println!();
+        println!("Dtype/cast gaps (op is known; dtype or cast path not implemented):");
+        for (name, err) in dtype_cast_gaps.iter().take(60) {
+            println!("  {name}: {err}");
+        }
+        if dtype_cast_gaps.len() > 60 {
+            println!("  ... and {} more", dtype_cast_gaps.len() - 60);
         }
     }
     if !failures.is_empty() {

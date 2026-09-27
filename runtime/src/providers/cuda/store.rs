@@ -1,4 +1,5 @@
 use crate::core::device_service::{Value, ValueStore};
+use crate::core::error::UnsupportedDataType;
 use crate::providers::cuda::allocator::CudaBump;
 use crate::providers::cuda::data::CudaData;
 use crate::providers::cuda::tensor::Tensor;
@@ -408,7 +409,7 @@ impl Value for Tensor {
                 let src = data.data::<bool>();
                 self.write_payload(&src)?;
             }
-            dtype => unimplemented!("unimplemented for data type {dtype:?}"),
+            dtype => return Err(UnsupportedDataType(dtype).into()),
         }
 
         Ok(())

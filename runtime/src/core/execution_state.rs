@@ -1,5 +1,6 @@
 use crate::core::allocators::ScratchAllocator;
 use crate::core::device_service::{DeviceService, Value as StoreValue, ValueStore};
+use crate::core::error::UnsupportedDataType;
 use crate::core::instance_state::ModelInstanceState;
 use crate::core::value::{InnerValue, Value};
 use crate::utils;
@@ -219,7 +220,7 @@ where
                 let data = tensor.data::<bool>()?;
                 Ok((data, tensor.shape()).into())
             }
-            _ => unimplemented!(),
+            dtype => Err(UnsupportedDataType(dtype).into()),
         }
     }
 

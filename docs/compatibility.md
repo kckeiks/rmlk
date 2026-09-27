@@ -58,24 +58,31 @@ and commit any intentional fixture diffs.
 
 ### Official ONNX node cases
 
-The harness discovers cases from this pin's installed `onnx` package (under
-`onnx/backend/test/data/node`), writes a local cache manifest, and runs every
-case whose op types are all supported by rmlk. Case bytes are not committed;
-bumping `onnx` and re-running discovery picks up the new suite. The summary
-lists ops that blocked the most cases so unsupported coverage is visible.
+These tests compare rmlk to the official ONNX single-op suite that ships inside
+the pinned `onnx` package. Case files are not stored in git. Discovery writes a
+local cache manifest; the harness then classifies each case:
+
+1. **Skipped (unknown op)** — the model uses an operator that is not in rmlk's
+   `Op` set at all. The summary ranks those ops by how many cases they block.
+2. **Dtype/cast gap** — every operator in the case is known, but the run fails
+   because that op does not yet handle this element type or cast pair. Logged
+   as `dtype_gap`; does not fail the test by itself.
+3. **Failed** — wrong outputs or an unexpected error. Fails the test.
+4. **Passed** — outputs match the suite within tolerance.
+
+Requires a CUDA GPU. Ignored by default:
 
 ```bash
 python3 scripts/discover_onnx_node_cases.py
 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 ```
 
-If the manifest is missing, the test tries to run the discover script itself.
+If the manifest is missing, the test runs the discover script automatically.
 Override the cache directory with `RMLK_ONNX_NODE_CACHE` if needed.
 
-`ConstantOfShape` cases are skipped for now: packed `TENSOR` attributes abort
-quick-protobuf on unaligned reads (item 45). Softmax cases that need axis 1 on
-rank-3 inputs remain runnable and will fail until that support lands (Nemotron
-ASR).
+Known gaps: `ConstantOfShape` cases are skipped until the protobuf reader can
+load packed tensor attributes (item 45). Softmax on axis 1 with rank-3 input
+still fails until that path is implemented (needed for Nemotron ASR).
 
 Use the CPU package for regenerating small graph goldens. Use
 `onnxruntime-gpu` at the same version for manual full-model e2e on GPU. If the

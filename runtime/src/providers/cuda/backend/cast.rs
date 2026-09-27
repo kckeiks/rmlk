@@ -188,7 +188,13 @@ impl Display for CastError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CastError::UnsupportedCast { src, dst } => {
-                write!(f, "unsupported cast {:?} to {:?}", src, dst)
+                write!(
+                    f,
+                    "{} {:?} to {:?}",
+                    crate::core::error::UNSUPPORTED_CAST_PREFIX,
+                    src,
+                    dst
+                )
             }
         }
     }

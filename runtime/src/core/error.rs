@@ -1,4 +1,13 @@
 use rmlk_schema::DataType;
+use std::fmt;
+
+/// Stable prefix for [`UnsupportedDataType`]'s display string.
+/// Node-suite harness matching must use this rather than a duplicate literal.
+pub const UNSUPPORTED_DATA_TYPE_PREFIX: &str = "unsupported data type";
+
+/// Stable prefix for unsupported Cast errors.
+/// Node-suite harness matching must use this rather than a duplicate literal.
+pub const UNSUPPORTED_CAST_PREFIX: &str = "unsupported cast";
 
 #[derive(Debug, thiserror::Error)]
 #[error("inference failed: {0}")]
@@ -9,9 +18,16 @@ pub struct InferenceError(#[from] pub(crate) anyhow::Error);
 #[error("unable to convert")]
 pub struct ConversionError;
 
-#[derive(Debug, thiserror::Error)]
-#[error("unsupported data type: {0:?}")]
+#[derive(Debug)]
 pub struct UnsupportedDataType(pub(crate) DataType);
+
+impl fmt::Display for UnsupportedDataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {:?}", UNSUPPORTED_DATA_TYPE_PREFIX, self.0)
+    }
+}
+
+impl std::error::Error for UnsupportedDataType {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
