@@ -1,4 +1,4 @@
-//! Unit tests for the e2e asset resolver (fake directory backend; no S3).
+//! Unit tests for the e2e asset resolver (fake directory backend; no network).
 //!
 //! ```text
 //! cargo test -p rmlk-runtime --test e2e_assets
@@ -8,8 +8,8 @@
 mod common;
 
 use common::e2e_assets::{
-    file_entry_for_bytes, object_key, override_env_name, AssetResolver, DirBackend, FileEntry,
-    HttpBackend, ResolveError, Sidecar,
+    file_entry_for_bytes, huggingface_base_url, object_key, override_env_name, AssetResolver,
+    DirBackend, FileEntry, HttpBackend, ResolveError, Sidecar,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -220,15 +220,18 @@ fn load_sidecar_parses_pins() {
 
 #[test]
 fn from_env_default_cache_root_is_under_repo() {
-    // Smoke-check helpers used by the future e2e harness (item 59).
     let root = common::e2e_assets::default_cache_root();
     assert!(root.ends_with(".cache/rmlk/e2e"));
     assert_eq!(
         override_env_name("resnet34", "sidecar"),
         "RMLK_E2E_ASSET_RESNET34_SIDECAR"
     );
+    assert_eq!(
+        huggingface_base_url("org/rmlk-e2e", "main"),
+        "https://huggingface.co/org/rmlk-e2e/resolve/main"
+    );
     // Construct only; no network.
-    let _ = HttpBackend::new("https://example.invalid/rmlk-e2e");
+    let _ = HttpBackend::new("https://huggingface.co/org/rmlk-e2e/resolve/main");
     let _ = AssetResolver::<HttpBackend>::from_env();
 }
 

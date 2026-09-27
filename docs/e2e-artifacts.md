@@ -10,19 +10,30 @@ that were current when the artifact was published.
 
 ## Remote store
 
+Primary host is a **Hugging Face Hub** dataset or model repo. Any HTTPS prefix
+that serves `GET {base}/{key}` also works.
+
 | Field | Value |
 |-------|-------|
-| Scheme | HTTPS object storage (S3-compatible or a static HTTPS prefix) |
-| Base URL | Set by `RMLK_E2E_BASE_URL` (no trailing slash). Example: `https://example-bucket.s3.amazonaws.com/rmlk-e2e` |
-| Auth | Public read, or credentials supplied by the environment of the runner. The contract does not require a specific cloud SDK; a simple HTTP GET of `{base}/{key}` is enough. |
+| Preferred host | Hugging Face Hub |
+| Hub URL shape | `https://huggingface.co/{repo_id}/resolve/{revision}/{key}` |
+| Base URL | Built from `RMLK_E2E_HF_REPO` + `RMLK_E2E_HF_REVISION`, or set explicitly with `RMLK_E2E_BASE_URL` (no trailing slash) |
+| Auth | Public read by default. For private repos, set `HF_TOKEN` (sent as `Authorization: Bearer …` on download). |
 
-Until a real bucket is published, local path overrides (below) are the supported
-way to run e2e. The base URL is required only when a file is not overridden and
-not already present in the cache.
+Example base URL for repo `rmlk-project/e2e-artifacts` at revision `main`:
+
+```text
+https://huggingface.co/rmlk-project/e2e-artifacts/resolve/main
+```
+
+Until a Hub repo is published, local path overrides (below) are the supported
+way to run e2e. A base URL (or HF repo) is required only when a file is not
+overridden and not already present in the cache.
 
 ## Object key layout
 
-Keys are POSIX-style paths under the base URL:
+Keys are POSIX-style paths under the base URL (and thus under the Hub repo
+root):
 
 ```text
 {case_id}/{artifact_id}/{filename}
@@ -31,7 +42,7 @@ Keys are POSIX-style paths under the base URL:
 | Segment | Meaning |
 |---------|---------|
 | `case_id` | Stable case name used by the harness: `resnet34`, `llama3.2`, … |
-| `artifact_id` | Content revision of that case's published set, typically a short content hash or dated tag (for example `2026-09-27` or `sha256:abcd1234` truncated). Changing any payload byte requires a new `artifact_id`. |
+| `artifact_id` | Content revision of that case's published set, typically a short content hash or dated tag (for example `2026-09-27`). Changing any payload byte requires a new `artifact_id`. |
 | `filename` | One of the roles listed below. |
 
 Sidecar for a published set:
@@ -53,7 +64,7 @@ llama3.2/2026-09-27/sidecar.json
 ```
 
 Which `artifact_id` is current for a case is recorded in the committed case
-manifest that the harness loads (added with items 59–61), not in this doc.
+manifest that the harness loads (items 59–61), not in this doc.
 
 ## File roles
 
@@ -157,31 +168,38 @@ path by trying, in order:
 3. **Download** — `GET {base_url}/{case_id}/{artifact_id}/{filename}`, write into
    the cache atomically, verify checksum, then return the cache path.
 
-Missing base URL when a download is required is an error. Missing override and
-missing remote for a required role is an error.
+Missing base URL / Hub repo when a download is required is an error. Missing
+override and missing remote for a required role is an error.
 
 ## Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `RMLK_E2E_BASE_URL` | Remote prefix for downloads (no trailing slash). |
+| `RMLK_E2E_HF_REPO` | Hugging Face repo id (`org/name`). Preferred way to set the remote. |
+| `RMLK_E2E_HF_REVISION` | Hub revision (branch, tag, or commit). Default: `main`. |
+| `RMLK_E2E_BASE_URL` | Explicit HTTPS prefix (overrides the Hub-derived URL). |
+| `HF_TOKEN` | Optional Bearer token for private Hub repos. |
 | `RMLK_E2E_CACHE` | Override cache root (default: `<repo>/.cache/rmlk/e2e`). |
 | `RMLK_E2E_ASSET_<CASE>_<ROLE>` | Absolute or repo-relative path to a local file that replaces remote+cache for that role. `CASE` and `ROLE` are uppercase, non-alnum → `_`. |
 
 Examples:
 
 ```bash
+# Prefer Hub:
+export RMLK_E2E_HF_REPO=rmlk-project/e2e-artifacts
+export RMLK_E2E_HF_REVISION=main
+
+# Or point at any HTTPS prefix with the same key layout:
+export RMLK_E2E_BASE_URL=https://huggingface.co/rmlk-project/e2e-artifacts/resolve/main
+
 # Use a model already on disk; skip download for that role only.
 export RMLK_E2E_ASSET_RESNET34_MODEL=/data/models/resnet34.onnx
 export RMLK_E2E_ASSET_RESNET34_INPUT=/data/fixtures/labrador.f32
+export RMLK_E2E_ASSET_RESNET34_SIDECAR=/data/fixtures/sidecar.json
 
 export RMLK_E2E_ASSET_LLAMA3_2_MODEL=/data/models/llama3.2.onnx
 export RMLK_E2E_ASSET_LLAMA3_2_TOKENIZER=/data/models/tokenizer.json
 export RMLK_E2E_ASSET_LLAMA3_2_PROMPT=/data/fixtures/prompt.txt
-
-# Optional: custom cache or bucket.
-export RMLK_E2E_CACHE=/var/tmp/rmlk-e2e-cache
-export RMLK_E2E_BASE_URL=https://example-bucket.s3.amazonaws.com/rmlk-e2e
 ```
 
 Naming rule: take `case_id` and `role`, uppercase, replace every character
@@ -193,7 +211,8 @@ outside `[A-Z0-9]` with `_`, then
 
 1. Export or convert the model to the IR/opset in [`compatibility.md`](compatibility.md).
 2. Choose a new `artifact_id` (never overwrite bytes under an existing id).
-3. Upload payload files to `{case_id}/{artifact_id}/…`.
+3. Upload payload files to the Hub repo at `{case_id}/{artifact_id}/…`
+   (e.g. `huggingface-cli upload …`).
 4. Write `sidecar.json` with checksums and pin versions; upload it last.
 5. Point the committed harness case manifest at the new `artifact_id`.
 6. Re-run e2e; re-bless the e2e results baseline (item 64) if verdicts change

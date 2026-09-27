@@ -46,6 +46,9 @@ sha2 = "0.10"
 tempfile = "3"
 ureq = "2.12"
 
+# Pinned ORT 1.28 oracle for full-model e2e (see docs/compatibility.md).
+ort = { version = "=2.0.0-rc.13", features = ["cuda"] }
+
 [features]
 default = []
 

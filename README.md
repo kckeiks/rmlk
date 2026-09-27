@@ -111,6 +111,16 @@ cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 ```
 
+### Full-model e2e vs ORT (GPU, manual)
+
+Compares rmlk to the pinned ORT CUDA EP on large models. Artifacts come from
+Hugging Face Hub (or local overrides); see `docs/e2e-artifacts.md`.
+
+```bash
+export RMLK_E2E_HF_REPO=…          # or set RMLK_E2E_ASSET_* overrides
+cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
+```
+
 ### Running Inference
 
 Please see the examples under `runtime`.

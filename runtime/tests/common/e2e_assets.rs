@@ -3,6 +3,9 @@
 //! Contract: `docs/e2e-artifacts.md`. Resolution order is override → cache →
 //! download via an [`AssetBackend`], then SHA-256 verify against the sidecar.
 
+// Shared by several integration-test binaries; not every helper is used by each.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -20,7 +23,7 @@ pub trait AssetBackend {
 }
 
 /// Local directory that mirrors the remote key layout. Used as a fake store in
-/// unit tests so no S3 credentials are required.
+/// unit tests so no network / Hub credentials are required.
 pub struct DirBackend {
     root: PathBuf,
 }
@@ -41,9 +44,12 @@ impl AssetBackend for DirBackend {
     }
 }
 
-/// HTTPS GET against `{base_url}/{object_key}`.
+/// HTTPS GET against `{base_url}/{object_key}` (Hugging Face Hub resolve URL or
+/// any static HTTPS prefix with the same key layout).
 pub struct HttpBackend {
     base_url: String,
+    /// Optional Hub token (`HF_TOKEN`); sent as Bearer auth when set.
+    token: Option<String>,
 }
 
 impl HttpBackend {
@@ -51,14 +57,27 @@ impl HttpBackend {
         let base = base_url.into();
         Self {
             base_url: base.trim_end_matches('/').to_string(),
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        let t = token.into();
+        if !t.is_empty() {
+            self.token = Some(t);
+        }
+        self
     }
 }
 
 impl AssetBackend for HttpBackend {
     fn fetch(&self, object_key: &str) -> Result<Vec<u8>, ResolveError> {
         let url = format!("{}/{object_key}", self.base_url);
-        let response = ureq::get(&url).call().map_err(|e| ResolveError::Backend {
+        let mut request = ureq::get(&url);
+        if let Some(token) = &self.token {
+            request = request.set("Authorization", &format!("Bearer {token}"));
+        }
+        let response = request.call().map_err(|e| ResolveError::Backend {
             key: object_key.to_string(),
             message: e.to_string(),
         })?;
@@ -72,6 +91,15 @@ impl AssetBackend for HttpBackend {
             })?;
         Ok(bytes)
     }
+}
+
+/// Hugging Face Hub resolve-URL prefix for a repo + revision.
+pub fn huggingface_base_url(repo_id: &str, revision: &str) -> String {
+    format!(
+        "https://huggingface.co/{}/resolve/{}",
+        repo_id.trim_matches('/'),
+        revision.trim_matches('/')
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,15 +205,22 @@ impl<B: AssetBackend> AssetResolver<B> {
         self
     }
 
-    /// Default cache root and optional HTTP backend from `RMLK_E2E_*` env vars.
+    /// Default cache root and optional HTTP backend from `RMLK_E2E_*` / Hub env.
+    ///
+    /// Remote selection: `RMLK_E2E_BASE_URL` if set, else
+    /// `RMLK_E2E_HF_REPO` (+ `RMLK_E2E_HF_REVISION`, default `main`).
     pub fn from_env() -> AssetResolver<HttpBackend> {
         let cache = std::env::var_os("RMLK_E2E_CACHE")
             .map(PathBuf::from)
             .unwrap_or_else(default_cache_root);
-        let backend = std::env::var("RMLK_E2E_BASE_URL")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .map(HttpBackend::new);
+        let token = std::env::var("HF_TOKEN").ok().filter(|s| !s.is_empty());
+        let backend = remote_base_url_from_env().map(|base| {
+            let mut http = HttpBackend::new(base);
+            if let Some(t) = token {
+                http = http.with_token(t);
+            }
+            http
+        });
         AssetResolver::new(cache, backend)
     }
 
@@ -345,6 +380,25 @@ pub fn default_cache_root() -> PathBuf {
         .parent()
         .expect("runtime crate parent")
         .join(".cache/rmlk/e2e")
+}
+
+pub fn remote_base_url_from_env() -> Option<String> {
+    if let Ok(base) = std::env::var("RMLK_E2E_BASE_URL") {
+        let base = base.trim().trim_end_matches('/').to_string();
+        if !base.is_empty() {
+            return Some(base);
+        }
+    }
+    let repo = std::env::var("RMLK_E2E_HF_REPO").ok()?;
+    let repo = repo.trim().trim_matches('/').to_string();
+    if repo.is_empty() {
+        return None;
+    }
+    let revision = std::env::var("RMLK_E2E_HF_REVISION")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "main".into());
+    Some(huggingface_base_url(&repo, revision.trim()))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

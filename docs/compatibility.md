@@ -109,9 +109,13 @@ local CUDA toolkit is older than what that GPU wheel requires, keep the oracle
 local override; do not change the profile pin without following the bump
 checklist below.
 
-Rust `ort` bindings used by in-process e2e (when added) must load this same
-ORT version. Record the crate pin next to these Python pins in the commit that
-introduces the harness.
+Rust `ort` bindings used by in-process e2e must load this same ORT version:
+
+| Crate | Pinned version | Features |
+|-------|----------------|----------|
+| `ort` | `=2.0.0-rc.13` | `cuda` |
+
+Dev-dependency of `rmlk-runtime` (full-model e2e harness only).
 
 ## Bump checklist
 
