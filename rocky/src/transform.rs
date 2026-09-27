@@ -245,7 +245,8 @@ mod tests {
         }
     }
 
-    /// Two-op graph: Add then Relu. Importer topology must match GraphBuilder oracle.
+    /// Import a two-op Add-then-Relu ONNX model and check that the resulting
+    /// topology matches a graph built with GraphBuilder.
     #[test]
     fn importer_matches_graph_builder_oracle() {
         let model = ModelProto {

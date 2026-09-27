@@ -3,7 +3,7 @@ use rmlk_runtime::{Builder, Value};
 use rmlk_schema::{AttributeType, DataType, GraphBuilder, Op, Tensor};
 use std::collections::HashMap;
 
-/// Conv → Relu → MaxPool → GlobalAveragePool → Reshape → Gemm.
+/// Runs Conv, Relu, MaxPool, GlobalAveragePool, Reshape, and Gemm in sequence.
 #[test]
 fn conv_block() {
     let x = load_f32("conv_block_x.f32");

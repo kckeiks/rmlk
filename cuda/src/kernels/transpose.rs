@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_transpose_arbitrary_3d() {
-        // 2×3×4 → 4×2×3 with perm=[2,0,1]
+        // Transpose shape [2, 3, 4] to [4, 2, 3] with perm [2, 0, 1].
         let input_shape = &[2, 3, 4];
         let perm = &[2, 0, 1];
         let input: Vec<i32> = (0..24).collect();

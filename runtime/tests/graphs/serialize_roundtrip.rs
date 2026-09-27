@@ -13,7 +13,9 @@ fn add_graph() -> Graph {
     g.build().unwrap()
 }
 
-/// `GraphBuilder` → bincode → `with_model_from_memory` matches `from_graph`.
+/// Serializing a graph with bincode and loading it through
+/// [`Builder::with_model_from_memory`] must produce the same run results as
+/// building directly with [`Builder::from_graph`].
 #[test]
 fn bincode_round_trip_matches_from_graph() {
     let a = vec![1.0f32, 2.0, 3.0, 4.0];

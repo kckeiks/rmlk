@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn with_constant() {
-        // Former add_with_constants: (a + b) + const, expressed as two Adds.
+        // Add two tensors, then add a constant tensor to the result.
         let ab = OpTest::new(Op::Add)
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn broadcast_with_constant() {
-        // Former add_broadcast: (a + b) + const[1, 2].
+        // Add two tensors, then broadcast-add a rank-2 constant of shape [1, 2].
         let ab = OpTest::new(Op::Add)
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn broadcast_diff_len_shapes() {
-        // Former add_broadcast_diff_len_shapes: (a + b) + const[3].
+        // Add tensors with different ranks, then broadcast-add a 1-D constant.
         let ab = OpTest::new(Op::Add)
             .input(
                 [2, 4, 1],
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn three_inputs_chained() {
-        // Former add_three_inputs: (a + b) + c.
+        // Chain two Adds so three tensors are summed.
         let ab = OpTest::new(Op::Add)
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
             .input([2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "CudaData::drop panics on Float16 (TODO.md item 21)"]
+    #[ignore = "CudaData::drop panics when the tensor dtype is Float16"]
     fn f16_inputs() {
         let a = [1.0f32, 2.0, 3.0, 4.0].map(f16::from_f32).to_vec();
         let b = [1.0f32, 2.0, 3.0, 4.0].map(f16::from_f32).to_vec();

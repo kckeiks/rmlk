@@ -49,7 +49,7 @@ def matmul(a: list[float], a_shape: tuple[int, ...], b: list[float], b_shape: tu
 
 
 def transpose_021(x: list[float], n: int, a: int, b: int) -> list[float]:
-    """Transpose axes (0,2,1) on [n,a,b] -> [n,b,a]."""
+    """Transpose axes (0, 2, 1) so shape [n, a, b] becomes [n, b, a]."""
     out = [0.0] * (n * a * b)
     for i in range(n):
         for j in range(a):
@@ -171,8 +171,9 @@ def gemm(a, a_shape, b, b_shape):
 
 
 def gen_conv_block() -> None:
-    # x: [1,1,4,4], w: [2,1,3,3] -> conv [1,2,2,2] -> relu -> maxpool [1,2,1,1]
-    # -> gap [1,2,1,1] -> reshape [1,2] -> gemm with [2,3] -> [1,3]
+    # Input [1, 1, 4, 4] and weights [2, 1, 3, 3]. After valid Conv the shape is
+    # [1, 2, 2, 2]; Relu and 2x2 MaxPool yield [1, 2, 1, 1]; GlobalAveragePool
+    # keeps that; reshape flattens to [1, 2]; Gemm with [2, 3] yields [1, 3].
     x = [float(i) for i in range(16)]
     w = [
         1.0, 0.0, 0.0,
@@ -185,13 +186,14 @@ def gen_conv_block() -> None:
     fc = [
         1.0, 0.0, 0.5,
         0.0, 1.0, -0.5,
-    ]  # [2, 3]
+    ]  # shape [2, 3]
 
     y, sh = conv2d(x, (1, 1, 4, 4), w, (2, 1, 3, 3))
     y = relu(y)
     y, sh = max_pool_2x2_stride2(y, sh)
     y, sh = global_avg_pool(y, sh)
-    flat = y  # [1,2,1,1] -> treat as [1,2]
+    # GAP output is [1, 2, 1, 1]; treat the values as a [1, 2] matrix for Gemm.
+    flat = y
     out = gemm(flat, (1, 2), fc, (2, 3))
 
     write_f32(OUT / "conv_block_x.f32", x)

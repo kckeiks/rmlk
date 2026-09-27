@@ -281,8 +281,9 @@ mod tests {
 
     #[test]
     fn oneshot_scale() {
-        // 1x1 conv scales every element by 2.
-        // pads must be length >= 4 so ConvAttributes::pads() (pads[2..]) is spatial.
+        // A 1x1 convolution that scales every element by 2.
+        // Pads must have length at least 4 because ConvAttributes::pads returns the
+        // spatial slice starting at index 2.
         let out = OpTest::new(Op::Conv)
             .input([1, 1, 2, 2], vec![1.0f32, 2.0, 3.0, 4.0])
             .input([1, 1, 1, 1], vec![2.0f32])

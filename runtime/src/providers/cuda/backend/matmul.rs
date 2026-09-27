@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn d4_shape_and_values() {
-        // Former matmul_4d only asserted output shape via Shape; check values too.
+        // Batched 4-D MatMul: every output element is 6 * 1.0 * 13.0.
         let out = OpTest::new(Op::MatMul)
             .input([1, 24, 6, 6], vec![1.0f32; 24 * 6 * 6])
             .input([1, 24, 6, 128], vec![13.0f32; 24 * 6 * 128])
@@ -562,12 +562,12 @@ mod tests {
 
     #[test]
     fn batched_2d_vs_reference() {
-        // Former matmul_large (was commented out); small [1,4,8] x [8,6].
+        // Compare device MatMul against a host reference for shape [1, 4, 8] times [8, 6].
         const N_MID: usize = 4;
         const K: usize = 8;
         const N: usize = 6;
         let a: Vec<f32> = (0..N_MID * K).map(|i| i as f32).collect();
-        // Integer-valued B so GPU and host f32 agree exactly.
+        // Use integer values in B so GPU and host f32 results match exactly.
         let b: Vec<f32> = (0..K)
             .flat_map(|r| (0..N).map(move |c| (r + c) as f32))
             .collect();

@@ -3,7 +3,8 @@ use rmlk_runtime::{Builder, Value};
 use rmlk_schema::{AttributeType, DataType, GraphBuilder, Op, Tensor};
 use std::collections::HashMap;
 
-/// Single-head attention fragment: MatMul, Transpose, Div, Trilu, Softmax, MatMul.
+/// Single-head attention fragment using MatMul, Transpose, Div, Trilu, Softmax,
+/// and a final MatMul.
 #[test]
 fn attention_head() {
     let q = load_f32("attention_q.f32");

@@ -226,7 +226,8 @@ mod tests {
 
     #[test]
     fn default_reverse_shape() {
-        // All ones: values unchanged; checks reverse perm output shape [2,4,3].
+        // With all-ones data the values are unchanged; this checks the default
+        // reverse permutation produces shape [2, 4, 3].
         let out = OpTest::new(Op::Transpose)
             .input([3, 4, 2], vec![1.0f32; 3 * 4 * 2])
             .output([2, 4, 3])

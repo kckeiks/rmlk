@@ -3,8 +3,6 @@
 //! Builds a one-op graph through [`GraphBuilder`] and [`Builder::from_graph`],
 //! so every case exercises the production entry point.
 
-#![allow(dead_code)] // helpers are adopted op-by-op during the section 12 migration
-
 use crate::core::error::InferenceError;
 use crate::core::{Builder, Value};
 use rmlk_schema::{AsRawBytes, AttributeType, DataType, DataTypeMap, GraphBuilder, Op, Tensor};
