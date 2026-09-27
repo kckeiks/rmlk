@@ -65,7 +65,7 @@ mod test {
 
         let output_shape = vec![2, 2];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         let info = create_info_buffer(&output_shape, &x_stride, &y_stride);

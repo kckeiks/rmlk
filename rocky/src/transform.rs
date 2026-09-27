@@ -68,10 +68,10 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         debug!("Assigning id={node_id} for input {value_info_proto:?}");
 
         let name = {
-            let name = value_info_proto.name.ok_or_else(|| {
+            
+            value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed inputs are not supported".to_string())
-            })?;
-            name
+            })?
         };
         // Todo: avoid allocation.
         node.set_name(name.to_string());
@@ -101,10 +101,10 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
         debug!("Assigning id={node_id} for output {value_info_proto:?}");
 
         let name = {
-            let name = value_info_proto.name.ok_or_else(|| {
+            
+            value_info_proto.name.ok_or_else(|| {
                 TraversalError::InvalidValue("Unnamed outputs are not supported".to_string())
-            })?;
-            name
+            })?
         };
         // Todo: avoid allocation.
         node.set_name(name.to_string());
@@ -191,7 +191,7 @@ impl<'a> OnnxGraphTraverser<'a> for ModelFromOnnx {
             // because a single node might have two outputs, how do we differentiate?
             let input_node_id = self
                 .get_node_id(name.as_ref())
-                .ok_or_else(|| TraversalError::InvalidInnerNode)?;
+                .ok_or(TraversalError::InvalidInnerNode)?;
             inputs.push(input_node_id);
         }
         let node = self.get_node_mut(node_id).expect("We just inserted it");
@@ -240,8 +240,7 @@ pub fn graph_from_onnx_proto(
     let graph_name = value
         .graph
         .as_mut()
-        .map(|g| g.name.take())
-        .flatten()
+        .and_then(|g| g.name.take())
         .map(|name| name.into_owned());
     traverse::visit_onnx(
         value

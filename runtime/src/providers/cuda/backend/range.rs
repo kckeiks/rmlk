@@ -196,9 +196,9 @@ fn compute_output<T>(start: T, delta: T, elem_count: usize, output: &mut [T]) ->
 where
     T: Copy + Num + NumCast,
 {
-    for idx in 0..elem_count {
+    for (idx, out) in output.iter_mut().enumerate().take(elem_count) {
         let i = T::from(idx).ok_or(ConversionError)?;
-        output[idx] = start + (i * delta);
+        *out = start + (i * delta);
     }
 
     Ok(())

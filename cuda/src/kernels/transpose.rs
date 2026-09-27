@@ -56,7 +56,7 @@ where
     }
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),
@@ -105,7 +105,7 @@ mod tests {
         let rank = input_shape.len();
         assert_eq!(perm.len(), rank, "perm.len() must match rank");
 
-        let output_shape: Vec<usize> = perm.iter().map(|&p| input_shape[p as usize]).collect();
+        let output_shape: Vec<usize> = perm.iter().map(|&p| input_shape[p]).collect();
 
         let mut input_strides = vec![0; rank];
         if rank > 0 {

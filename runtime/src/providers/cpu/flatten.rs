@@ -49,8 +49,7 @@ where
     let axis = ctx
         .get_attributes()
         .as_ref()
-        .map(|attrs| attrs.get("axis"))
-        .flatten()
+        .and_then(|attrs| attrs.get("axis"))
         .and_then(|attr| attr.int())
         .unwrap_or(1);
     match axis {

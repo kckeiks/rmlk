@@ -68,9 +68,11 @@ impl ExpandBackend {
         let input_payload = input_tensor.payload();
         let input_data = input_payload.data::<T>();
 
-        let input_rank = (!input_tensor.is_scalar())
-            .then_some(input_tensor.shape().len())
-            .unwrap_or(1);
+        let input_rank = if input_tensor.is_scalar() {
+            1
+        } else {
+            input_tensor.shape().len()
+        };
 
         let output_rank = output_tensor.shape().len();
         let elem_count = output_tensor.shape().iter().product();
@@ -161,14 +163,13 @@ fn compute_output_shape(ctx: &Context<Cuda>) -> Result<()> {
                 (0, input_tensor.shape().to_vec()),
                 (1, shape_tensor.shape().to_vec()),
             ]
-            .try_into()
-            .expect("Small map so should succeed"),
+            .into(),
         }
         .into());
     }
 
     let output_tensor = ctx.get_output(0)?;
-    output_tensor.copy_shape_from_slice(&output_shape);
+    output_tensor.copy_shape_from_slice(output_shape);
 
     Ok(())
 }
@@ -177,9 +178,11 @@ fn create_info(ctx: &Context<Cuda>) -> Result<CudaData> {
     let input_tensor = ctx.get_input(0)?;
     let output_tensor = ctx.get_output(0)?;
 
-    let input_rank = (!input_tensor.is_scalar())
-        .then_some(input_tensor.shape().len())
-        .unwrap_or(1);
+    let input_rank = if input_tensor.is_scalar() {
+        1
+    } else {
+        input_tensor.shape().len()
+    };
     let output_rank = output_tensor.shape().len();
 
     let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
@@ -209,7 +212,7 @@ fn create_info(ctx: &Context<Cuda>) -> Result<CudaData> {
     }
 
     let cuda_bump = ctx.execution_state().dev().device_allocator().clone();
-    Ok(cuda_bump.alloc_from_slice_with_fallback(info)?)
+    cuda_bump.alloc_from_slice_with_fallback(info)
 }
 
 #[derive(Debug, thiserror::Error)]

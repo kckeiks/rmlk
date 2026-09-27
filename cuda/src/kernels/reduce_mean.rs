@@ -50,13 +50,13 @@ pub unsafe fn compute<T>(
 where
     T: ValidAsZeroBits + DeviceRepr,
 {
-    debug_assert!(axes.len() > 0);
-    debug_assert!(input.len() > 0);
-    debug_assert!(output.len() > 0);
+    debug_assert!(!axes.is_empty());
+    debug_assert!(!input.is_empty());
+    debug_assert!(!output.is_empty());
     debug_assert!(reduced_dim_prod > 0);
 
     debug_assert!(rank > 0);
-    debug_assert!(info.len() > 0);
+    debug_assert!(!info.is_empty());
     debug_assert_eq!(info.len(), 2 * rank);
     // Todo: we assume that this will be validated upstream.
     // Can we assert anything down here?
@@ -65,7 +65,7 @@ where
     let elem_count = output.len();
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),

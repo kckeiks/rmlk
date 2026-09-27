@@ -313,8 +313,8 @@ where
         }
         Err(_) => {
             norm_axes = scratch_alloc.allocate(starts_len)?;
-            for i in 0..starts_len {
-                norm_axes[i] = Tind::try_from(i).expect("MAX_RANK is 8");
+            for (i, axis) in norm_axes.iter_mut().enumerate().take(starts_len) {
+                *axis = Tind::try_from(i).expect("MAX_RANK is 8");
             }
         }
     }
@@ -388,7 +388,7 @@ where
         "input and output must have the same rank"
     );
 
-    if steps.map_or(false, |s| s.len() != axes.len()) {
+    if steps.is_some_and(|s| s.len() != axes.len()) {
         return Err(SliceError::StepsAndAxesLengthMismatch.into());
     }
 
@@ -466,13 +466,13 @@ fn ceil_div<T>(a: T, b: T) -> T
 where
     T: Signed + Copy + ToPrimitive,
 {
-    let result = if a.is_negative() {
+    
+
+    if a.is_negative() {
         a / b
     } else {
         (a + b - T::one()) / b
-    };
-
-    result
+    }
 }
 
 #[derive(Debug)]

@@ -1,4 +1,3 @@
-use crate::attributes::transpose;
 use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
@@ -16,6 +15,7 @@ use rmlk_cuda::kernels::transpose::TransposeKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+use crate::attributes;
 
 pub struct TransposeBackend {
     stream: Arc<CudaStream>,
@@ -66,7 +66,7 @@ impl TransposeBackend {
         let input_data = input_payload.data::<T>();
 
         let output = ctx.get_output(0)?;
-        output.copy_shape_from_slice(&output_shape);
+        output.copy_shape_from_slice(output_shape);
 
         if input.is_scalar() {
             output.init_scalar_payload::<T>()?;
@@ -141,7 +141,7 @@ fn compute_perm_and_output_shape<'a>(
     match ctx
         .get_attributes()
         .as_ref()
-        .and_then(|attrs| transpose::get_perm(&attrs))
+        .and_then(|attrs| attributes::transpose::get_perm(attrs))
     {
         None => {
             let perm = scratch_alloc.allocate(input.shape().len())?;

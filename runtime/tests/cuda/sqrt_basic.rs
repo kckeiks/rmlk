@@ -46,5 +46,5 @@ fn test_run() {
     .into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output.remove("sqrt(a)").unwrap().try_into().unwrap();
-    assert_eq!(data, vec![1.0, 2.0, 3.0, 2.2360679775]);
+    assert_eq!(data, vec![1.0, 2.0, 3.0, 2.236_068]);
 }

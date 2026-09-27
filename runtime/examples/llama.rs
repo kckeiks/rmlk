@@ -83,20 +83,17 @@ fn main() {
             feed.insert(
                 "input_ids".into(),
                 (input_tokens, input_tokens_shape.clone())
-                    .try_into()
-                    .unwrap(),
+                    .into(),
             );
             feed.insert(
                 "attention_mask".into(),
                 (attention_mask.clone(), attention_mask_shape.clone())
-                    .try_into()
-                    .unwrap(),
+                    .into(),
             );
             feed.insert(
                 "position_ids".into(),
                 (position_ids.clone(), input_tokens_shape.clone())
-                    .try_into()
-                    .unwrap(),
+                    .into(),
             );
 
             if let Some(out) = output.as_mut() {
@@ -114,11 +111,11 @@ fn main() {
 
                     feed.insert(
                         format!("past_key_values.{}.key", layer),
-                        (key, out_key_shape).try_into().unwrap(),
+                        (key, out_key_shape).into(),
                     );
                     feed.insert(
                         format!("past_key_values.{}.value", layer),
-                        (val, out_val_shape).try_into().unwrap(),
+                        (val, out_val_shape).into(),
                     );
                 }
             } else {
@@ -128,11 +125,11 @@ fn main() {
 
                     feed.insert(
                         format!("past_key_values.{}.key", layer),
-                        (kv_data.clone(), kv_shape.clone()).try_into().unwrap(),
+                        (kv_data.clone(), kv_shape.clone()).into(),
                     );
                     feed.insert(
                         format!("past_key_values.{}.value", layer),
-                        (kv_data.clone(), kv_shape.clone()).try_into().unwrap(),
+                        (kv_data.clone(), kv_shape.clone()).into(),
                     );
                 }
             }

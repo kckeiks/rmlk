@@ -46,7 +46,7 @@ impl ConvolutionBackend {
 
         let scratch_alloc = ctx.execution_state().scratch_alloc().clone();
         let x_shape = scratch_alloc.allocate_and_convert_from_slice(&x.shape())?;
-        let mut y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
+        let y_shape = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
 
         let w = ctx.get_input(1)?;
 
@@ -59,12 +59,12 @@ impl ConvolutionBackend {
         // Todo: update this function so we dont have to do all this work with
         // allocating scratch buffers.
         rmlk_cuda::kernels::conv::calculate_output_shape(
-            &x_shape,
-            &w_shape,
+            x_shape,
+            w_shape,
             conv_attrs.pads(),
             conv_attrs.strides(),
             conv_attrs.dilations(),
-            &mut y_shape,
+            y_shape,
         )?;
 
         let y = ctx.get_output(0)?;
@@ -124,7 +124,7 @@ impl ConvolutionBackend {
         let y_shape = scratch_alloc.allocate_and_convert_from_slice(&y.shape())?;
         let y_stride = scratch_alloc.allocate_and_convert_from_slice(&y.stride())?;
 
-        let bias = get_bias::<T>(ctx, &scratch_alloc)?;
+        let bias = get_bias(ctx, &scratch_alloc)?;
 
         let x_payload = x.payload();
         let x_data = x_payload.data();
@@ -154,10 +154,10 @@ impl ConvolutionBackend {
                     self.stream,
                     (T::one(), T::zero()),
                     &x_data,
-                    &x_shape,
-                    &x_stride,
+                    x_shape,
+                    x_stride,
                     &w_data,
-                    &w_shape,
+                    w_shape,
                     conv_attrs.pads(),
                     conv_attrs.strides(),
                     conv_attrs.dilations(),
@@ -168,8 +168,8 @@ impl ConvolutionBackend {
                         stride: bias.stride,
                     }),
                     &mut y_dev,
-                    &y_shape,
-                    &y_stride,
+                    y_shape,
+                    y_stride,
                 )?;
             }
             None => {
@@ -177,18 +177,18 @@ impl ConvolutionBackend {
                     self.stream,
                     (T::one(), T::zero()),
                     &x_data,
-                    &x_shape,
-                    &x_stride,
+                    x_shape,
+                    x_stride,
                     &w_data,
-                    &w_shape,
+                    w_shape,
                     conv_attrs.pads(),
                     conv_attrs.strides(),
                     conv_attrs.dilations(),
                     conv_attrs.group(),
                     None,
                     &mut y_dev,
-                    &y_shape,
-                    &y_stride,
+                    y_shape,
+                    y_stride,
                 )?;
             }
         };
@@ -213,7 +213,7 @@ impl ConvolutionBackend {
 // Todo: refactor this.
 // Extract and prepare bias argument.
 // At this point, we still don't know the data type of bias.
-fn get_bias<'a, T>(
+fn get_bias<'a>(
     ctx: &'a Context<Cuda>,
     scratch_alloc: &'a ScratchAllocator,
 ) -> Result<Option<BiasArg<'a, Tensor>>> {
@@ -237,7 +237,7 @@ fn get_bias<'a, T>(
             bias_shape[1] = bias_tensor.shape()[0] as i32;
 
             let bias_stride = scratch_alloc.allocate_fill(x.shape().len(), 0)?;
-            utils::compute_stride(&bias_shape, bias_stride);
+            utils::compute_stride(bias_shape, bias_stride);
 
             Some(BiasArg {
                 data: bias_tensor,

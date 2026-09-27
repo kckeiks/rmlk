@@ -10,6 +10,12 @@ pub struct GraphBuilder<T> {
     outputs: Vec<usize>,
 }
 
+impl<T> Default for GraphBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> GraphBuilder<T> {
     pub fn new() -> Self {
         Self {

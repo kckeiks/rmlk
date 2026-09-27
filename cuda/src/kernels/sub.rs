@@ -58,7 +58,7 @@ mod test {
 
         let output_shape = vec![2, 2];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         let info = create_info_buffer(&output_shape, &x_stride, &y_stride);
@@ -78,7 +78,7 @@ mod test {
         }
 
         let result = stream.clone_dtoh(&out_data).unwrap();
-        let expected = vec![0.0, -2.0, 86.0, -0.0001];
+        let expected = [0.0, -2.0, 86.0, -0.0001];
 
         for (r, e) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(*r, *e, epsilon = 1e-6);

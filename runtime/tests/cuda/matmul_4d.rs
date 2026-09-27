@@ -66,11 +66,11 @@ fn test_run() {
     let input: HashMap<String, Value> = [
         (
             "a".to_string(),
-            vec![1.0; 1 * 24 * 6 * 6].try_into().unwrap(),
+            vec![1.0; 24 * 6 * 6].try_into().unwrap(),
         ),
         (
             "b".to_string(),
-            vec![13.0; 1 * 24 * 6 * 128].try_into().unwrap(),
+            vec![13.0; 24 * 6 * 128].try_into().unwrap(),
         ),
     ]
     .into();

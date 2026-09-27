@@ -29,27 +29,27 @@ impl<'a> ConvAttributes<'a> {
         let mut kernel_shape = None;
 
         if let Some(attr) = attrs.get("dilations") {
-            dilations = attr.ints().ok_or(ConvAttributesError::InvalidDilation)?;
+            dilations = attr.ints().ok_or(ConvAttributesError::Dilation)?;
         } else {
             dilations = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
 
         if let Some(attr) = attrs.get("group") {
-            group = Some(attr.int().ok_or(ConvAttributesError::InvalidGroup)?);
+            group = Some(attr.int().ok_or(ConvAttributesError::Group)?);
         }
 
         if let Some(attr) = attrs.get("kernel_shape") {
-            kernel_shape = Some(attr.ints().ok_or(ConvAttributesError::InvalidKernelShape)?);
+            kernel_shape = Some(attr.ints().ok_or(ConvAttributesError::KernelShape)?);
         }
 
         if let Some(attr) = attrs.get("pads") {
-            pads = attr.ints().ok_or(ConvAttributesError::InvalidPads)?;
+            pads = attr.ints().ok_or(ConvAttributesError::Pads)?;
         } else {
             pads = scratch_alloc.allocate_fill(kernel_dims, 0)?;
         }
 
         if let Some(attr) = attrs.get("strides") {
-            strides = attr.ints().ok_or(ConvAttributesError::InvalidStrides)?;
+            strides = attr.ints().ok_or(ConvAttributesError::Strides)?;
         } else {
             strides = scratch_alloc.allocate_fill(kernel_dims, 1)?;
         }
@@ -88,11 +88,11 @@ impl<'a> ConvAttributes<'a> {
 
 #[derive(Debug)]
 pub enum ConvAttributesError {
-    InvalidDilation,
-    InvalidGroup,
-    InvalidKernelShape,
-    InvalidPads,
-    InvalidStrides,
+    Dilation,
+    Group,
+    KernelShape,
+    Pads,
+    Strides,
 }
 
 impl Display for ConvAttributesError {

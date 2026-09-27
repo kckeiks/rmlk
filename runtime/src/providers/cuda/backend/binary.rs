@@ -127,7 +127,7 @@ fn create_info_data_on_dev(
     info_buffer[rank..2 * rank].copy_from_slice(a_stride);
     info_buffer[2 * rank..].copy_from_slice(b_stride);
 
-    Ok(cuda_alloc.alloc_from_slice_with_fallback(info_buffer)?)
+    cuda_alloc.alloc_from_slice_with_fallback(info_buffer)
 }
 
 fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
@@ -149,8 +149,7 @@ fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
             if !utils::compute_broadcast_output_shape(&a.shape(), &b.shape(), c_shape) {
                 return Err(BinaryOpError::IncompatibleTensorShape {
                     shapes: [(0, a.shape().to_vec()), (1, b.shape().to_vec())]
-                        .try_into()
-                        .expect("Small map so should succeed"),
+                        .into(),
                 }
                 .into());
             }

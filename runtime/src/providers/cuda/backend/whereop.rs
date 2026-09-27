@@ -241,8 +241,7 @@ fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
             if !utils::compute_broadcast_output_shape(&x.shape(), &y.shape(), inter_shape) {
                 return Err(WhereError::IncompatibleShapesForBroadcast {
                     shapes: [(1, x.shape().to_vec()), (2, y.shape().to_vec())]
-                        .try_into()
-                        .expect("Small map so should succeed"),
+                        .into(),
                 }
                 .into());
             }
@@ -253,8 +252,7 @@ fn compute_output_shape(ctx: &mut Context<Cuda>) -> Result<()> {
             {
                 return Err(WhereError::IncompatibleShapesForBroadcast {
                     shapes: [(0, y.shape().to_vec())]
-                        .try_into()
-                        .expect("Small map so should succeed"),
+                        .into(),
                 }
                 .into());
             }

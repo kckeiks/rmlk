@@ -78,7 +78,7 @@ impl TypeValue {
 
     pub fn dims(&self) -> &Vec<usize> {
         match self {
-            TypeValue::Tensor { dims, .. } => &dims,
+            TypeValue::Tensor { dims, .. } => dims,
         }
     }
 

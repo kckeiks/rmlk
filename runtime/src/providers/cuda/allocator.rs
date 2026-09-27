@@ -20,7 +20,7 @@ impl CudaBump {
         let ptr = slice.leak();
 
         debug_assert!(
-            (ptr as usize) % 256 == 0,
+            (ptr as usize).is_multiple_of(256),
             "CudaBump base pointer is not 256-byte aligned; got {:#x}",
             ptr
         );

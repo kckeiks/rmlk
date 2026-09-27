@@ -42,7 +42,7 @@ impl ReshapeBackend {
         let target_shape = compute_output_shape(&scratch_alloc, ctx)?;
 
         let reshaped_tensor = ctx.get_output(0)?;
-        reshaped_tensor.copy_shape_from_slice(&target_shape);
+        reshaped_tensor.copy_shape_from_slice(target_shape);
         reshaped_tensor.write_payload(&data_tensor.payload().data::<T>())?;
 
         debug!(

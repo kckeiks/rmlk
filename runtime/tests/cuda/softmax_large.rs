@@ -60,7 +60,7 @@ fn test_run() {
     let input = make_input();
     let expected = softmax_ref(&input);
 
-    let input: HashMap<String, Value> = [("a".to_string(), input.try_into().unwrap())].into();
+    let input: HashMap<String, Value> = [("a".to_string(), input.into())].into();
     let mut output = instance.run(input).unwrap();
     let data: Vec<f32> = output.remove("softmax(a)").unwrap().try_into().unwrap();
     assert!(abs_diff_eq!(

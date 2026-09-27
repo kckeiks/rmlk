@@ -133,7 +133,7 @@ pub fn tensor_from_onnx_tensor(
             })?;
 
             let mut file = match base_url {
-                None => File::open(format!("{}", location.as_ref()))
+                None => File::open(location.as_ref())
                     .map_err(|_| Error::Unknown)
                     .unwrap(),
                 Some(mut base) => {
@@ -145,26 +145,24 @@ pub fn tensor_from_onnx_tensor(
                 }
             };
 
-            if (offset.is_some() && length.is_none()) || (offset.is_none() && length.is_some()) {
-                return Err(Error::Invalid);
-            }
-
-            if offset.is_some() && length.is_some() {
-                let offset_str = offset.unwrap();
-                let length_str = length.unwrap();
-                let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
-                let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
-                let mut buf = vec![0; length];
-                file.read_at(&mut buf, offset)
-                    .map_err(|_| Error::Unknown)
-                    .unwrap();
-                Some(buf)
-            } else {
-                let mut buf = Vec::new();
-                file.read_to_end(&mut buf)
-                    .map_err(|_| Error::Unknown)
-                    .unwrap();
-                Some(buf)
+            match (offset, length) {
+                (Some(offset_str), Some(length_str)) => {
+                    let offset = offset_str.parse().map_err(|_| Error::Unknown).unwrap();
+                    let length = length_str.parse().map_err(|_| Error::Unknown).unwrap();
+                    let mut buf = vec![0; length];
+                    file.read_at(&mut buf, offset)
+                        .map_err(|_| Error::Unknown)
+                        .unwrap();
+                    Some(buf)
+                }
+                (None, None) => {
+                    let mut buf = Vec::new();
+                    file.read_to_end(&mut buf)
+                        .map_err(|_| Error::Unknown)
+                        .unwrap();
+                    Some(buf)
+                }
+                _ => return Err(Error::Invalid),
             }
         }
     };

@@ -91,7 +91,7 @@ impl PowBackend {
 
         debug!("[kernel={:?}]", kernel_name);
 
-        pow::load_kernel(&self.stream.context(), kernel_name).map_err(Into::into)
+        pow::load_kernel(self.stream.context(), kernel_name).map_err(Into::into)
     }
 
     fn compute_pow<X, Y>(self, ctx: &mut Context<Cuda>) -> Result<()>

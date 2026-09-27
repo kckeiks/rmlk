@@ -51,9 +51,9 @@ mod test {
 
         let f = load_kernel(ctx.clone(), NegKernel::NegFwdF32).unwrap();
 
-        let output_shape = vec![3];
+        let output_shape = [3];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         unsafe {

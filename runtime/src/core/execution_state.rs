@@ -63,7 +63,7 @@ where
                 if graph.get_node(*input).is_some() {
                     node_values.push(*input);
                 } else {
-                    return Err(ExecutionStateError::InputTensorNotFound { id: *input }.into());
+                    return Err(ExecutionStateError::Input { id: *input }.into());
                 }
             }
 
@@ -73,7 +73,7 @@ where
                 if graph.get_node(*output).is_some() {
                     node_values.push(*output);
                 } else {
-                    return Err(ExecutionStateError::OutputTensorNotFound { id: *output }.into());
+                    return Err(ExecutionStateError::Output { id: *output }.into());
                 }
             }
         }
@@ -125,7 +125,7 @@ where
                     .htod_float16(data)?;
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
-                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                    .ok_or(ExecutionStateError::Value { id: node_id })?;
                 tensor.set_data(data)?;
             }
             InnerValue::Float32(data) => {
@@ -137,7 +137,7 @@ where
                     .htod_float(data)?;
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
-                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                    .ok_or(ExecutionStateError::Value { id: node_id })?;
                 tensor.set_data(data)?;
             }
             InnerValue::Int32(data) => {
@@ -149,7 +149,7 @@ where
                     .htod_i32(data)?;
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
-                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                    .ok_or(ExecutionStateError::Value { id: node_id })?;
                 tensor.set_data(data)?;
             }
             InnerValue::Int64(data) => {
@@ -161,7 +161,7 @@ where
                     .htod_i64(data)?;
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
-                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                    .ok_or(ExecutionStateError::Value { id: node_id })?;
                 tensor.set_data(data)?;
             }
             InnerValue::Bool(data) => {
@@ -173,7 +173,7 @@ where
                     .htod_bool(data)?;
                 let mut tensor = self
                     .get_tensor_from_node_id(node_id)
-                    .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                    .ok_or(ExecutionStateError::Value { id: node_id })?;
                 tensor.set_data(data)?;
             }
         }
@@ -186,7 +186,7 @@ where
 
             let mut tensor = self
                 .get_tensor_from_node_id(node_id)
-                .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+                .ok_or(ExecutionStateError::Value { id: node_id })?;
 
             tensor.set_shape(&shape)?;
         }
@@ -200,7 +200,7 @@ where
     pub fn get_value(&self, node_id: usize) -> Result<Value> {
         let tensor = self
             .get_tensor_from_node_id(node_id)
-            .ok_or(ExecutionStateError::TensorNotFound { id: node_id })?;
+            .ok_or(ExecutionStateError::Value { id: node_id })?;
 
         match tensor.dtype() {
             DataType::Float => {
@@ -256,21 +256,21 @@ where
 
 #[derive(Debug)]
 pub enum ExecutionStateError {
-    InputTensorNotFound { id: usize },
-    OutputTensorNotFound { id: usize },
-    TensorNotFound { id: usize },
+    Input { id: usize },
+    Output { id: usize },
+    Value { id: usize },
 }
 
 impl Display for ExecutionStateError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecutionStateError::InputTensorNotFound { id } => {
+            ExecutionStateError::Input { id } => {
                 write!(f, "Input tensor not found: {}", id)
             }
-            ExecutionStateError::OutputTensorNotFound { id } => {
+            ExecutionStateError::Output { id } => {
                 write!(f, "Output tensor not found: {}", id)
             }
-            ExecutionStateError::TensorNotFound { id } => {
+            ExecutionStateError::Value { id } => {
                 write!(f, "Tensor not found: {}", id)
             }
         }

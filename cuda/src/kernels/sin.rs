@@ -34,6 +34,7 @@ mod test {
     use crate::utils;
     use approx::assert_relative_eq;
     use cudarc::driver::CudaContext;
+    use std::f32::consts;
 
     #[test]
     fn test_f32() {
@@ -46,22 +47,32 @@ mod test {
 
         let x_data = stream
             .clone_htod(&vec![
-                0.0, 0.5235988, 1.5707963, 3.1415927, 2.3561945, -1.0471976,
+                0.0,
+                consts::FRAC_PI_6,
+                consts::FRAC_PI_2,
+                consts::PI,
+                3.0 * consts::FRAC_PI_4,
+                -consts::FRAC_PI_3,
             ])
             .unwrap();
 
         let f = load_kernel(ctx.clone(), SinKernel::SinFwdF32).unwrap();
 
-        let output_shape = vec![2, 3];
+        let output_shape = [2, 3];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         unsafe {
             compute::<f32>(stream.clone(), f, &x_data, &mut out_data).unwrap();
         }
         let result = stream.clone_dtoh(&out_data).unwrap();
-        let expected = vec![0.0, 0.5, 1.0, 0.0, 0.70710677, -0.8660254];
+        let expected = [0.0,
+            0.5,
+            1.0,
+            0.0,
+            consts::FRAC_1_SQRT_2,
+            -0.8660254];
 
         for (r, e) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(*r, *e, epsilon = 1e-6);

@@ -23,8 +23,7 @@ impl NodeWithMetadata<'_> {
             .node_with_value
             .node
             .as_ref()
-            .map(|node| node.name.as_ref())
-            .flatten()
+            .and_then(|node| node.name.as_ref())
             .map(|name| name.as_ref());
 
         if name_from_node.is_some() {
@@ -33,8 +32,7 @@ impl NodeWithMetadata<'_> {
             self.node_with_value
                 .value
                 .as_ref()
-                .map(|node| node.name.as_ref())
-                .flatten()
+                .and_then(|node| node.name.as_ref())
                 .map(|name| name.as_ref())
         }
     }
@@ -49,8 +47,7 @@ impl Debug for NodeWithMetadata<'_> {
             .node_with_value
             .node
             .as_ref()
-            .map(|n| n.name.as_ref())
-            .flatten()
+            .and_then(|n| n.name.as_ref())
         {
             debug_struct.field("name", name);
         } else {

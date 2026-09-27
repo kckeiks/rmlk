@@ -104,7 +104,7 @@ where
 {
     let cudnn = Cudnn::new(stream.clone())?;
 
-    let x_desc = cudnn.create_nd_tensor::<T>(&x_shape, &x_stride)?;
+    let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
     let pooling = cudnn.create_poolingnd::<T>(
         kernel_shape,

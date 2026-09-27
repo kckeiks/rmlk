@@ -7,7 +7,7 @@ use cudarc::driver::{
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "where";
-pub const FWD_FN_NAMES: [&'static str; 3] = ["where_fwd_f16", "where_fwd_f32", "where_fwd_f64"];
+pub const FWD_FN_NAMES: [&str; 3] = ["where_fwd_f16", "where_fwd_f32", "where_fwd_f64"];
 pub const PTX_SRC: &str = WHERE;
 
 pub enum WhereKernel {
@@ -76,7 +76,7 @@ where
     //assert_eq!(elem_count, output_data.len());
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),
@@ -147,7 +147,7 @@ mod test {
 
         let output_shape = vec![2, 2];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         let info = create_info_buffer(&output_shape, &x_stride, &y_stride, &z_stride);

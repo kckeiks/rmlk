@@ -27,13 +27,11 @@ pub fn compute_output_shape<T: AddAssign + Copy + Debug + Num>(
         )));
     }
 
-    for i in 0..2 {
-        y_shape[i] = x_shape[i];
-    }
+    y_shape[..2].copy_from_slice(&x_shape[..2]);
 
     // For reference, see https://github.com/onnx/onnx/blob/main/docs/Operators.md#outputs-59.
-    for i in 2..y_shape.len() {
-        y_shape[i] = T::one();
+    for dim in y_shape.iter_mut().skip(2) {
+        *dim = T::one();
     }
 
     Ok(())
@@ -72,9 +70,9 @@ where
     let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
     let pooling = cudnn.create_poolingnd::<T>(
-        &kernel_shape,
-        &pads,
-        &strides,
+        kernel_shape,
+        pads,
+        strides,
         cudnn::sys::cudnnPoolingMode_t::CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING,
         cudnn::sys::cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
     )?;

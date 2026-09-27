@@ -61,7 +61,7 @@ where
     pub fn new(execution_state: &'a mut ExecutionState<D>, node_id: usize) -> Result<Self> {
         let node_index = execution_state
             .get_tensor_index(&node_id)
-            .ok_or_else(|| ContextError::TensorIndexNotFound { node_id })?;
+            .ok_or(ContextError::TensorIndexNotFound { node_id })?;
         let input_count = execution_state
             .graph()
             .get_node(node_id)
@@ -92,7 +92,7 @@ where
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| ContextError::TensorNotFound { index: node_index })
+            .ok_or(ContextError::TensorNotFound { index: node_index })
             .map_err(Into::into)
     }
 
@@ -113,7 +113,7 @@ where
 
         self.execution_state
             .get_tensor(node_index)
-            .ok_or_else(|| ContextError::TensorNotFound { index: node_index })
+            .ok_or(ContextError::TensorNotFound { index: node_index })
             .map_err(Into::into)
     }
 

@@ -72,7 +72,7 @@ impl ReduceMeanBackend {
         let attrs = ctx.get_attributes();
         let noop_with_empty_axes = attrs
             .as_ref()
-            .map(|attrs| reduce_mean::get_noop_with_empty_axes(&attrs))
+            .map(|attrs| reduce_mean::get_noop_with_empty_axes(attrs))
             .unwrap_or(false);
 
         // We either return a non-empty axes list or nothing.
@@ -104,7 +104,7 @@ impl ReduceMeanBackend {
                 }
                 None => {
                     if let Some(raw_axes) =
-                        attrs.as_ref().and_then(|attr| reduce_mean::get_axes(&attr))
+                        attrs.as_ref().and_then(|attr| reduce_mean::get_axes(attr))
                     {
                         if !raw_axes.is_empty() {
                             let raw_axes =
@@ -137,7 +137,7 @@ impl ReduceMeanBackend {
                 Some(axes) => axes,
             };
 
-            compute_output_shape(&axes, ctx)?;
+            compute_output_shape(axes, ctx)?;
 
             let output = ctx.get_output(0)?;
 
@@ -304,7 +304,7 @@ fn compute_output_shape(axes: &[usize], ctx: &Context<Cuda>) -> Result<()> {
     };
 
     let output_tensor = ctx.get_output(0)?;
-    output_tensor.copy_shape_from_slice(&output_shape);
+    output_tensor.copy_shape_from_slice(output_shape);
 
     Ok(())
 }

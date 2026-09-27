@@ -56,8 +56,8 @@ fn test_run() {
     let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     let b = vec![100.0, 101.0, 200.0, 201.0];
     let input: HashMap<String, Value> = [
-        ("a".to_string(), a.clone().try_into().unwrap()),
-        ("b".to_string(), b.clone().try_into().unwrap()),
+        ("a".to_string(), a.clone().into()),
+        ("b".to_string(), b.clone().into()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();

@@ -127,7 +127,7 @@ const GRAPH_DEFINITION: &str = r#"
 
 #[test]
 fn test_run() {
-    let data_len = 1 * 24 * 27 * 128;
+    let data_len = 24 * 27 * 128;
     let data_flat: Vec<f32> = (0..data_len).map(|x| x as f32).collect();
 
     let mut slice_flat: Vec<f32> = Vec::with_capacity(41_472);
@@ -135,13 +135,13 @@ fn test_run() {
     let c_in = 128;
     let inner_len = c_in;
 
-    for pos in 0..(1 * 24 * 27) {
+    for pos in 0..(24 * 27) {
         let base = pos * inner_len;
         slice_flat.extend_from_slice(&data_flat[base + 64..base + 128]);
     }
 
     let input: HashMap<String, Value> = [
-        ("data".to_string(), data_flat.clone().try_into().unwrap()),
+        ("data".to_string(), data_flat.clone().into()),
         ("starts".to_string(), vec![64i64].try_into().unwrap()),
         (
             "ends".to_string(),

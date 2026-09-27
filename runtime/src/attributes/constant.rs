@@ -5,9 +5,9 @@ pub fn _contains_sparse_value(attrs: &HashMap<Box<str>, Attribute>) -> bool {
     attrs.get("sparse_value").is_some()
 }
 
-pub fn get_raw_value(
-    attrs: &HashMap<Box<str>, Attribute>,
-) -> Option<(DataType, &[usize], Option<&[u8]>)> {
+pub type RawTensorAttr<'a> = (DataType, &'a [usize], Option<&'a [u8]>);
+
+pub fn get_raw_value(attrs: &HashMap<Box<str>, Attribute>) -> Option<RawTensorAttr<'_>> {
     attrs
         .get("value")?
         .tensor()

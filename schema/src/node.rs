@@ -34,25 +34,11 @@ impl Node {
     }
 
     pub fn add_input(&mut self, input: usize) {
-        if self.input.is_none() {
-            let _ = self.input.insert(vec![input]);
-        } else {
-            self.input
-                .as_mut()
-                .expect("That we initialize first before modifying")
-                .push(input);
-        }
+        self.input.get_or_insert_with(Vec::new).push(input);
     }
 
     pub fn add_output(&mut self, output: usize) {
-        if self.output.is_none() {
-            let _ = self.output.insert(vec![output]);
-        } else {
-            self.output
-                .as_mut()
-                .expect("That we initialize first before modifying")
-                .push(output);
-        }
+        self.output.get_or_insert_with(Vec::new).push(output);
     }
 
     pub fn set_inputs(&mut self, inputs: Vec<usize>) {

@@ -146,7 +146,7 @@ where
     // );
 
     let num_threads = 128;
-    let num_blocks = (num_idx_tuples + num_threads - 1) / num_threads;
+    let num_blocks = num_idx_tuples.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),

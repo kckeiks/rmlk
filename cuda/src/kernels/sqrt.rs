@@ -48,9 +48,9 @@ mod test {
 
         let f = super::load_kernel(ctx, SqrtKernel::FwdF32).unwrap();
 
-        let output_shape = vec![2, 2];
+        let output_shape = [2, 2];
         let mut out_data = stream
-            .alloc_zeros(output_shape.iter().map(|d| *d).product())
+            .alloc_zeros(output_shape.iter().copied().product())
             .unwrap();
 
         unsafe {

@@ -118,17 +118,17 @@ fn comput_output_shape(ctx: &Context<Cuda>) -> Result<()> {
         .map_err(Box::new)?;
     let max_pool_attrs = MaxPoolAttributes::new(&attrs, ctx.execution_state().scratch_alloc())?;
 
-    let mut y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
+    let y_shape = scratch_alloc.allocate_fill(x_shape.len(), 0)?;
 
     // Todo: Refactor function so we dont have to allocate a scratch buffer.
     // Todo: Move this to utils.
     // Todo: if attributes were usize, we wouldn't need to do this allocation here.
     rmlk_cuda::kernels::max_pool::compute_output_shape(
-        &x_shape,
+        x_shape,
         max_pool_attrs.kernel_shape(),
         max_pool_attrs.pads(),
         max_pool_attrs.strides(),
-        &mut y_shape,
+        y_shape,
         false,
     )?;
 

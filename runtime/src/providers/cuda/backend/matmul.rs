@@ -99,7 +99,7 @@ impl MatMulBackend {
             + Num
             + FromF32,
     {
-        compute_output_shape(&params, ctx)?;
+        compute_output_shape(params, ctx)?;
         let config = gemm::strided_batch_config::<T>((T::one(), T::zero()), &params.gemm)?;
 
         let a = ctx.get_input(0)?;
@@ -138,12 +138,12 @@ impl MatMulBackend {
         let a_expected_size = params.gemm.b * params.gemm.matrix_a_shape.iter().product::<usize>();
         let a_size = a.shape().iter().product::<usize>();
         let a_broadcast_slice =
-            self.broadcast_shape::<T>(ctx, &a, a_size, a_expected_size, &params)?;
+            self.broadcast_shape::<T>(ctx, &a, a_size, a_expected_size, params)?;
 
         let b_expected_size = params.gemm.b * params.gemm.matrix_b_shape.iter().product::<usize>();
         let b_size = b.shape().iter().product::<usize>();
         let b_broadcast_slice =
-            self.broadcast_shape::<T>(ctx, &b, b_size, b_expected_size, &params)?;
+            self.broadcast_shape::<T>(ctx, &b, b_size, b_expected_size, params)?;
 
         let y = ctx.get_output(0)?;
         let mut y_payload = y.payload_mut();
@@ -311,11 +311,7 @@ fn compute_output_shape(params: &MatMulParams, ctx: &Context<Cuda>) -> Result<()
         let a = ctx.get_input(0)?;
         let b = ctx.get_input(1)?;
 
-        let add_batch = if a.shape().len() >= 3 || b.shape().len() >= 3 {
-            true
-        } else {
-            false
-        };
+        let add_batch = a.shape().len() >= 3 || b.shape().len() >= 3;
 
         // We do this to appease the compiler.
         let res = (add_batch, cmp::max(a.shape().len(), b.shape().len()));
@@ -331,7 +327,7 @@ fn compute_output_shape(params: &MatMulParams, ctx: &Context<Cuda>) -> Result<()
                 output_shape[max_rank - 2] = params.gemm.m;
                 output_shape[max_rank - 1] = params.gemm.n;
 
-                y.copy_shape_from_slice(&output_shape);
+                y.copy_shape_from_slice(output_shape);
             } else {
                 y.copy_shape_from_slice(&[params.gemm.m, params.gemm.n]);
             }

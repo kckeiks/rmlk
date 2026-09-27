@@ -100,9 +100,9 @@ impl GemmBackend {
     where
         T: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
     {
-        compute_output_shape(&params, ctx)?;
+        compute_output_shape(params, ctx)?;
 
-        let config = create_config(&attrs, &params)?;
+        let config = create_config(attrs, params)?;
 
         let a = ctx.get_input(0)?;
 
@@ -187,7 +187,7 @@ where
     T: CudaParamMap + DataTypeMap + ValidAsZeroBits + DeviceRepr + Num + FromF32,
 {
     let alpha = T::from_f32(attrs.alpha());
-    gemm::strided_batch_config::<T>((alpha, T::zero()), &gemm_params).map_err(Into::into)
+    gemm::strided_batch_config::<T>((alpha, T::zero()), gemm_params).map_err(Into::into)
 }
 
 fn prepare_gemm_params(attrs: &GemmAttributes, ctx: &Context<Cuda>) -> Result<GemmParams> {

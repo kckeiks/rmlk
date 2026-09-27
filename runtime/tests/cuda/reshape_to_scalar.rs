@@ -64,7 +64,7 @@ fn test_run() {
     let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
     let input: HashMap<String, Value> = [
         ("a".to_string(), vec![2].try_into().unwrap()),
-        ("b".to_string(), Vec::<i64>::new().try_into().unwrap()),
+        ("b".to_string(), Vec::<i64>::new().into()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();

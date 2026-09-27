@@ -4,7 +4,7 @@ use cudarc::cudnn::{sys, CudnnDataType};
 use cudarc::driver::{CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
-pub fn compute<T: CudnnDataType>(
+pub fn compute<T>(
     stream: &Arc<CudaStream>,
     (alpha, beta): (T, T),
     x_data: &CudaSlice<T>,

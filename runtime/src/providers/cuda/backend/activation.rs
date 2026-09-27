@@ -36,7 +36,7 @@ impl ActivationBackend {
         let y_tensor = ctx.get_output(0)?;
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
-        let (x_shape, x_stride) = alloc_shape_and_stride(&scratch_alloc, ctx)?;
+        let (x_shape, x_stride) = alloc_shape_and_stride(scratch_alloc, ctx)?;
 
         let x_payload = x_tensor.payload();
         let x_data = x_payload.data::<I>();

@@ -45,7 +45,7 @@ fn main() {
     // Run inference.
     let input: HashMap<String, Value> = [(
         "input".to_string(),
-        input.clone().into_raw_vec().try_into().unwrap(),
+        input.clone().into_raw_vec().into(),
     )]
     .into();
     let mut output = model_instance.run(input).unwrap();

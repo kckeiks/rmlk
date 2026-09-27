@@ -109,12 +109,12 @@ where
     }
 
     // Todo: handle this data and move it to device.
-    let x_desc = cudnn.create_nd_tensor::<T>(&x_shape, &x_stride)?;
+    let x_desc = cudnn.create_nd_tensor::<T>(x_shape, x_stride)?;
 
     // Todo: Fix this.
     // Does this cudnnTensorFormat_t handle 5d inputs?
     let w_desc =
-        cudnn.create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, &w_shape)?;
+        cudnn.create_nd_filter(cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, w_shape)?;
 
     // Check for optional bias input.
     // If it exists, for performance, we compute it in one single cudnn function call.
@@ -130,7 +130,7 @@ where
 
             conv.set_group_count(group)?;
 
-            let y_desc = cudnn.create_nd_tensor::<T>(&y_shape, &y_stride)?;
+            let y_desc = cudnn.create_nd_tensor::<T>(y_shape, y_stride)?;
 
             {
                 let op = ConvForward {
@@ -144,7 +144,7 @@ where
                 let algo = op.pick_algorithm()?;
 
                 // Get workspace size.
-                let workspace_size = op.get_workspace_size(algo.clone())?;
+                let workspace_size = op.get_workspace_size(algo)?;
                 let mut workspace = stream.alloc_zeros::<u8>(workspace_size)?;
 
                 // Launch the operation.
@@ -165,7 +165,7 @@ where
             let bias_shape = bias_tensor.shape;
             let bias_stride = bias_tensor.stride;
 
-            let bias_desc = cudnn.create_nd_tensor::<T>(&bias_shape, &bias_stride)?;
+            let bias_desc = cudnn.create_nd_tensor::<T>(bias_shape, bias_stride)?;
 
             let mut conv = cudnn.create_convnd::<T>(
                 pads,
@@ -176,9 +176,9 @@ where
 
             conv.set_group_count(group)?;
 
-            let y_desc = cudnn.create_nd_tensor::<T>(&y_shape, &y_stride)?;
+            let y_desc = cudnn.create_nd_tensor::<T>(y_shape, y_stride)?;
 
-            let z_desc = cudnn.create_nd_tensor::<T>(&y_shape, &y_stride)?;
+            let z_desc = cudnn.create_nd_tensor::<T>(y_shape, y_stride)?;
             // Todo: Do we have to actually allocate anything if we are not going to use it?
             let z_slice = stream.alloc_zeros::<T>(y_shape.iter().map(|d| *d as usize).product())?;
             {
@@ -205,7 +205,7 @@ where
                 let algo = sys::cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
                 // Get workspace size.
-                let workspace_size = op.get_workspace_size(algo.clone())?;
+                let workspace_size = op.get_workspace_size(algo)?;
                 let mut workspace = stream.alloc_zeros::<u8>(workspace_size)?;
 
                 unsafe {

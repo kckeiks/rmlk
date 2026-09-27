@@ -123,7 +123,7 @@ pub fn compute<T: CudaParamMap>(
     // handling cuBLAS's column-major assumption.
     unsafe {
         gemm_stride_batched::<T>(
-            &stream,
+            stream,
             &cublas,
             config,
             &b_data.slice(..),
@@ -199,9 +199,9 @@ pub unsafe fn gemm_stride_batched<T: CudaParamMap>(
     let alpha = &config.gemm.alpha as *const T as *const _;
     let beta = &config.gemm.beta as *const T as *const _;
 
-    let (a_ptr, _a_record_src) = a.device_ptr(&stream);
-    let (b_ptr, _b_record_src) = b.device_ptr(&stream);
-    let (y_ptr, _y_record_src) = y.device_ptr_mut(&stream);
+    let (a_ptr, _a_record_src) = a.device_ptr(stream);
+    let (b_ptr, _b_record_src) = b.device_ptr(stream);
+    let (y_ptr, _y_record_src) = y.device_ptr_mut(stream);
 
     cudarc::cublas::result::gemm_strided_batched_ex(
         *cublas.handle(),
@@ -242,9 +242,9 @@ pub unsafe fn gemm_stride_batched_f32(
     let alpha = &config.gemm.alpha as *const f32 as *const _;
     let beta = &config.gemm.beta as *const f32 as *const _;
 
-    let (a_ptr, _a_record_src) = a.device_ptr(&stream);
-    let (b_ptr, _b_record_src) = b.device_ptr(&stream);
-    let (c_ptr, _c_record_src) = c.device_ptr_mut(&stream);
+    let (a_ptr, _a_record_src) = a.device_ptr(stream);
+    let (b_ptr, _b_record_src) = b.device_ptr(stream);
+    let (c_ptr, _c_record_src) = c.device_ptr_mut(stream);
 
     cudarc::cublas::result::gemm_strided_batched_ex(
         *cublas.handle(),
@@ -315,7 +315,7 @@ mod test {
         utils::calculate_stride(&rhs_shape, &mut rhs_stride);
         let rhs_dev_ptr = stream.clone_htod(&vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let output_shape = vec![1, 2, 2];
+        let output_shape = [1, 2, 2];
 
         let params = gemm_params(
             &lhs_shape,

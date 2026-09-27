@@ -56,8 +56,8 @@ fn test_run() {
     let a = (1..=24).map(|x| x as f32).collect::<Vec<_>>(); // 2*3*4 = 24
     let b = (100..=107).map(|x| x as f32).collect::<Vec<_>>(); // 2*1*4 = 8
     let input: HashMap<String, Value> = [
-        ("a".to_string(), a.clone().try_into().unwrap()),
-        ("b".to_string(), b.clone().try_into().unwrap()),
+        ("a".to_string(), a.clone().into()),
+        ("b".to_string(), b.clone().into()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();

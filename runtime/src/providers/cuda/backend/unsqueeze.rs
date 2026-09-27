@@ -37,7 +37,7 @@ impl UnsqueezeBackend {
         let data = data_payload.data::<T>();
 
         let expanded = ctx.get_output(0)?;
-        expanded.copy_shape_from_slice(&expanded_shape);
+        expanded.copy_shape_from_slice(expanded_shape);
         expanded.write_payload(&data)?;
 
         debug!(
@@ -94,7 +94,7 @@ fn compute_output_shape<'a>(
     axes.payload_to_host(axes_data)?;
 
     // Todo: validate the range of axes values.
-    if duplicates_exist(&axes_data) {
+    if duplicates_exist(axes_data) {
         return Err(UnsqueezeError::DuplicateAxes.into());
     }
 
@@ -117,9 +117,9 @@ fn compute_output_shape<'a>(
     }
 
     let mut skip = 0;
-    for idx in 0..expanded_shape.len() {
-        if expanded_shape[idx] != 1 {
-            expanded_shape[idx] = data.shape()[idx - skip];
+    for (idx, dim) in expanded_shape.iter_mut().enumerate() {
+        if *dim != 1 {
+            *dim = data.shape()[idx - skip];
         } else {
             skip += 1;
         }

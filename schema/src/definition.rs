@@ -51,11 +51,11 @@ impl Definition {
         self.node
             .value
             .as_ref()
-            .map_or(false, |v| v.has_dynamic_dims())
+            .is_some_and(|v| v.has_dynamic_dims())
     }
 
     pub fn name(&self) -> Option<&str> {
-        self.node.name.as_ref().map(|name| name.as_str())
+        self.node.name.as_deref()
     }
 
     pub fn inputs(&self) -> Option<&Vec<usize>> {

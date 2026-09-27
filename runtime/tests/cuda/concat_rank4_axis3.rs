@@ -63,8 +63,8 @@ fn test_run() {
         101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0,
     ];
     let input: HashMap<String, Value> = [
-        ("a".to_string(), a.clone().try_into().unwrap()),
-        ("b".to_string(), b.clone().try_into().unwrap()),
+        ("a".to_string(), a.clone().into()),
+        ("b".to_string(), b.clone().into()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();

@@ -66,7 +66,7 @@ impl SoftmaxBackend {
 
         let scratch_alloc = ctx.execution_state().scratch_alloc();
 
-        let (input_shape, input_stride) = compute_shape_and_stride(ctx, &scratch_alloc, axis)?;
+        let (input_shape, input_stride) = compute_shape_and_stride(ctx, scratch_alloc, axis)?;
 
         debug!(
             "[input][processed][shape={:?}][stride=[{:?}]",

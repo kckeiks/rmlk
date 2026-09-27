@@ -121,7 +121,7 @@ pub fn parse_attributes(attributes: HashMap<String, AttributeValue>) -> Vec<Attr
             AttributeValue::Float(v) => AttributeType::Float(v),
             AttributeValue::Int(v) => AttributeType::Int(v),
             AttributeValue::String(v) => AttributeType::String(v),
-            AttributeValue::Tensor(v) => AttributeType::Tensor(v),
+            AttributeValue::Tensor(v) => AttributeType::Tensor(Box::new(v)),
             AttributeValue::Floats(v) => AttributeType::Floats(v),
             AttributeValue::Doubles(v) => AttributeType::Doubles(v),
             AttributeValue::Ints(v) => AttributeType::Ints(v),

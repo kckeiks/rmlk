@@ -19,7 +19,7 @@ impl ActivationKernel for ReluKernel {
     where
         T: CudnnDataType + ValidAsZeroBits + DeviceRepr,
     {
-        rmlk_cuda::kernels::relu::compute(&stream, (alpha, beta), x_data, x_shape, x_stride, y_data)
+        rmlk_cuda::kernels::relu::compute(stream, (alpha, beta), x_data, x_shape, x_stride, y_data)
             .map_err(Into::into)
     }
 }

@@ -160,7 +160,7 @@ where
     assert_eq!(elem_count, c.len());
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),
@@ -223,7 +223,7 @@ mod tests {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
         let func = load_kernel(&ctx, kernel).unwrap();
-        let info = info_for_shape(&shape);
+        let info = info_for_shape(shape);
 
         let a_dev = stream.clone_htod::<X, _>(a_host).unwrap();
         let b_dev = stream.clone_htod::<Y, _>(b_host).unwrap();
@@ -400,7 +400,7 @@ mod tests {
             f16::from_f32(2.0),
             f16::from_f32(5.0),
             f16::from_f32(1.0),
-            f16::from_f32(0.14285714285714285),
+            f16::from_f32(0.142_857_15),
         ];
         let result = run_test(PowKernel::PowFwdF16F32, &shape, &a, &b);
         for (r, e) in result.iter().zip(expected.iter()) {

@@ -17,7 +17,3 @@ approx = "0.5"
 
 [build-dependencies]
 bindgen_cuda = "0.1"
-
-[[bench]]
-name = "bench_main"
-harness = false

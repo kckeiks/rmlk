@@ -53,7 +53,7 @@ where
     let elem_count: usize = output.len();
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),

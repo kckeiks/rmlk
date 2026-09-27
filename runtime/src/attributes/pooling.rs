@@ -79,15 +79,15 @@ impl<'a> MaxPoolAttributes<'a> {
     }
 
     pub fn pads(&self) -> &[i32] {
-        self.pads.as_ref()
+        self.pads
     }
 
     pub fn strides(&self) -> &[i32] {
-        self.strides.as_ref()
+        self.strides
     }
 
     pub fn kernel_shape(&self) -> &[i32] {
-        self.kernel_shape.as_ref()
+        self.kernel_shape
     }
 
     pub fn _ceil_mode(&self) -> bool {

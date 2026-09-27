@@ -91,10 +91,10 @@ where
     let indices_len = starts.len();
     assert_eq!(ends.len(), indices_len);
     assert!(axes_len == indices_len || axes_len == 0);
-    assert!(steps.len() == indices_len || steps.len() == 0);
+    assert!(steps.len() == indices_len || steps.is_empty());
 
     let num_threads = 128;
-    let num_blocks = (elem_count + num_threads - 1) / num_threads;
+    let num_blocks = elem_count.div_ceil(num_threads);
 
     let config = LaunchConfig {
         grid_dim: (num_blocks as u32, 1, 1),

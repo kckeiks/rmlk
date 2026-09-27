@@ -27,10 +27,10 @@ pub(crate) fn compare_shapes(shape: &[usize], node: &Node<Definition>) -> Result
     }
 
     for (idx, &dim) in shape.iter().enumerate() {
-        if shape_def[idx] != dim {
-            if shape_def[idx] != 0 || !(shape_def[idx] == 0 && node.value().has_dynamic_dims()) {
-                bail!("dimensions mismatch src={:?} def={:?}", shape, shape_def);
-            }
+        let def_dim = shape_def[idx];
+        let dynamic_ok = def_dim == 0 && node.value().has_dynamic_dims();
+        if def_dim != dim && !dynamic_ok {
+            bail!("dimensions mismatch src={:?} def={:?}", shape, shape_def);
         }
     }
 
@@ -96,7 +96,7 @@ pub fn compute_broadcast_stride_from_output_shape(
     output_shape: &[usize],
     broadcast_stride: &mut [usize],
 ) {
-    assert!(a_shape.len() > 0 || output_shape.len() > 0);
+    assert!(!a_shape.is_empty() || !output_shape.is_empty());
 
     let a_ndims = a_shape.len();
     let ndims = broadcast_stride.len();
@@ -120,7 +120,7 @@ pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize
     let a_offset = ndims - a.len();
     let b_offset = ndims - b.len();
 
-    for i in 0..ndims {
+    for (i, dst_dim) in dst.iter_mut().enumerate().take(ndims) {
         // Fill missing dimensions with 1.
         let a_dim = i
             .checked_sub(a_offset)
@@ -136,7 +136,7 @@ pub fn compute_broadcast_output_shape(a: &[usize], b: &[usize], dst: &mut [usize
             return false;
         }
 
-        dst[i] = cmp::max(a_dim, b_dim);
+        *dst_dim = cmp::max(a_dim, b_dim);
     }
 
     true
@@ -209,8 +209,8 @@ pub fn write_increasing_sequence<T>(dst: &mut [T]) -> Result<()>
 where
     T: From<usize>,
 {
-    for i in 0..dst.len() {
-        dst[i] = T::try_from(i)?;
+    for (i, slot) in dst.iter_mut().enumerate() {
+        *slot = T::from(i);
     }
     Ok(())
 }

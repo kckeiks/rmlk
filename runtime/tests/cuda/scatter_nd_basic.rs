@@ -59,9 +59,9 @@ fn test_run() {
     let indices: Vec<i64> = vec![0, 1, 2, 0, 3, 2];
     let updates: Vec<f32> = vec![10.1, 10.2, 10.3, 20.1, 20.2, 20.3, 30.1, 30.2, 30.3];
     let input: HashMap<String, Value> = [
-        ("a".to_string(), data.try_into().unwrap()),
-        ("indices".to_string(), indices.try_into().unwrap()),
-        ("updates".to_string(), updates.try_into().unwrap()),
+        ("a".to_string(), data.into()),
+        ("indices".to_string(), indices.into()),
+        ("updates".to_string(), updates.into()),
     ]
     .into();
     let mut output = instance.run(input).unwrap();

@@ -62,7 +62,7 @@ impl Attribute {
 
     pub fn tensor(&self) -> Option<&Tensor> {
         match &self.ty {
-            AttributeType::Tensor(tensor) => Some(tensor),
+            AttributeType::Tensor(tensor) => Some(tensor.as_ref()),
             _ => None,
         }
     }
@@ -108,12 +108,12 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     .to_vec(),
             ),
             onnx::attribute_proto::AttributeType::TENSOR => {
-                AttributeType::Tensor(crate::tensor::tensor_from_onnx_tensor(
+                AttributeType::Tensor(Box::new(crate::tensor::tensor_from_onnx_tensor(
                     value.t.ok_or(Error::MissingField {
                         name: "Attribute::t".to_string(),
                     })?,
                     None,
-                )?)
+                )?))
             }
             onnx::attribute_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
             // Todo: Address casting.
@@ -152,7 +152,7 @@ pub enum AttributeType {
     Float(f32),
     Int(i32),
     String(Vec<u8>),
-    Tensor(Tensor),
+    Tensor(Box<Tensor>),
     Floats(Vec<f32>),
     Doubles(Vec<f64>),
     Ints(Vec<i32>),

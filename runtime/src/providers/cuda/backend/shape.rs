@@ -1,18 +1,13 @@
 use crate::core::error::UnsupportedDataType;
 use crate::core::Context;
 
-#[cfg(feature = "dump")]
-#[cfg(feature = "dump")]
-use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
 use crate::{attributes, utils};
 use anyhow::Result;
-use cudarc::cudnn::CudnnDataType;
-use cudarc::driver::{CudaStream, DeviceRepr, ValidAsZeroBits};
-use half::f16;
+use cudarc::driver::CudaStream;
 use log::debug;
-use num_traits::{Num, ToPrimitive};
-use rmlk_schema::{DataType, DataTypeMap};
+use num_traits::ToPrimitive;
+use rmlk_schema::DataType;
 use std::sync::Arc;
 
 pub struct ShapeBackend {
@@ -26,10 +21,7 @@ impl ShapeBackend {
         }
     }
 
-    pub fn compute_shape<T>(self, ctx: &mut Context<Cuda>) -> Result<()>
-    where
-        T: DataTypeMap + CudnnDataType + ValidAsZeroBits + DeviceRepr + Num,
-    {
+    pub fn compute_shape(self, ctx: &mut Context<Cuda>) -> Result<()> {
         let data = ctx.get_input(0)?;
 
         debug!(
@@ -80,7 +72,7 @@ impl ShapeBackend {
         shape.write_payload_from_slice(&shape_host_buf[start..end])?;
 
         #[cfg(feature = "dump")]
-        debug::write_results_shape::<T>("debugging/shape", self.stream.clone(), ctx)?;
+        write_shape_dump(self._stream.clone(), ctx)?;
 
         Ok(())
     }
@@ -89,13 +81,25 @@ impl ShapeBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float16 => self.compute_shape::<f16>(ctx),
-            DataType::Float => self.compute_shape::<f32>(ctx),
-            DataType::Double => self.compute_shape::<f64>(ctx),
-            DataType::Int32 => self.compute_shape::<i32>(ctx),
-            DataType::Int64 => self.compute_shape::<i64>(ctx),
+            DataType::Float16 | DataType::Float | DataType::Double | DataType::Int32
+            | DataType::Int64 => self.compute_shape(ctx),
             _ => Err(UnsupportedDataType(dtype).into()),
         }
+    }
+}
+
+#[cfg(feature = "dump")]
+fn write_shape_dump(stream: Arc<CudaStream>, ctx: &mut Context<Cuda>) -> Result<()> {
+    use crate::providers::cuda::debug;
+    use half::f16;
+
+    match ctx.get_input(0)?.dtype() {
+        DataType::Float16 => debug::write_results_shape::<f16>("debugging/shape", stream, ctx),
+        DataType::Float => debug::write_results_shape::<f32>("debugging/shape", stream, ctx),
+        DataType::Double => debug::write_results_shape::<f64>("debugging/shape", stream, ctx),
+        DataType::Int32 => debug::write_results_shape::<i32>("debugging/shape", stream, ctx),
+        DataType::Int64 => debug::write_results_shape::<i64>("debugging/shape", stream, ctx),
+        dtype => Err(UnsupportedDataType(dtype).into()),
     }
 }
 

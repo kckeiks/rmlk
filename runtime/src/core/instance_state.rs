@@ -27,6 +27,7 @@ where
         Self {
             map_input_name_to_id: map_io_name_to_id,
             _plan: plan,
+            #[allow(clippy::arc_with_non_send_sync)] // TODO: ModelInstance Send (TODO.md §4)
             graph: Arc::new(graph),
         }
     }
