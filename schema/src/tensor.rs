@@ -82,6 +82,67 @@ impl Default for Tensor {
     }
 }
 
+impl Tensor {
+    /// Build a tensor from a typed host buffer.
+    ///
+    /// Data is stored little-endian in [`Self::raw_data`]. Typed fields
+    /// (`float_data`, `int64_data`, …) are left empty. The product of `dims`
+    /// must equal `data.len()`; an empty `dims` is a scalar and requires
+    /// exactly one element.
+    pub fn from_vec<T: AsRawBytes>(dims: impl Into<Vec<usize>>, data: Vec<T>) -> Result<Self, Error> {
+        let dims = dims.into();
+        let expected = dims.iter().copied().product::<usize>();
+        if data.len() != expected {
+            return Err(Error::LenMismatch {
+                expected,
+                got: data.len(),
+            });
+        }
+
+        let mut raw = Vec::with_capacity(data.len().saturating_mul(T::BYTE_LEN));
+        for value in &data {
+            value.write_le(&mut raw);
+        }
+
+        Ok(Self {
+            dims,
+            data_type: T::data_type(),
+            raw_data: Some(raw),
+            ..Default::default()
+        })
+    }
+
+    /// Decode [`Self::raw_data`] into a typed host buffer.
+    ///
+    /// Only reads `raw_data`; typed fields are ignored. The tensor's
+    /// `data_type` must match `T`, and the byte length must equal
+    /// `product(dims) * T::BYTE_LEN`.
+    pub fn to_vec<T: AsRawBytes>(&self) -> Result<Vec<T>, Error> {
+        if self.data_type != T::data_type() {
+            return Err(Error::DtypeMismatch {
+                expected: T::data_type(),
+                got: self.data_type,
+            });
+        }
+
+        let raw = self.raw_data.as_deref().ok_or(Error::MissingRawData)?;
+        let expected_elems = self.dims.iter().copied().product::<usize>();
+        let expected_bytes = expected_elems.saturating_mul(T::BYTE_LEN);
+        if raw.len() != expected_bytes {
+            return Err(Error::InvalidRawData {
+                expected_bytes,
+                got_bytes: raw.len(),
+            });
+        }
+
+        let mut out = Vec::with_capacity(expected_elems);
+        for chunk in raw.chunks_exact(T::BYTE_LEN) {
+            out.push(T::read_le(chunk)?);
+        }
+        Ok(out)
+    }
+}
+
 pub fn tensor_from_onnx_tensor(
     value: TensorProto,
     base_url: Option<PathBuf>,
@@ -447,11 +508,46 @@ pub trait DataTypeMap {
     fn data_type() -> DataType;
 }
 
+/// Types that can be stored in [`Tensor::raw_data`] as little-endian bytes.
+///
+/// Bound used by [`Tensor::from_vec`] and [`Tensor::to_vec`]. `usize` implements
+/// [`DataTypeMap`] but not this trait: its width is not portable.
+pub trait AsRawBytes: DataTypeMap + Sized {
+    const BYTE_LEN: usize;
+
+    fn write_le(&self, buf: &mut Vec<u8>);
+
+    fn read_le(bytes: &[u8]) -> Result<Self, Error>;
+}
+
+macro_rules! impl_as_raw_bytes_int {
+    ($ty:ty) => {
+        impl AsRawBytes for $ty {
+            const BYTE_LEN: usize = std::mem::size_of::<$ty>();
+
+            fn write_le(&self, buf: &mut Vec<u8>) {
+                buf.extend_from_slice(&self.to_le_bytes());
+            }
+
+            fn read_le(bytes: &[u8]) -> Result<Self, Error> {
+                let arr: [u8; Self::BYTE_LEN] =
+                    bytes.try_into().map_err(|_| Error::InvalidRawData {
+                        expected_bytes: Self::BYTE_LEN,
+                        got_bytes: bytes.len(),
+                    })?;
+                Ok(Self::from_le_bytes(arr))
+            }
+        }
+    };
+}
+
 impl DataTypeMap for u8 {
     fn data_type() -> DataType {
         DataType::Uint8
     }
 }
+
+impl_as_raw_bytes_int!(u8);
 
 impl DataTypeMap for u16 {
     fn data_type() -> DataType {
@@ -459,9 +555,27 @@ impl DataTypeMap for u16 {
     }
 }
 
+impl_as_raw_bytes_int!(u16);
+
 impl DataTypeMap for f16 {
     fn data_type() -> DataType {
         DataType::Float16
+    }
+}
+
+impl AsRawBytes for f16 {
+    const BYTE_LEN: usize = 2;
+
+    fn write_le(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read_le(bytes: &[u8]) -> Result<Self, Error> {
+        let arr: [u8; 2] = bytes.try_into().map_err(|_| Error::InvalidRawData {
+            expected_bytes: 2,
+            got_bytes: bytes.len(),
+        })?;
+        Ok(Self::from_le_bytes(arr))
     }
 }
 
@@ -471,11 +585,15 @@ impl DataTypeMap for f32 {
     }
 }
 
+impl_as_raw_bytes_int!(f32);
+
 impl DataTypeMap for f64 {
     fn data_type() -> DataType {
         DataType::Double
     }
 }
+
+impl_as_raw_bytes_int!(f64);
 
 impl DataTypeMap for i32 {
     fn data_type() -> DataType {
@@ -483,11 +601,15 @@ impl DataTypeMap for i32 {
     }
 }
 
+impl_as_raw_bytes_int!(i32);
+
 impl DataTypeMap for u32 {
     fn data_type() -> DataType {
         DataType::Uint32
     }
 }
+
+impl_as_raw_bytes_int!(u32);
 
 impl DataTypeMap for i64 {
     fn data_type() -> DataType {
@@ -495,11 +617,15 @@ impl DataTypeMap for i64 {
     }
 }
 
+impl_as_raw_bytes_int!(i64);
+
 impl DataTypeMap for u64 {
     fn data_type() -> DataType {
         DataType::Uint64
     }
 }
+
+impl_as_raw_bytes_int!(u64);
 
 impl DataTypeMap for bool {
     fn data_type() -> DataType {
@@ -507,9 +633,106 @@ impl DataTypeMap for bool {
     }
 }
 
+impl AsRawBytes for bool {
+    const BYTE_LEN: usize = 1;
+
+    fn write_le(&self, buf: &mut Vec<u8>) {
+        buf.push(u8::from(*self));
+    }
+
+    fn read_le(bytes: &[u8]) -> Result<Self, Error> {
+        let b = *bytes.first().ok_or(Error::InvalidRawData {
+            expected_bytes: 1,
+            got_bytes: 0,
+        })?;
+        Ok(b != 0)
+    }
+}
+
 impl DataTypeMap for usize {
     fn data_type() -> DataType {
         DataType::USize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use half::f16;
+
+    #[test]
+    fn from_vec_round_trips_f32() {
+        let data = vec![1.0f32, 2.0, 3.0, 4.0];
+        let t = Tensor::from_vec([2, 2], data.clone()).unwrap();
+        assert_eq!(t.dims, vec![2, 2]);
+        assert_eq!(t.data_type, DataType::Float);
+        assert!(t.float_data.is_empty());
+        assert_eq!(
+            t.raw_data.as_ref().unwrap().len(),
+            4 * std::mem::size_of::<f32>()
+        );
+        assert_eq!(t.to_vec::<f32>().unwrap(), data);
+    }
+
+    #[test]
+    fn from_vec_round_trips_i64_scalar() {
+        let t = Tensor::from_vec([], vec![42i64]).unwrap();
+        assert!(t.dims.is_empty());
+        assert_eq!(t.to_vec::<i64>().unwrap(), vec![42]);
+    }
+
+    #[test]
+    fn from_vec_round_trips_bool_and_f16() {
+        let t = Tensor::from_vec([3], vec![true, false, true]).unwrap();
+        assert_eq!(t.raw_data.as_ref().unwrap(), &[1, 0, 1]);
+        assert_eq!(t.to_vec::<bool>().unwrap(), vec![true, false, true]);
+
+        let halfs = vec![f16::from_f32(1.5), f16::from_f32(-0.5)];
+        let t = Tensor::from_vec([2], halfs.clone()).unwrap();
+        assert_eq!(t.data_type, DataType::Float16);
+        assert_eq!(t.to_vec::<f16>().unwrap(), halfs);
+    }
+
+    #[test]
+    fn from_vec_rejects_len_mismatch() {
+        let err = Tensor::from_vec::<f32>([2, 2], vec![1.0, 2.0]).unwrap_err();
+        assert_eq!(
+            err,
+            Error::LenMismatch {
+                expected: 4,
+                got: 2
+            }
+        );
+    }
+
+    #[test]
+    fn to_vec_rejects_dtype_mismatch() {
+        let t = Tensor::from_vec([2], vec![1i32, 2]).unwrap();
+        let err = t.to_vec::<f32>().unwrap_err();
+        assert_eq!(
+            err,
+            Error::DtypeMismatch {
+                expected: DataType::Float,
+                got: DataType::Int32,
+            }
+        );
+    }
+
+    #[test]
+    fn to_vec_rejects_missing_raw_data() {
+        let t = Tensor {
+            dims: vec![1],
+            data_type: DataType::Float,
+            float_data: vec![1.0],
+            ..Default::default()
+        };
+        assert_eq!(t.to_vec::<f32>().unwrap_err(), Error::MissingRawData);
+    }
+
+    #[test]
+    fn little_endian_layout_is_stable() {
+        let t = Tensor::from_vec([1], vec![0x0102_0304u32]).unwrap();
+        assert_eq!(t.raw_data.as_ref().unwrap(), &[0x04, 0x03, 0x02, 0x01]);
     }
 }
 

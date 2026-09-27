@@ -190,7 +190,7 @@ impl Builder {
         store.init(&self.graph, self.initializers)?;
 
         let plan = Plan::new(Box::new([provider]));
-        #[allow(clippy::arc_with_non_send_sync)] // TODO: ModelInstance Send (TODO.md §4)
+        #[allow(clippy::arc_with_non_send_sync)] // TODO: ModelInstance Send (TODO.md §5)
         let instance_state = Arc::new(ModelInstanceState::new(
             plan,
             self.graph,
