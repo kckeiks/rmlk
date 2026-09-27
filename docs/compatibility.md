@@ -33,6 +33,29 @@ Install for script work with:
 python3 -m pip install -r scripts/requirements-oracle.in
 ```
 
+Or with `uv`:
+
+```bash
+uv venv .venv-oracle
+uv pip install --python .venv-oracle/bin/python -r scripts/requirements-oracle.in
+```
+
+### Regenerating graph integration goldens
+
+The attention and conv-block fixtures under `runtime/tests/fixtures/` are
+produced by building the same graphs as ONNX (opset 14, IR 10) and running them
+with the pinned CPU ONNX Runtime. The Rust tests still build those graphs with
+`GraphBuilder`; only the expected float blobs come from ORT.
+
+```bash
+python3 scripts/gen_graph_fixtures.py
+# or: .venv-oracle/bin/python scripts/gen_graph_fixtures.py
+```
+
+The script exits if the installed `onnx` / `onnxruntime` versions do not match
+this profile. After changing the graphs in `runtime/tests/graphs/`, regenerate
+and commit any intentional fixture diffs.
+
 Use the CPU package for regenerating small graph goldens. Use
 `onnxruntime-gpu` at the same version for manual full-model e2e on GPU. If the
 local CUDA toolkit is older than what that GPU wheel requires, keep the oracle

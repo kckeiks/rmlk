@@ -1,98 +1,103 @@
 #!/usr/bin/env python3
 """Generate binary f32 fixtures for runtime/tests/graphs integration tests.
 
-Pure Python (stdlib only). Re-run after changing the reference graphs:
+Expected outputs come from the pinned ONNX Runtime in
+`scripts/requirements-oracle.in` (see `docs/compatibility.md`). Inputs and
+constants are still chosen here so they match the Rust GraphBuilder tests.
 
+Install the oracle, then regenerate:
+
+    python3 -m pip install -r scripts/requirements-oracle.in
     python3 scripts/gen_graph_fixtures.py
+
+Re-run after changing the reference graphs in `runtime/tests/graphs/`.
 """
 
 from __future__ import annotations
 
-import math
 import struct
+import sys
 from pathlib import Path
+
+import numpy as np
+import onnx
+import onnxruntime as ort
+from onnx import TensorProto, helper, numpy_helper
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "runtime" / "tests" / "fixtures"
 
+# Match docs/compatibility.md / scripts/requirements-oracle.in
+EXPECTED_ONNX = "1.21.0"
+EXPECTED_ORT = "1.28.0"
+OPSET = 14
 
-def write_f32(path: Path, values: list[float]) -> None:
+
+def write_f32(path: Path, values: np.ndarray | list[float]) -> None:
+    arr = np.asarray(values, dtype=np.float32).reshape(-1)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(struct.pack(f"<{len(values)}f", *values))
-    print(f"wrote {path.relative_to(ROOT)} ({len(values)} f32)")
+    path.write_bytes(struct.pack(f"<{arr.size}f", *arr.tolist()))
+    print(f"wrote {path.relative_to(ROOT)} ({arr.size} f32)")
 
 
-def matmul(a: list[float], a_shape: tuple[int, ...], b: list[float], b_shape: tuple[int, ...]) -> list[float]:
-    """Batched matmul for ranks 2–3 with numpy-like broadcasting of leading dims."""
-    def as_batched(shape):
-        if len(shape) == 2:
-            return 1, shape[0], shape[1], False
-        if len(shape) == 3:
-            return shape[0], shape[1], shape[2], True
-        raise ValueError(shape)
-
-    ba, ma, ka, a3 = as_batched(a_shape)
-    bb, kb, nb, b3 = as_batched(b_shape)
-    assert ka == kb
-    batch = max(ba, bb)
-    out = []
-    for bi in range(batch):
-        ai = 0 if ba == 1 else bi
-        bj = 0 if bb == 1 else bi
-        for i in range(ma):
-            for j in range(nb):
-                s = 0.0
-                for k in range(ka):
-                    s += a[ai * ma * ka + i * ka + k] * b[bj * kb * nb + k * nb + j]
-                out.append(s)
-    return out
+def check_oracle_versions() -> None:
+    onnx_ver = onnx.__version__
+    ort_ver = ort.__version__
+    if onnx_ver != EXPECTED_ONNX or ort_ver != EXPECTED_ORT:
+        print(
+            "error: oracle package versions do not match docs/compatibility.md\n"
+            f"  onnx:        got {onnx_ver}, expected {EXPECTED_ONNX}\n"
+            f"  onnxruntime: got {ort_ver}, expected {EXPECTED_ORT}\n"
+            "Install with: python3 -m pip install -r scripts/requirements-oracle.in",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"oracle ok: onnx=={onnx_ver} onnxruntime=={ort_ver} opset={OPSET}")
 
 
-def transpose_021(x: list[float], n: int, a: int, b: int) -> list[float]:
-    """Transpose axes (0, 2, 1) so shape [n, a, b] becomes [n, b, a]."""
-    out = [0.0] * (n * a * b)
-    for i in range(n):
-        for j in range(a):
-            for k in range(b):
-                out[i * b * a + k * a + j] = x[i * a * b + j * b + k]
-    return out
-
-
-def softmax_last(x: list[float], rows: int, cols: int) -> list[float]:
-    out = []
-    for r in range(rows):
-        row = x[r * cols : (r + 1) * cols]
-        m = max(row)
-        exps = [math.exp(v - m) for v in row]
-        s = sum(exps)
-        out.extend(e / s for e in exps)
-    return out
-
-
-def tril_batch(x: list[float], batch: int, n: int) -> list[float]:
-    out = x[:]
-    for b in range(batch):
-        base = b * n * n
-        for i in range(n):
-            for j in range(n):
-                if j > i:
-                    out[base + i * n + j] = 0.0
-    return out
+def run_onnx(model: onnx.ModelProto, feeds: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    onnx.checker.check_model(model)
+    sess = ort.InferenceSession(
+        model.SerializeToString(),
+        providers=["CPUExecutionProvider"],
+    )
+    outs = sess.run(None, feeds)
+    names = [o.name for o in sess.get_outputs()]
+    return {name: np.asarray(val) for name, val in zip(names, outs)}
 
 
 def gen_attention() -> None:
-    # Q,K,V: [1, 2, 4]
-    q = [float(i + 1) * 0.1 for i in range(8)]
-    k = [float(i + 1) * 0.05 for i in range(8)]
-    v = [float(i + 1) * 0.25 for i in range(8)]
-    scale = 2.0  # sqrt(4)
+    # Mirrors runtime/tests/graphs/attention.rs
+    q = np.array([float(i + 1) * 0.1 for i in range(8)], dtype=np.float32).reshape(1, 2, 4)
+    k = np.array([float(i + 1) * 0.05 for i in range(8)], dtype=np.float32).reshape(1, 2, 4)
+    v = np.array([float(i + 1) * 0.25 for i in range(8)], dtype=np.float32).reshape(1, 2, 4)
+    scale = np.array(2.0, dtype=np.float32)
 
-    kt = transpose_021(k, 1, 2, 4)  # [1,4,2]
-    scores = matmul(q, (1, 2, 4), kt, (1, 4, 2))  # [1,2,2]
-    scores = [s / scale for s in scores]
-    scores = tril_batch(scores, 1, 2)
-    scores = softmax_last(scores, 2, 2)
-    out = matmul(scores, (1, 2, 2), v, (1, 2, 4))  # [1,2,4]
+    nodes = [
+        helper.make_node("Transpose", ["k"], ["kt"], perm=[0, 2, 1]),
+        helper.make_node("MatMul", ["q", "kt"], ["scores"]),
+        helper.make_node("Div", ["scores", "scale"], ["scaled"]),
+        helper.make_node("Trilu", ["scaled"], ["masked"], upper=0),
+        helper.make_node("Softmax", ["masked"], ["probs"], axis=-1),
+        helper.make_node("MatMul", ["probs", "v"], ["out"]),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        "attention_head",
+        [
+            helper.make_tensor_value_info("q", TensorProto.FLOAT, [1, 2, 4]),
+            helper.make_tensor_value_info("k", TensorProto.FLOAT, [1, 2, 4]),
+            helper.make_tensor_value_info("v", TensorProto.FLOAT, [1, 2, 4]),
+        ],
+        [helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 2, 4])],
+        [numpy_helper.from_array(scale, name="scale")],
+    )
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", OPSET)],
+        ir_version=10,
+    )
+    out = run_onnx(model, {"q": q, "k": k, "v": v})["out"]
 
     write_f32(OUT / "attention_q.f32", q)
     write_f32(OUT / "attention_k.f32", k)
@@ -100,101 +105,74 @@ def gen_attention() -> None:
     write_f32(OUT / "attention_out.f32", out)
 
 
-def conv2d(x, x_shape, w, w_shape):
-    """Valid (no pad) NCHW conv, stride 1."""
-    n, c_in, h, w_in = x_shape
-    c_out, c_w, kh, kw = w_shape
-    assert c_in == c_w
-    oh, ow = h - kh + 1, w_in - kw + 1
-    out = []
-    for ni in range(n):
-        for oc in range(c_out):
-            for oy in range(oh):
-                for ox in range(ow):
-                    s = 0.0
-                    for ic in range(c_in):
-                        for ky in range(kh):
-                            for kx in range(kw):
-                                xv = x[
-                                    ni * c_in * h * w_in
-                                    + ic * h * w_in
-                                    + (oy + ky) * w_in
-                                    + (ox + kx)
-                                ]
-                                wv = w[oc * c_in * kh * kw + ic * kh * kw + ky * kw + kx]
-                                s += xv * wv
-                    out.append(s)
-    return out, (n, c_out, oh, ow)
-
-
-def relu(x: list[float]) -> list[float]:
-    return [max(0.0, v) for v in x]
-
-
-def max_pool_2x2_stride2(x, shape):
-    n, c, h, w = shape
-    assert h % 2 == 0 and w % 2 == 0
-    oh, ow = h // 2, w // 2
-    out = []
-    for ni in range(n):
-        for ci in range(c):
-            for oy in range(oh):
-                for ox in range(ow):
-                    vals = []
-                    for ky in range(2):
-                        for kx in range(2):
-                            vals.append(
-                                x[
-                                    ni * c * h * w
-                                    + ci * h * w
-                                    + (oy * 2 + ky) * w
-                                    + (ox * 2 + kx)
-                                ]
-                            )
-                    out.append(max(vals))
-    return out, (n, c, oh, ow)
-
-
-def global_avg_pool(x, shape):
-    n, c, h, w = shape
-    out = []
-    spatial = h * w
-    for ni in range(n):
-        for ci in range(c):
-            base = ni * c * spatial + ci * spatial
-            out.append(sum(x[base : base + spatial]) / spatial)
-    return out, (n, c, 1, 1)
-
-
-def gemm(a, a_shape, b, b_shape):
-    return matmul(a, a_shape, b, b_shape)
-
-
 def gen_conv_block() -> None:
-    # Input [1, 1, 4, 4] and weights [2, 1, 3, 3]. After valid Conv the shape is
-    # [1, 2, 2, 2]; Relu and 2x2 MaxPool yield [1, 2, 1, 1]; GlobalAveragePool
-    # keeps that; reshape flattens to [1, 2]; Gemm with [2, 3] yields [1, 3].
-    x = [float(i) for i in range(16)]
-    w = [
-        1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0,
-        0.0, 0.0, 1.0,  # filter 0: identity-ish diagonal
-        0.0, 0.0, 1.0,
-        0.0, 1.0, 0.0,
-        1.0, 0.0, 0.0,  # filter 1: anti-diagonal
-    ]
-    fc = [
-        1.0, 0.0, 0.5,
-        0.0, 1.0, -0.5,
-    ]  # shape [2, 3]
+    # Mirrors runtime/tests/graphs/conv_block.rs
+    x = np.arange(16, dtype=np.float32).reshape(1, 1, 4, 4)
+    w = np.array(
+        [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        ],
+        dtype=np.float32,
+    ).reshape(2, 1, 3, 3)
+    fc = np.array([1.0, 0.0, 0.5, 0.0, 1.0, -0.5], dtype=np.float32).reshape(2, 3)
+    flat_shape = np.array([1, 2], dtype=np.int64)
 
-    y, sh = conv2d(x, (1, 1, 4, 4), w, (2, 1, 3, 3))
-    y = relu(y)
-    y, sh = max_pool_2x2_stride2(y, sh)
-    y, sh = global_avg_pool(y, sh)
-    # GAP output is [1, 2, 1, 1]; treat the values as a [1, 2] matrix for Gemm.
-    flat = y
-    out = gemm(flat, (1, 2), fc, (2, 3))
+    nodes = [
+        helper.make_node(
+            "Conv",
+            ["x", "w"],
+            ["conv_y"],
+            pads=[0, 0, 0, 0],
+            strides=[1, 1],
+            dilations=[1, 1],
+        ),
+        helper.make_node("Relu", ["conv_y"], ["relu_y"]),
+        helper.make_node(
+            "MaxPool",
+            ["relu_y"],
+            ["pool_y"],
+            kernel_shape=[2, 2],
+            strides=[2, 2],
+            pads=[0, 0, 0, 0],
+        ),
+        helper.make_node("GlobalAveragePool", ["pool_y"], ["gap_y"]),
+        helper.make_node("Reshape", ["gap_y", "flat_shape"], ["flat"]),
+        helper.make_node("Gemm", ["flat", "fc"], ["out"]),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        "conv_block",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])],
+        [helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 3])],
+        [
+            numpy_helper.from_array(w, name="w"),
+            numpy_helper.from_array(fc, name="fc"),
+            numpy_helper.from_array(flat_shape, name="flat_shape"),
+        ],
+    )
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", OPSET)],
+        ir_version=10,
+    )
+    out = run_onnx(model, {"x": x})["out"]
 
     write_f32(OUT / "conv_block_x.f32", x)
     write_f32(OUT / "conv_block_w.f32", w)
@@ -203,6 +181,7 @@ def gen_conv_block() -> None:
 
 
 def main() -> None:
+    check_oracle_versions()
     gen_attention()
     gen_conv_block()
 
