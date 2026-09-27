@@ -177,7 +177,7 @@ pub fn tensor_from_onnx_tensor(
         .try_into()?;
 
     if !data_type.is_supported() {
-        return Err(Error::NotSupportedD);
+        return Err(Error::NotSupported);
     }
 
     assert!(value.metadata_props.is_empty(), "this is not supported");
@@ -243,28 +243,28 @@ pub fn tensor_from_onnx_tensor(
                 res.int32_data = u8_to_i32_vec(data.as_slice())?;
             }
             DataType::Float16 => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Bfloat16 => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Complex64 => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Complex128 => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Float8E4M3FN => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Float8E4M3FNUZ => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Float8E5M2 => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Float8E5M2FNUZ => {
-                return Err(Error::NotSupportedD);
+                return Err(Error::NotSupported);
             }
             DataType::Uint4 => {
                 res.int32_data = u8_to_i32_vec(data.as_slice())?;

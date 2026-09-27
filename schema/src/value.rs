@@ -52,7 +52,7 @@ impl TypeValue {
                         }
                         _ => {
                             // Todo: add support for other types here.
-                            return Err(Error::NotSupportedD);
+                            return Err(Error::NotSupported);
                         }
                     }
                 }

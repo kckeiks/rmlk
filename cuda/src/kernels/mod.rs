@@ -23,7 +23,7 @@ pub mod slice;
 pub mod softmax;
 pub mod sqrt;
 pub mod sub;
-pub mod tranpose;
+pub mod transpose;
 pub mod trilu;
 pub mod unary;
 pub mod whereop;

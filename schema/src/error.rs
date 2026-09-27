@@ -5,5 +5,5 @@ pub enum Error {
     MissingField { name: String },
     InvalidValue { field: String, value: String },
     Unknown,
-    NotSupportedD,
+    NotSupported,
 }

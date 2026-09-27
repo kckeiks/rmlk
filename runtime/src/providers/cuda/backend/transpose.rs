@@ -11,8 +11,8 @@ use cudarc::cudnn::CudnnDataType;
 use cudarc::driver::{CudaFunction, CudaStream, DeviceRepr, ValidAsZeroBits};
 use half::f16;
 use log::debug;
-use rmlk_cuda::kernels::tranpose;
-use rmlk_cuda::kernels::tranpose::TransposeKernel;
+use rmlk_cuda::kernels::transpose;
+use rmlk_cuda::kernels::transpose::TransposeKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -38,7 +38,7 @@ impl TransposeBackend {
 
         debug!("[kernel={:?}]", kernel_name);
 
-        tranpose::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
+        transpose::load_kernel(self.stream.context().clone(), kernel_name).map_err(Into::into)
     }
 
     fn compute_transpose<T>(&mut self, ctx: &mut Context<Cuda>) -> Result<()>
@@ -98,7 +98,7 @@ impl TransposeBackend {
             let mut output_data = output_payload.data_mut::<T>();
 
             unsafe {
-                tranpose::compute(
+                transpose::compute(
                     self.stream.clone(),
                     func,
                     rank,

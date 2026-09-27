@@ -23,7 +23,7 @@ pub mod dimension_proto {
     pub use super::pb::onnx::mod_TensorShapeProto::mod_Dimension::*;
 }
 
-pub mod attributte_proto {
+pub mod attribute_proto {
     pub use super::pb::onnx::mod_AttributeProto::*;
 }
 

@@ -82,24 +82,24 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
         let attribute_ty = match value.type_pb.ok_or(Error::MissingField {
             name: "Attribute::type".to_string(),
         })? {
-            onnx::attributte_proto::AttributeType::UNDEFINED => {
+            onnx::attribute_proto::AttributeType::UNDEFINED => {
                 return Err(Error::InvalidValue {
                     field: "Attribute::type".to_string(),
                     value: "undefined".to_string(),
                 });
             }
-            onnx::attributte_proto::AttributeType::FLOAT => {
+            onnx::attribute_proto::AttributeType::FLOAT => {
                 AttributeType::Float(value.f.ok_or(Error::MissingField {
                     name: "Attribute::f".to_string(),
                 })?)
             }
             // Todo: Address casting.
-            onnx::attributte_proto::AttributeType::INT => {
+            onnx::attribute_proto::AttributeType::INT => {
                 AttributeType::Int(value.i.ok_or(Error::MissingField {
                     name: "Attribute::i".to_string(),
                 })? as i32)
             }
-            onnx::attributte_proto::AttributeType::STRING => AttributeType::String(
+            onnx::attribute_proto::AttributeType::STRING => AttributeType::String(
                 value
                     .s
                     .ok_or(Error::MissingField {
@@ -107,7 +107,7 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     })?
                     .to_vec(),
             ),
-            onnx::attributte_proto::AttributeType::TENSOR => {
+            onnx::attribute_proto::AttributeType::TENSOR => {
                 AttributeType::Tensor(crate::tensor::tensor_from_onnx_tensor(
                     value.t.ok_or(Error::MissingField {
                         name: "Attribute::t".to_string(),
@@ -115,15 +115,15 @@ impl TryFrom<AttributeProto<'_>> for Attribute {
                     None,
                 )?)
             }
-            onnx::attributte_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
+            onnx::attribute_proto::AttributeType::FLOATS => AttributeType::Floats(value.floats),
             // Todo: Address casting.
-            onnx::attributte_proto::AttributeType::INTS => {
+            onnx::attribute_proto::AttributeType::INTS => {
                 AttributeType::Ints(value.ints.iter().map(|num| *num as i32).collect())
             }
-            onnx::attributte_proto::AttributeType::STRINGS => {
+            onnx::attribute_proto::AttributeType::STRINGS => {
                 AttributeType::Strings(value.strings.into_iter().map(|s| s.to_vec()).collect())
             }
-            onnx::attributte_proto::AttributeType::TENSORS => {
+            onnx::attribute_proto::AttributeType::TENSORS => {
                 let mut tensors = Vec::new();
                 for tensor_proto in value.tensors.into_iter() {
                     tensors.push(crate::tensor::tensor_from_onnx_tensor(tensor_proto, None)?);
