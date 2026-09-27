@@ -40,6 +40,12 @@ quick-protobuf = "0.8"
 # Tokenizers for examples.
 tokenizers = "0.21"
 
+# E2E artifact resolver (sidecar parse, SHA-256, fake/HTTP backends).
+serde = { workspace = true }
+sha2 = "0.10"
+tempfile = "3"
+ureq = "2.12"
+
 [features]
 default = []
 
