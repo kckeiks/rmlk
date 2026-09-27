@@ -1,4 +1,5 @@
 mod attributes;
+mod builder;
 mod definition;
 mod error;
 mod graph;
@@ -11,6 +12,7 @@ mod value;
 pub mod onnx;
 
 pub use attributes::*;
+pub use builder::{GraphBuildError, GraphBuilder, OpBuilder};
 pub use definition::*;
 pub use graph::*;
 pub use model::*;

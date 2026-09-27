@@ -1,16 +1,5 @@
 use crate::node::Node;
 
-#[derive(Debug)]
-pub enum GraphError {
-    InvalidTensor,
-    TensorNotFound,
-    UnknownNode,
-    LoopDetected,
-    Unknown,
-    NodeInUse,
-    ComputationFailed,
-}
-
 pub struct Graph<T> {
     inputs: Vec<usize>,
     outputs: Vec<usize>,

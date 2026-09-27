@@ -3,6 +3,3 @@ name = "rmlk-graph"
 version = "0.0.0"
 edition = "2021"
 authors = ["M. Meier <m.wiresurfer@gmail.com>"]
-
-[dependencies]
-log = "0.4.21"
