@@ -1,9 +1,16 @@
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Invalid,
-    UnknownEntry { name: String },
-    MissingField { name: String },
-    InvalidValue { field: String, value: String },
+    UnknownEntry {
+        name: String,
+    },
+    MissingField {
+        name: String,
+    },
+    InvalidValue {
+        field: String,
+        value: String,
+    },
     /// `Tensor::raw_data` was missing when typed element access required it.
     MissingRawData,
     /// Byte length of `raw_data` is not a multiple of the element size, or does
@@ -18,7 +25,10 @@ pub enum Error {
         got: crate::DataType,
     },
     /// Element count does not match the product of `dims`.
-    LenMismatch { expected: usize, got: usize },
+    LenMismatch {
+        expected: usize,
+        got: usize,
+    },
     Unknown,
     NotSupported,
 }

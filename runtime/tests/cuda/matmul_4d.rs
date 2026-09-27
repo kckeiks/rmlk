@@ -64,10 +64,7 @@ const GRAPH_DEFINITION: &str = r#"
 fn test_run() {
     let mut instance = common::build(GRAPH_DEFINITION).build().unwrap();
     let input: HashMap<String, Value> = [
-        (
-            "a".to_string(),
-            vec![1.0; 24 * 6 * 6].try_into().unwrap(),
-        ),
+        ("a".to_string(), vec![1.0; 24 * 6 * 6].try_into().unwrap()),
         (
             "b".to_string(),
             vec![13.0; 24 * 6 * 128].try_into().unwrap(),

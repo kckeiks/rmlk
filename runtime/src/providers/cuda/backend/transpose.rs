@@ -2,6 +2,7 @@ use crate::core::allocators::ScratchAllocator;
 use crate::core::error::{ConversionError, UnsupportedDataType};
 use crate::core::Context;
 
+use crate::attributes;
 #[cfg(feature = "dump")]
 use crate::providers::cuda::debug;
 use crate::providers::cuda::Cuda;
@@ -15,7 +16,6 @@ use rmlk_cuda::kernels::transpose::TransposeKernel;
 use rmlk_schema::{DataType, DataTypeMap};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
-use crate::attributes;
 
 pub struct TransposeBackend {
     stream: Arc<CudaStream>,

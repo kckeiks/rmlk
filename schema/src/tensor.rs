@@ -89,7 +89,10 @@ impl Tensor {
     /// (`float_data`, `int64_data`, …) are left empty. The product of `dims`
     /// must equal `data.len()`; an empty `dims` is a scalar and requires
     /// exactly one element.
-    pub fn from_vec<T: AsRawBytes>(dims: impl Into<Vec<usize>>, data: Vec<T>) -> Result<Self, Error> {
+    pub fn from_vec<T: AsRawBytes>(
+        dims: impl Into<Vec<usize>>,
+        data: Vec<T>,
+    ) -> Result<Self, Error> {
         let dims = dims.into();
         let expected = dims.iter().copied().product::<usize>();
         if data.len() != expected {

@@ -1,126 +1,92 @@
-use crate::common::schema::{parse_attributes, GraphDef, NodeTypeInfo, ValueDef};
-use rmlk_graph::{Graph, Node};
+use crate::common::schema::{attribute_type, Data, GraphDef, NodeTypeInfo, ValueDef};
 use rmlk_runtime::Builder;
-use rmlk_schema::{DataType, Definition, Op, Tensor, TypeValue};
-use std::collections::HashMap;
+use rmlk_schema::{DataType, GraphBuilder, Op, Tensor};
+use std::collections::{HashMap, HashSet};
 
 mod schema;
 
+/// Build a runtime [`Builder`] from the legacy JSON test dialect.
+///
+/// Translation goes through [`GraphBuilder`] and [`Builder::from_graph`] so the
+/// tests exercise the production entry point. The JSON dialect itself still
+/// lives here until the per-op unit-test migration removes it.
 pub fn build(test_def: &str) -> Builder {
+    let def: GraphDef = serde_json::from_str(test_def).expect("invalid test graph JSON");
+    let graph = schema_graph_from_def(def).expect("failed to build schema graph from test JSON");
+    Builder::from_graph(graph).expect("Builder::from_graph failed")
+}
+
+fn schema_graph_from_def(
+    def: GraphDef,
+) -> Result<rmlk_schema::Graph, rmlk_schema::GraphBuildError> {
     let GraphDef {
         inputs: named_inputs,
         outputs: named_outputs,
-        nodes: node_defs,
+        nodes,
         tensors,
-    } = serde_json::from_str(test_def).unwrap();
+    } = def;
 
-    let mut map_name_to_id = HashMap::new();
-    let mut map_input_name_to_id = HashMap::new();
-    let mut nodes = Vec::new();
-    for node in node_defs {
-        let id = nodes.len();
-        let mut schema_node = rmlk_schema::Node::new(id);
+    let input_names: HashSet<String> = named_inputs.iter().cloned().collect();
+    let mut tensor_data: HashMap<String, Data> =
+        tensors.into_iter().map(|t| (t.name, t.content)).collect();
 
-        match node.info {
-            NodeTypeInfo::Op { name, attributes } => {
-                schema_node.op_type = name.parse().unwrap();
-                schema_node.name = Some(name);
+    let mut g = GraphBuilder::new();
 
-                if let Some(attrs) = attributes {
-                    schema_node.attribute = Some(parse_attributes(attrs));
-                }
+    for node in &nodes {
+        if let NodeTypeInfo::Value(ValueDef {
+            name,
+            shape,
+            dtype,
+            constant,
+        }) = &node.info
+        {
+            let dtype = dtype.unwrap_or(DataType::Float);
+            if input_names.contains(name) {
+                g.input(name, dtype, shape.as_deref().unwrap_or(&[]))?;
+            } else if constant.unwrap_or(false) || tensor_data.contains_key(name) {
+                let content = tensor_data
+                    .remove(name)
+                    .unwrap_or_else(|| panic!("constant `{name}` has no tensor payload"));
+                let dims = shape.clone().unwrap_or_default();
+                g.constant(name, tensor_from_data(dims, content))?;
+            } else if let Some(shape) = shape {
+                g.value(name, dtype, shape)?;
+            } else {
+                g.value_inferred(name)?;
             }
-            NodeTypeInfo::Value(ValueDef {
-                name,
-                shape,
-                dtype,
-                constant,
-            }) => {
-                schema_node.name = Some(name);
+        }
+    }
 
-                if constant.unwrap_or(false) {
-                    schema_node.op_type = Op::NoOp;
-                }
+    for node in nodes {
+        if let NodeTypeInfo::Op { name, attributes } = node.info {
+            let op: Op = name
+                .parse()
+                .unwrap_or_else(|_| panic!("unknown op `{name}`"));
+            let input_names = node.input.unwrap_or_default();
+            let output_names = node.output.unwrap_or_default();
+            let inputs: Vec<&str> = input_names.iter().map(String::as_str).collect();
+            let outputs: Vec<&str> = output_names.iter().map(String::as_str).collect();
 
-                // Todo: circle back and assess this code.
-                if let Some(shape) = shape {
-                    schema_node.set_type_value(TypeValue::Tensor {
-                        dims: shape,
-                        ty: dtype.unwrap_or(DataType::Float).into(),
-                        has_dynamic_dims: false,
-                    })
+            let mut op_builder = g.op(op, &inputs, &outputs)?;
+            if let Some(attrs) = attributes {
+                for (attr_name, attr_value) in attrs {
+                    op_builder = op_builder.attr(attr_name, attribute_type(attr_value));
                 }
             }
         }
-
-        map_name_to_id.insert(schema_node.name.clone().unwrap(), id);
-
-        let mut schema_inputs = Vec::new();
-        if let Some(inputs) = node.input {
-            for input in inputs {
-                let input_id = map_name_to_id.get(&input).unwrap();
-                schema_inputs.push(*input_id);
-            }
-            // We don't give ownership of inputs to the schema node because
-            // this is what we do in core. Todo: We should probably use a smart
-            // pointer to share it cheaply.
-        }
-
-        let mut schema_outputs = Vec::new();
-        if let Some(outputs) = node.output {
-            for output in outputs {
-                let output_id = map_name_to_id.get(&output).unwrap();
-                schema_outputs.push(*output_id);
-            }
-            // We don't give ownership of inputs to the schema node because
-            // this is what we do in core. Todo: We should probably use a smart
-            // pointer to share it cheaply.
-        }
-
-        let definition = Definition::new(schema_node);
-
-        nodes.push(Node::new(schema_inputs, schema_outputs, definition));
     }
 
-    let mut inputs = Vec::new();
-    for input in named_inputs {
-        let input_id = map_name_to_id.get(&input).unwrap();
-        map_input_name_to_id.insert(input.clone(), *input_id);
-        inputs.push(*input_id);
+    for name in named_outputs {
+        g.output(name)?;
     }
 
-    let mut outputs = Vec::new();
-    for output in named_outputs {
-        let output_id = map_name_to_id.get(&output).unwrap();
-        outputs.push(*output_id);
+    g.build()
+}
+
+fn tensor_from_data(dims: Vec<usize>, data: Data) -> Tensor {
+    match data {
+        Data::Float(values) => Tensor::from_vec(dims, values).expect("float tensor"),
+        Data::Double(values) => Tensor::from_vec(dims, values).expect("double tensor"),
+        Data::Bool(values) => Tensor::from_vec(dims, values).expect("bool tensor"),
     }
-
-    let mut initializers = HashMap::new();
-    for tensor in tensors {
-        let id = map_name_to_id.get(&tensor.name).unwrap();
-        let node_info = nodes.get(*id).unwrap();
-        let node_def = node_info.value();
-
-        let tensor = Tensor {
-            dims: node_def.shape().unwrap().clone(),
-            data_type: node_def.dtype().unwrap(),
-            segment: None,
-            float_data: tensor.content.float(),
-            int32_data: vec![],
-            string_data: vec![],
-            int64_data: vec![],
-            name: Some(tensor.name.clone()),
-            doc_string: None,
-            raw_data: None,
-            double_data: tensor.content.double(),
-            uint64_data: vec![],
-            bool_data: tensor.content.bool(),
-        };
-
-        initializers.insert(*id, tensor);
-    }
-
-    let graph = Graph::new(inputs, nodes, outputs);
-
-    Builder::new(map_input_name_to_id, initializers, graph)
 }

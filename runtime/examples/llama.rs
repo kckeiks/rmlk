@@ -82,18 +82,15 @@ fn main() {
 
             feed.insert(
                 "input_ids".into(),
-                (input_tokens, input_tokens_shape.clone())
-                    .into(),
+                (input_tokens, input_tokens_shape.clone()).into(),
             );
             feed.insert(
                 "attention_mask".into(),
-                (attention_mask.clone(), attention_mask_shape.clone())
-                    .into(),
+                (attention_mask.clone(), attention_mask_shape.clone()).into(),
             );
             feed.insert(
                 "position_ids".into(),
-                (position_ids.clone(), input_tokens_shape.clone())
-                    .into(),
+                (position_ids.clone(), input_tokens_shape.clone()).into(),
             );
 
             if let Some(out) = output.as_mut() {

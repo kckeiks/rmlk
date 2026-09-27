@@ -466,8 +466,6 @@ fn ceil_div<T>(a: T, b: T) -> T
 where
     T: Signed + Copy + ToPrimitive,
 {
-    
-
     if a.is_negative() {
         a / b
     } else {

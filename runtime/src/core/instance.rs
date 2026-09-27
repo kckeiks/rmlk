@@ -129,10 +129,11 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> BuilderResult<Self> {
-        let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
-            .map_err(|_| BuilderError::ModelDeserializationFailed)?;
-
+    /// Build from an in-memory [`rmlk_schema::Graph`].
+    ///
+    /// This is the single entry point into the runtime. Callers that load a
+    /// serialized model should deserialize first and then call this.
+    pub fn from_graph(graph_schema: rmlk_schema::Graph) -> BuilderResult<Self> {
         let mut map_input_name_to_id = HashMap::new();
 
         for input in graph_schema.input.as_slice() {
@@ -146,7 +147,6 @@ impl Builder {
             map_input_name_to_id.insert(name.clone(), *input);
         }
 
-        // Use an allocator here.
         let mut nodes = Vec::with_capacity(graph_schema.node.len());
         for node_schema in graph_schema.node {
             let mut def = Definition::new(node_schema);
@@ -165,17 +165,10 @@ impl Builder {
         })
     }
 
-    // Todo: we should put this behind a flag for testing only.
-    pub fn new(
-        map_input_name_to_id: HashMap<String, usize>,
-        initializers: HashMap<usize, Tensor>,
-        graph: Graph<Definition>,
-    ) -> Self {
-        Self {
-            map_input_name_to_id,
-            initializers,
-            graph,
-        }
+    pub fn with_model_from_memory(serialized_graph: Box<[u8]>) -> BuilderResult<Self> {
+        let graph_schema: rmlk_schema::Graph = bincode::deserialize(serialized_graph.as_ref())
+            .map_err(|_| BuilderError::ModelDeserializationFailed)?;
+        Self::from_graph(graph_schema)
     }
 
     pub fn build(self) -> BuilderResult<ModelInstance<Cuda>> {

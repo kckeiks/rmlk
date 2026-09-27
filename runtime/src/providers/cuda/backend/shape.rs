@@ -81,7 +81,10 @@ impl ShapeBackend {
         let dtype = ctx.get_input(0)?.dtype();
 
         match dtype {
-            DataType::Float16 | DataType::Float | DataType::Double | DataType::Int32
+            DataType::Float16
+            | DataType::Float
+            | DataType::Double
+            | DataType::Int32
             | DataType::Int64 => self.compute_shape(ctx),
             _ => Err(UnsupportedDataType(dtype).into()),
         }

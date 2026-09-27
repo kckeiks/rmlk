@@ -148,8 +148,7 @@ fn update_output_shape(ctx: &Context<Cuda>) -> Result<()> {
 
             if !utils::compute_broadcast_output_shape(&a.shape(), &b.shape(), c_shape) {
                 return Err(BinaryOpError::IncompatibleTensorShape {
-                    shapes: [(0, a.shape().to_vec()), (1, b.shape().to_vec())]
-                        .into(),
+                    shapes: [(0, a.shape().to_vec()), (1, b.shape().to_vec())].into(),
                 }
                 .into());
             }

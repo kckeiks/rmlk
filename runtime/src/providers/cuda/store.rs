@@ -423,7 +423,8 @@ impl Value for Tensor {
     where
         T: DataTypeMap + DeviceRepr + Default + Clone,
     {
-        self.payload_to_vec()}
+        self.payload_to_vec()
+    }
 
     fn shape(&self) -> Vec<usize> {
         Tensor::shape(self).to_vec()

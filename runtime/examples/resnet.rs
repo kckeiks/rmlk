@@ -43,11 +43,8 @@ fn main() {
     println!("Done building the compute graph in the runtime");
 
     // Run inference.
-    let input: HashMap<String, Value> = [(
-        "input".to_string(),
-        input.clone().into_raw_vec().into(),
-    )]
-    .into();
+    let input: HashMap<String, Value> =
+        [("input".to_string(), input.clone().into_raw_vec().into())].into();
     let mut output = model_instance.run(input).unwrap();
     let data: Vec<f32> = output.remove("output").unwrap().try_into().unwrap();
     let mut output = data.into_iter().enumerate().collect::<Vec<_>>();

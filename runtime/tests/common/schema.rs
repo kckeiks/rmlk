@@ -1,4 +1,4 @@
-use rmlk_schema::{Attribute, AttributeType, DataType, Tensor};
+use rmlk_schema::{AttributeType, DataType, Tensor};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -71,32 +71,6 @@ pub enum Data {
     Bool(Vec<bool>),
 }
 
-impl Data {
-    pub fn float(&self) -> Vec<f32> {
-        if let Data::Float(values) = self {
-            values.clone()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn double(&self) -> Vec<f64> {
-        if let Data::Double(values) = self {
-            values.clone()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn bool(&self) -> Vec<bool> {
-        if let Data::Bool(values) = self {
-            values.clone()
-        } else {
-            Vec::new()
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all = "lowercase")]
@@ -114,28 +88,17 @@ pub enum AttributeValue {
     DataType(Option<DataType>),
 }
 
-pub fn parse_attributes(attributes: HashMap<String, AttributeValue>) -> Vec<Attribute> {
-    let mut res = Vec::new();
-    for (name, attribute_value) in attributes {
-        let attr_ty = match attribute_value {
-            AttributeValue::Float(v) => AttributeType::Float(v),
-            AttributeValue::Int(v) => AttributeType::Int(v),
-            AttributeValue::String(v) => AttributeType::String(v),
-            AttributeValue::Tensor(v) => AttributeType::Tensor(Box::new(v)),
-            AttributeValue::Floats(v) => AttributeType::Floats(v),
-            AttributeValue::Doubles(v) => AttributeType::Doubles(v),
-            AttributeValue::Ints(v) => AttributeType::Ints(v),
-            AttributeValue::Strings(v) => AttributeType::Strings(v),
-            AttributeValue::Tensors(v) => AttributeType::Tensors(v),
-            AttributeValue::DataType(v) => AttributeType::DataType(v.unwrap()),
-        };
-        res.push(Attribute {
-            name,
-            ref_attr_name: None,
-            ty: attr_ty,
-            doc_string: None,
-        });
+pub fn attribute_type(attribute_value: AttributeValue) -> AttributeType {
+    match attribute_value {
+        AttributeValue::Float(v) => AttributeType::Float(v),
+        AttributeValue::Int(v) => AttributeType::Int(v),
+        AttributeValue::String(v) => AttributeType::String(v),
+        AttributeValue::Tensor(v) => AttributeType::Tensor(Box::new(v)),
+        AttributeValue::Floats(v) => AttributeType::Floats(v),
+        AttributeValue::Doubles(v) => AttributeType::Doubles(v),
+        AttributeValue::Ints(v) => AttributeType::Ints(v),
+        AttributeValue::Strings(v) => AttributeType::Strings(v),
+        AttributeValue::Tensors(v) => AttributeType::Tensors(v),
+        AttributeValue::DataType(v) => AttributeType::DataType(v.unwrap()),
     }
-
-    res
 }

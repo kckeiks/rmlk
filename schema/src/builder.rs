@@ -69,7 +69,7 @@ impl GraphBuilder {
         dtype: DataType,
         dims: impl AsRef<[usize]>,
     ) -> Result<&mut Self, GraphBuildError> {
-        let id = self.add_value_node(name, dtype, dims.as_ref().to_vec())?;
+        let id = self.add_value_node(name, dtype, Some(dims.as_ref().to_vec()))?;
         self.inputs.push(id);
         self.sources.insert(id);
         Ok(self)
@@ -85,7 +85,7 @@ impl GraphBuilder {
         mut tensor: Tensor,
     ) -> Result<&mut Self, GraphBuildError> {
         let name = name.into();
-        let id = self.add_value_node(name.clone(), tensor.data_type, tensor.dims.clone())?;
+        let id = self.add_value_node(name.clone(), tensor.data_type, Some(tensor.dims.clone()))?;
         tensor.name = Some(name);
         self.initializers.insert(id, tensor);
         self.sources.insert(id);
@@ -99,7 +99,19 @@ impl GraphBuilder {
         dtype: DataType,
         dims: impl AsRef<[usize]>,
     ) -> Result<&mut Self, GraphBuildError> {
-        self.add_value_node(name, dtype, dims.as_ref().to_vec())?;
+        self.add_value_node(name, dtype, Some(dims.as_ref().to_vec()))?;
+        Ok(self)
+    }
+
+    /// Declare a value whose shape is determined at runtime.
+    ///
+    /// The node is registered by name with no [`TypeValue`], matching values in
+    /// ONNX graphs that omit a static shape.
+    pub fn value_inferred(
+        &mut self,
+        name: impl Into<String>,
+    ) -> Result<&mut Self, GraphBuildError> {
+        self.add_value_node(name, DataType::Undefined, None)?;
         Ok(self)
     }
 
@@ -187,7 +199,7 @@ impl GraphBuilder {
         &mut self,
         name: impl Into<String>,
         dtype: DataType,
-        dims: Vec<usize>,
+        dims: Option<Vec<usize>>,
     ) -> Result<usize, GraphBuildError> {
         let name = name.into();
         if self.name_to_id.contains_key(&name) {
@@ -198,11 +210,13 @@ impl GraphBuilder {
         let mut node = Node::new(id);
         node.set_name(name.clone());
         node.set_op(Op::NoOp);
-        node.set_type_value(TypeValue::Tensor {
-            ty: dtype.into(),
-            dims,
-            has_dynamic_dims: false,
-        });
+        if let Some(dims) = dims {
+            node.set_type_value(TypeValue::Tensor {
+                ty: dtype.into(),
+                dims,
+                has_dynamic_dims: false,
+            });
+        }
         self.nodes.push(node);
         self.name_to_id.insert(name, id);
         Ok(id)
@@ -374,5 +388,16 @@ mod tests {
             g.op(Op::Add, &["a"], &[]).unwrap_err(),
             GraphBuildError::OpMissingOutputs
         );
+    }
+
+    #[test]
+    fn value_inferred_has_no_type_value() {
+        let mut g = GraphBuilder::new();
+        g.input("x", DataType::Float, [2]).unwrap();
+        g.value_inferred("y").unwrap();
+        g.op(Op::Relu, &["x"], &["y"]).unwrap();
+        g.output("y").unwrap();
+        let graph = g.build().unwrap();
+        assert!(graph.node[1].value.is_none());
     }
 }
