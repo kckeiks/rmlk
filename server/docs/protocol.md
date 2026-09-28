@@ -77,7 +77,7 @@ Audio before `Open`, or after `Finalize` / `Cancel`, is a protocol error.
 | `Audio` | `ClientFrame::Audio` |
 | `Cancel` | `ClientFrame::Cancel` |
 | `Finalize` | `ClientFrame::Finalize` |
-| `OpenAck` | `ServerFrame::OpenAck` |
+| `OpenAck` | `ServerFrame::OpenAck { session_id }` |
 | `Partial` | `ServerFrame::Partial` |
 | `Final` | `ServerFrame::Final` |
 | `Error` | `ServerFrame::Error` |
