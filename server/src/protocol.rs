@@ -1,4 +1,6 @@
 //! Wire protocol frames between clients and this server.
+//!
+//! Binary layout is documented in `server/docs/protocol.md`.
 
 use thiserror::Error;
 
