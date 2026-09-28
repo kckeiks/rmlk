@@ -4,6 +4,8 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
+use crate::engine::{Engine, EngineError, EngineEvent};
+
 /// Opaque handle for a live streaming call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SessionId(u64);
@@ -59,11 +61,13 @@ impl Default for StreamState {
     }
 }
 
-/// Session lookup failures.
+/// Session lookup and engine failures.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SessionError {
     #[error("unknown session {0:?}")]
     Unknown(SessionId),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
 }
 
 /// In-process registry of live sessions.
@@ -152,7 +156,7 @@ impl<E> Sessions<E> {
     }
 }
 
-impl<E: crate::engine::Engine> Sessions<E> {
+impl<E: Engine> Sessions<E> {
     /// Open a session: allocate `StreamState`, register it, return its id.
     pub fn open(&mut self) -> SessionId {
         self.map.create()
@@ -167,12 +171,23 @@ impl<E: crate::engine::Engine> Sessions<E> {
     pub fn get_mut(&mut self, id: SessionId) -> Result<&mut StreamState, SessionError> {
         self.map.get_mut(id)
     }
+
+    /// Push PCM16 audio to the session's engine; return any emitted events.
+    pub fn push_audio(
+        &mut self,
+        id: SessionId,
+        pcm16: &[i16],
+    ) -> Result<Vec<EngineEvent>, SessionError> {
+        let Self { map, engine } = self;
+        let state = map.get_mut(id)?;
+        Ok(engine.push_audio(state, pcm16)?)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{SessionError, SessionId, SessionMap, Sessions};
-    use crate::engine::MockEngine;
+    use crate::engine::{EngineEvent, MockEngine};
 
     #[test]
     fn create_then_remove() {
@@ -215,5 +230,30 @@ mod tests {
         let state = sessions.get(id).unwrap();
         assert_eq!(state.session_id(), id);
         assert_eq!(state.chunks_pushed(), 0);
+    }
+
+    #[test]
+    fn push_audio_returns_mock_partial() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+
+        let events = sessions.push_audio(id, &[0, 1, 2]).unwrap();
+        assert_eq!(
+            events,
+            vec![EngineEvent::Partial {
+                text: "partial-1".into()
+            }]
+        );
+        assert_eq!(sessions.get(id).unwrap().chunks_pushed(), 1);
+    }
+
+    #[test]
+    fn push_audio_unknown_session() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = SessionId::from_raw(9);
+        assert_eq!(
+            sessions.push_audio(id, &[]).unwrap_err(),
+            SessionError::Unknown(id)
+        );
     }
 }
