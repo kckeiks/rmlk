@@ -80,4 +80,4 @@ Audio before `Open`, or after `Finalize` / `Cancel`, is a protocol error.
 | `OpenAck` | `ServerFrame::OpenAck { session_id }` |
 | `Partial` | `ServerFrame::Partial { text }` — UTF-8 |
 | `Final` | `ServerFrame::Final { text }` — UTF-8 |
-| `Error` | `ServerFrame::Error` |
+| `Error` | `ServerFrame::Error { code, message }` — `u16` LE + UTF-8 |

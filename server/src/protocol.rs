@@ -13,6 +13,7 @@ const CLIENT_FINALIZE: u8 = 4;
 const SERVER_OPEN_ACK: u8 = 1;
 const SERVER_PARTIAL: u8 = 2;
 const SERVER_FINAL: u8 = 3;
+const SERVER_ERROR: u8 = 4;
 
 /// Frames sent by the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +31,7 @@ pub enum ServerFrame {
     OpenAck { session_id: u64 },
     Partial { text: String },
     Final { text: String },
-    Error,
+    Error { code: u16, message: String },
 }
 
 /// Codec and framing failures.
@@ -44,8 +45,6 @@ pub enum ProtocolError {
     InvalidPayload,
     #[error("unknown frame type {0}")]
     UnknownType(u8),
-    #[error("unsupported frame type")]
-    Unsupported,
 }
 
 impl ClientFrame {
@@ -98,7 +97,12 @@ impl ServerFrame {
             }
             Self::Partial { text } => Ok(encode_message(SERVER_PARTIAL, text.as_bytes())),
             Self::Final { text } => Ok(encode_message(SERVER_FINAL, text.as_bytes())),
-            Self::Error => Err(ProtocolError::Unsupported),
+            Self::Error { code, message } => {
+                let mut payload = Vec::with_capacity(2 + message.len());
+                payload.extend_from_slice(&code.to_le_bytes());
+                payload.extend_from_slice(message.as_bytes());
+                Ok(encode_message(SERVER_ERROR, &payload))
+            }
         }
     }
 
@@ -116,7 +120,10 @@ impl ServerFrame {
             SERVER_FINAL => Ok(Self::Final {
                 text: decode_utf8(payload)?,
             }),
-            4 => Err(ProtocolError::Unsupported),
+            SERVER_ERROR => {
+                let (code, message) = decode_error_payload(payload)?;
+                Ok(Self::Error { code, message })
+            }
             other => Err(ProtocolError::UnknownType(other)),
         }
     }
@@ -177,6 +184,15 @@ fn require_empty_payload(payload: &[u8]) -> Result<(), ProtocolError> {
     } else {
         Err(ProtocolError::InvalidPayload)
     }
+}
+
+fn decode_error_payload(payload: &[u8]) -> Result<(u16, String), ProtocolError> {
+    if payload.len() < 2 {
+        return Err(ProtocolError::InvalidPayload);
+    }
+    let code = u16::from_le_bytes([payload[0], payload[1]]);
+    let message = decode_utf8(&payload[2..])?;
+    Ok((code, message))
 }
 
 #[cfg(test)]
@@ -312,6 +328,45 @@ mod tests {
         let bytes = [4, 1, 0, 0, 0, 0xff];
         assert_eq!(
             ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn error_round_trip() {
+        let frame = ServerFrame::Error {
+            code: 1,
+            message: "malformed frame".into(),
+        };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn error_empty_message_round_trip() {
+        let frame = ServerFrame::Error {
+            code: 4,
+            message: String::new(),
+        };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(bytes, [4, 2, 0, 0, 0, 4, 0]);
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn error_rejects_short_payload() {
+        let bytes = [4, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn error_rejects_invalid_utf8_message() {
+        let bytes = [4, 3, 0, 0, 0, 1, 0, 0xff];
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
     }
