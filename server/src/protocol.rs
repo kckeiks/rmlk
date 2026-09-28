@@ -8,6 +8,8 @@ const MAX_PAYLOAD_LEN: u32 = 16 << 20; // 16 MiB
 
 const CLIENT_OPEN: u8 = 1;
 const CLIENT_AUDIO: u8 = 2;
+const CLIENT_CANCEL: u8 = 3;
+const CLIENT_FINALIZE: u8 = 4;
 const SERVER_OPEN_ACK: u8 = 1;
 const SERVER_PARTIAL: u8 = 2;
 const SERVER_FINAL: u8 = 3;
@@ -58,7 +60,8 @@ impl ClientFrame {
                 }
                 Ok(encode_message(CLIENT_AUDIO, &payload))
             }
-            Self::Cancel | Self::Finalize => Err(ProtocolError::Unsupported),
+            Self::Cancel => Ok(encode_message(CLIENT_CANCEL, &[])),
+            Self::Finalize => Ok(encode_message(CLIENT_FINALIZE, &[])),
         }
     }
 
@@ -67,15 +70,20 @@ impl ClientFrame {
         let (tag, payload) = decode_message(bytes)?;
         match tag {
             CLIENT_OPEN => {
-                if !payload.is_empty() {
-                    return Err(ProtocolError::InvalidPayload);
-                }
+                require_empty_payload(payload)?;
                 Ok(Self::Open)
             }
             CLIENT_AUDIO => Ok(Self::Audio {
                 pcm16: decode_pcm16_le(payload)?,
             }),
-            3 | 4 => Err(ProtocolError::Unsupported),
+            CLIENT_CANCEL => {
+                require_empty_payload(payload)?;
+                Ok(Self::Cancel)
+            }
+            CLIENT_FINALIZE => {
+                require_empty_payload(payload)?;
+                Ok(Self::Finalize)
+            }
             other => Err(ProtocolError::UnknownType(other)),
         }
     }
@@ -161,6 +169,14 @@ fn decode_pcm16_le(payload: &[u8]) -> Result<Vec<i16>, ProtocolError> {
 
 fn decode_utf8(payload: &[u8]) -> Result<String, ProtocolError> {
     String::from_utf8(payload.to_vec()).map_err(|_| ProtocolError::InvalidPayload)
+}
+
+fn require_empty_payload(payload: &[u8]) -> Result<(), ProtocolError> {
+    if payload.is_empty() {
+        Ok(())
+    } else {
+        Err(ProtocolError::InvalidPayload)
+    }
 }
 
 #[cfg(test)]
@@ -264,6 +280,38 @@ mod tests {
         let bytes = [2, 1, 0, 0, 0, 0xff];
         assert_eq!(
             ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn cancel_round_trip() {
+        let bytes = ClientFrame::Cancel.encode().unwrap();
+        assert_eq!(bytes, [3, 0, 0, 0, 0]);
+        assert_eq!(ClientFrame::decode(&bytes).unwrap(), ClientFrame::Cancel);
+    }
+
+    #[test]
+    fn finalize_round_trip() {
+        let bytes = ClientFrame::Finalize.encode().unwrap();
+        assert_eq!(bytes, [4, 0, 0, 0, 0]);
+        assert_eq!(ClientFrame::decode(&bytes).unwrap(), ClientFrame::Finalize);
+    }
+
+    #[test]
+    fn cancel_rejects_non_empty_payload() {
+        let bytes = [3, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn finalize_rejects_non_empty_payload() {
+        let bytes = [4, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
     }
