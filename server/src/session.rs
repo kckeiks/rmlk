@@ -307,4 +307,37 @@ mod tests {
             SessionError::Unknown(id)
         );
     }
+
+    #[test]
+    fn duplicate_finalize_after_remove_errors() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions.finalize(id).unwrap();
+        assert_eq!(
+            sessions.finalize(id).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+    }
+
+    #[test]
+    fn duplicate_cancel_after_remove_errors() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions.cancel(id).unwrap();
+        assert_eq!(
+            sessions.cancel(id).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+    }
+
+    #[test]
+    fn cancel_after_finalize_errors() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions.finalize(id).unwrap();
+        assert_eq!(
+            sessions.cancel(id).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+    }
 }
