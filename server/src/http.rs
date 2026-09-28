@@ -11,40 +11,47 @@ use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::engine::MockEngine;
+use crate::engine::{EngineEvent, MockEngine};
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-use crate::session::Sessions;
+use crate::session::{SessionError, SessionRegistry, StreamState};
 
-type SessionStore = Arc<Mutex<Sessions<MockEngine>>>;
+#[derive(Clone)]
+pub struct AppState {
+    registry: Arc<Mutex<SessionRegistry>>,
+    engine: Arc<Mutex<MockEngine>>,
+}
 
-/// Application router with shared session store.
-pub fn router(sessions: SessionStore) -> Router {
+/// Application router with shared registry + engine.
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws_upgrade))
-        .with_state(sessions)
+        .with_state(state)
 }
 
-fn new_session_store() -> SessionStore {
-    Arc::new(Mutex::new(Sessions::new(MockEngine::new())))
+fn new_app_state() -> AppState {
+    AppState {
+        registry: Arc::new(Mutex::new(SessionRegistry::default())),
+        engine: Arc::new(Mutex::new(MockEngine::new())),
+    }
 }
 
 async fn health() -> &'static str {
     "ok"
 }
 
-async fn ws_upgrade(State(sessions): State<SessionStore>, ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, sessions))
+async fn ws_upgrade(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(mut socket: WebSocket, sessions: SessionStore) {
+async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let Some(first) = recv_binary_frame(&mut socket).await else {
         return;
     };
 
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => {
-            let (id, _state) = sessions.lock().await.open();
+            let (id, mut stream) = state.registry.lock().await.open();
             if send_frame(
                 &mut socket,
                 &ServerFrame::OpenAck {
@@ -54,13 +61,11 @@ async fn handle_socket(mut socket: WebSocket, sessions: SessionStore) {
             .await
             .is_err()
             {
-                let _ = sessions.lock().await.unregister(id);
+                let _ = state.registry.lock().await.unregister(id);
                 return;
             }
-            // `_state` is connection-owned; audio push in 3.7 uses it without
-            // holding the registry lock.
-            drain_until_close(&mut socket).await;
-            let _ = sessions.lock().await.unregister(id);
+            run_session(&mut socket, &mut stream, &state.engine).await;
+            let _ = state.registry.lock().await.unregister(id);
         }
         Ok(_) => {
             send_error_and_close(
@@ -81,12 +86,85 @@ async fn handle_socket(mut socket: WebSocket, sessions: SessionStore) {
     }
 }
 
-async fn drain_until_close(socket: &mut WebSocket) {
+/// Connection-owned audio loop: engine lock only around push, never the registry.
+async fn run_session(
+    socket: &mut WebSocket,
+    stream: &mut StreamState,
+    engine: &Arc<Mutex<MockEngine>>,
+) {
     while let Some(Ok(msg)) = socket.recv().await {
-        if matches!(msg, Message::Close(_)) {
-            break;
+        match msg {
+            Message::Close(_) => break,
+            Message::Binary(bytes) => match ClientFrame::decode(&bytes) {
+                Ok(ClientFrame::Audio { pcm16 }) => {
+                    let events = {
+                        let mut engine = engine.lock().await;
+                        match stream.push_audio(&mut *engine, &pcm16) {
+                            Ok(events) => events,
+                            Err(SessionError::Busy) => {
+                                send_error_and_close(
+                                    socket,
+                                    error_code::BUSY,
+                                    error_message::BUSY,
+                                )
+                                .await;
+                                break;
+                            }
+                            Err(_) => {
+                                send_error_and_close(
+                                    socket,
+                                    error_code::INTERNAL,
+                                    error_message::INTERNAL,
+                                )
+                                .await;
+                                break;
+                            }
+                        }
+                    };
+                    if send_engine_events(socket, events).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(ClientFrame::Finalize) | Ok(ClientFrame::Cancel) => {
+                    // Handled in later checklist items.
+                    break;
+                }
+                Ok(ClientFrame::Open) => {
+                    send_error_and_close(
+                        socket,
+                        error_code::UNEXPECTED_FRAME,
+                        error_message::EXPECTED_OPEN,
+                    )
+                    .await;
+                    break;
+                }
+                Err(_) => {
+                    send_error_and_close(
+                        socket,
+                        error_code::MALFORMED_FRAME,
+                        error_message::MALFORMED_FRAME,
+                    )
+                    .await;
+                    break;
+                }
+            },
+            _ => {}
         }
     }
+}
+
+async fn send_engine_events(
+    socket: &mut WebSocket,
+    events: Vec<EngineEvent>,
+) -> Result<(), ()> {
+    for event in events {
+        let frame = match event {
+            EngineEvent::Partial { text } => ServerFrame::Partial { text },
+            EngineEvent::Final { text } => ServerFrame::Final { text },
+        };
+        send_frame(socket, &frame).await?;
+    }
+    Ok(())
 }
 
 async fn recv_binary_frame(socket: &mut WebSocket) -> Option<axum::body::Bytes> {
@@ -125,7 +203,7 @@ pub async fn serve(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, router(new_session_store()))
+    axum::serve(listener, router(new_app_state()))
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
@@ -150,7 +228,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message as WsMessage;
     use tower::ServiceExt;
 
-    use super::{new_session_store, router, serve};
+    use super::{new_app_state, router, serve};
     use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 
     async fn spawn_server() -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
@@ -166,9 +244,26 @@ mod tests {
         (addr, shutdown_tx, server)
     }
 
+    async fn open_session(
+        ws: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) {
+        let open = ClientFrame::Open.encode().unwrap();
+        ws.send(WsMessage::Binary(open.into())).await.unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        let WsMessage::Binary(bytes) = reply else {
+            panic!("expected OpenAck, got {reply:?}");
+        };
+        assert!(matches!(
+            ServerFrame::decode(&bytes).unwrap(),
+            ServerFrame::OpenAck { .. }
+        ));
+    }
+
     #[tokio::test]
     async fn health_returns_ok() {
-        let response = router(new_session_store())
+        let response = router(new_app_state())
             .oneshot(
                 Request::builder()
                     .uri("/health")
@@ -209,7 +304,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Unknown type tag — not a valid client frame.
         ws.send(WsMessage::Binary(vec![0xff, 0, 0, 0, 0].into()))
             .await
             .unwrap();
@@ -226,7 +320,6 @@ mod tests {
             }
         );
 
-        // Server should close afterward.
         let close = ws.next().await.unwrap().unwrap();
         assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
 
@@ -272,17 +365,39 @@ mod tests {
             .await
             .unwrap();
 
-        let open = ClientFrame::Open.encode().unwrap();
-        ws.send(WsMessage::Binary(open.into())).await.unwrap();
+        open_session(&mut ws).await;
+
+        ws.close(None).await.unwrap();
+        shutdown_tx.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_audio_returns_partial() {
+        let (addr, shutdown_tx, server) = spawn_server().await;
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .unwrap();
+
+        open_session(&mut ws).await;
+
+        let audio = ClientFrame::Audio {
+            pcm16: vec![0, 1, 2],
+        }
+        .encode()
+        .unwrap();
+        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
 
         let reply = ws.next().await.unwrap().unwrap();
         let WsMessage::Binary(bytes) = reply else {
-            panic!("expected binary OpenAck, got {reply:?}");
+            panic!("expected binary Partial, got {reply:?}");
         };
-        match ServerFrame::decode(&bytes).unwrap() {
-            ServerFrame::OpenAck { session_id: _ } => {}
-            other => panic!("expected OpenAck, got {other:?}"),
-        }
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap(),
+            ServerFrame::Partial {
+                text: "partial-1".into()
+            }
+        );
 
         ws.close(None).await.unwrap();
         shutdown_tx.send(()).unwrap();
