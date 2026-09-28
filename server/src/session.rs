@@ -113,6 +113,11 @@ impl StreamState {
     ) -> Result<Vec<EngineEvent>, SessionError> {
         Ok(engine.finalize(&mut self)?)
     }
+
+    /// Cancel through `engine` without a final transcript, then drop state.
+    pub fn cancel<E: Engine>(mut self, engine: &mut E) -> Result<(), SessionError> {
+        Ok(engine.cancel(&mut self)?)
+    }
 }
 
 impl Drop for StreamState {
@@ -340,8 +345,8 @@ mod tests {
         state.track_drops(Arc::clone(&drops));
         state.push_audio(sessions.engine_mut(), &[0]).unwrap();
 
+        state.cancel(sessions.engine_mut()).unwrap();
         sessions.unregister(id).unwrap();
-        drop(state);
         assert!(sessions.is_empty());
         assert_eq!(drops.load(Ordering::SeqCst), 1);
         assert_eq!(

@@ -22,7 +22,13 @@ pub enum EngineError {
 }
 
 /// Streaming inference backend: audio chunks in, transcript events out.
+///
+/// Lifecycle per call: [`open_stream`] → zero or more [`push_audio`] →
+/// [`finalize`] or [`cancel`].
 pub trait Engine: Send {
+    /// Prepare per-call inference state when a session opens.
+    fn open_stream(&mut self, state: &mut StreamState) -> Result<(), EngineError>;
+
     /// Feed mono PCM16 samples. May emit zero or more partials.
     fn push_audio(
         &mut self,
@@ -35,6 +41,9 @@ pub trait Engine: Send {
         &mut self,
         state: &mut StreamState,
     ) -> Result<Vec<EngineEvent>, EngineError>;
+
+    /// Drop per-call inference state without emitting a final transcript.
+    fn cancel(&mut self, state: &mut StreamState) -> Result<(), EngineError>;
 }
 
 /// Deterministic engine for tests: text derived from chunk count only.
@@ -49,6 +58,10 @@ impl MockEngine {
 }
 
 impl Engine for MockEngine {
+    fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        Ok(())
+    }
+
     fn push_audio(
         &mut self,
         state: &mut StreamState,
@@ -68,6 +81,10 @@ impl Engine for MockEngine {
             text: format!("final-{}", state.chunks_pushed()),
         }])
     }
+
+    fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -78,6 +95,10 @@ mod tests {
     struct NoopEngine;
 
     impl Engine for NoopEngine {
+        fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+            Ok(())
+        }
+
         fn push_audio(
             &mut self,
             _state: &mut StreamState,
@@ -94,12 +115,50 @@ mod tests {
                 text: String::new(),
             }])
         }
+
+        fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct SpyEngine {
+        opens: u32,
+        cancels: u32,
+    }
+
+    impl Engine for SpyEngine {
+        fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+            self.opens += 1;
+            Ok(())
+        }
+
+        fn push_audio(
+            &mut self,
+            state: &mut StreamState,
+            pcm16: &[i16],
+        ) -> Result<Vec<EngineEvent>, EngineError> {
+            MockEngine.push_audio(state, pcm16)
+        }
+
+        fn finalize(
+            &mut self,
+            state: &mut StreamState,
+        ) -> Result<Vec<EngineEvent>, EngineError> {
+            MockEngine.finalize(state)
+        }
+
+        fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+            self.cancels += 1;
+            Ok(())
+        }
     }
 
     #[test]
     fn engine_trait_object_smoke() {
         let mut engine: Box<dyn Engine> = Box::new(NoopEngine);
         let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        engine.open_stream(&mut state).unwrap();
         assert!(engine.push_audio(&mut state, &[]).unwrap().is_empty());
         assert_eq!(
             engine.finalize(&mut state).unwrap(),
@@ -107,6 +166,19 @@ mod tests {
                 text: String::new()
             }]
         );
+    }
+
+    #[test]
+    fn open_stream_and_cancel_lifecycle() {
+        let mut engine = SpyEngine::default();
+        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+
+        engine.open_stream(&mut state).unwrap();
+        engine.push_audio(&mut state, &[0]).unwrap();
+        engine.cancel(&mut state).unwrap();
+
+        assert_eq!(engine.opens, 1);
+        assert_eq!(engine.cancels, 1);
     }
 
     #[test]
@@ -127,7 +199,7 @@ mod tests {
             }]
         );
         assert_eq!(state.chunks_pushed(), 2);
-    }   
+    }
 
     #[test]
     fn mock_final_uses_chunk_count() {

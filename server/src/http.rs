@@ -16,7 +16,7 @@ use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::engine::{EngineEvent, MockEngine};
+use crate::engine::{Engine, EngineEvent, MockEngine};
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 use crate::session::{SessionError, SessionRegistry, StreamState};
 
@@ -82,6 +82,19 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             if let Some(counter) = &state.drop_counter {
                 stream.track_drops(Arc::clone(counter));
             }
+            {
+                let mut engine = state.engine.lock().await;
+                if let Err(err) = engine.open_stream(&mut stream) {
+                    let _ = state.registry.lock().await.unregister(id);
+                    send_error_and_close(
+                        &mut socket,
+                        error_code::INTERNAL,
+                        &err.to_string(),
+                    )
+                    .await;
+                    return;
+                }
+            }
             if send_frame(
                 &mut socket,
                 &ServerFrame::OpenAck {
@@ -91,6 +104,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             .await
             .is_err()
             {
+                {
+                    let mut engine = state.engine.lock().await;
+                    let _ = engine.cancel(&mut stream);
+                }
                 let _ = state.registry.lock().await.unregister(id);
                 return;
             }
@@ -116,7 +133,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Connection-owned session loop: engine lock only around push/finalize, never the registry.
+/// Connection-owned session loop: engine lock only around push/finalize/cancel, never the registry.
 async fn run_session(
     socket: &mut WebSocket,
     mut stream: StreamState,
@@ -124,7 +141,11 @@ async fn run_session(
 ) {
     while let Some(Ok(msg)) = socket.recv().await {
         match msg {
-            Message::Close(_) => break,
+            Message::Close(_) => {
+                let mut engine = engine.lock().await;
+                let _ = engine.cancel(&mut stream);
+                return;
+            }
             Message::Binary(bytes) => match ClientFrame::decode(&bytes) {
                 Ok(ClientFrame::Audio { pcm16 }) => {
                     let events = {
@@ -132,6 +153,8 @@ async fn run_session(
                         match stream.push_audio(&mut *engine, &pcm16) {
                             Ok(events) => events,
                             Err(SessionError::Busy) => {
+                                let _ = engine.cancel(&mut stream);
+                                drop(engine);
                                 send_error_and_close(
                                     socket,
                                     error_code::BUSY,
@@ -141,6 +164,8 @@ async fn run_session(
                                 return;
                             }
                             Err(_) => {
+                                let _ = engine.cancel(&mut stream);
+                                drop(engine);
                                 send_error_and_close(
                                     socket,
                                     error_code::INTERNAL,
@@ -152,6 +177,8 @@ async fn run_session(
                         }
                     };
                     if send_engine_events(socket, events).await.is_err() {
+                        let mut engine = engine.lock().await;
+                        let _ = engine.cancel(&mut stream);
                         return;
                     }
                 }
@@ -176,10 +203,18 @@ async fn run_session(
                     return;
                 }
                 Ok(ClientFrame::Cancel) => {
+                    {
+                        let mut engine = engine.lock().await;
+                        let _ = stream.cancel(&mut *engine);
+                    }
                     let _ = socket.send(Message::Close(None)).await;
                     return;
                 }
                 Ok(ClientFrame::Open) => {
+                    {
+                        let mut engine = engine.lock().await;
+                        let _ = engine.cancel(&mut stream);
+                    }
                     send_error_and_close(
                         socket,
                         error_code::UNEXPECTED_FRAME,
@@ -189,6 +224,10 @@ async fn run_session(
                     return;
                 }
                 Err(_) => {
+                    {
+                        let mut engine = engine.lock().await;
+                        let _ = engine.cancel(&mut stream);
+                    }
                     send_error_and_close(
                         socket,
                         error_code::MALFORMED_FRAME,
@@ -201,6 +240,8 @@ async fn run_session(
             _ => {}
         }
     }
+    let mut engine = engine.lock().await;
+    let _ = engine.cancel(&mut stream);
 }
 
 async fn send_engine_events(
