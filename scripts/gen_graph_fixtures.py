@@ -29,7 +29,7 @@ OUT = ROOT / "runtime" / "tests" / "fixtures"
 
 # Match docs/compatibility.md / scripts/requirements-oracle.in
 EXPECTED_ONNX = "1.21.0"
-EXPECTED_ORT = "1.28.0"
+EXPECTED_ORT = "1.24.2"
 OPSET = 14
 
 

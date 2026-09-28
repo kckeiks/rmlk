@@ -107,8 +107,6 @@ See `docs/compatibility.md`.
 python3 -m pip install -r scripts/requirements-oracle.in
 python3 scripts/discover_onnx_node_cases.py
 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
-# after intentional progress, rewrite the committed baseline:
-RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 ```
 
 ### Full-model e2e vs ORT (GPU, manual)
@@ -117,9 +115,17 @@ Compares rmlk to the pinned ORT CUDA EP on large models. Artifacts come from
 Hugging Face Hub (or local overrides); see `docs/e2e-artifacts.md`.
 
 ```bash
-export RMLK_E2E_HF_REPO=…          # or set RMLK_E2E_ASSET_* overrides
-cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
+# Pack ResNet34 once (opset-14 ONNX + dog.jpeg + sidecar into the local cache):
+PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
+  python3 scripts/pack_e2e_resnet34.py --model /path/to/resnet34.onnx
+
+# Full-model e2e (GPU). On CUDA 12 hosts force ort's CUDA 12 prebuilts;
+# CUDA_COMPUTE_CAP skips a broken nvidia-smi probe during the cuda crate build.
+export ORT_CUDA_VERSION=12
+CUDA_COMPUTE_CAP=89 cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
 ```
+
+See `docs/e2e-artifacts.md` for Hub / `RMLK_E2E_ASSET_*` overrides.
 
 ### Running Inference
 

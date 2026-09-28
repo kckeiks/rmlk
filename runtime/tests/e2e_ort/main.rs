@@ -4,20 +4,26 @@
 //! inputs through ORT and rmlk, and compares float outputs with per-case
 //! tolerances. Failures name the output, worst index, and tolerance exceeded.
 //!
-//! Not part of the default test run or required PR CI:
+//! ResNet34 uses a versioned JPEG (`image` role) and ImageNet preprocess in
+//! process — see `docs/e2e-artifacts.md` and `scripts/pack_e2e_resnet34.py`.
 //!
 //! ```text
-//! cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
-//! ```
+//! # pack local artifacts (once):
+//! PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
+//!   python3 scripts/pack_e2e_resnet34.py --model ~/Downloads/resnet34.onnx
 //!
-//! Asset env vars: see `docs/e2e-artifacts.md`. Cases are registered in
-//! `cases.rs` (ResNet / Llama land in items 60–61).
+//! # CUDA 12 hosts (ort 2.0.0-rc.12 ships both; force 12 if auto-detect is wrong):
+//! export ORT_CUDA_VERSION=12
+//! # If the cuda crate cannot probe the GPU via nvidia-smi, set sm version:
+//! CUDA_COMPUTE_CAP=89 cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
+//! ```
 
 #[path = "../common/mod.rs"]
 mod common;
 
 mod cases;
 mod compare;
+mod preprocess;
 mod runner;
 
 use cases::Case;
@@ -26,12 +32,10 @@ use cases::Case;
 #[ignore = "requires CUDA GPU, ORT CUDA EP, and e2e artifacts (Hub or overrides)"]
 fn run_full_model_e2e() {
     let cases = cases::all();
-    if cases.is_empty() {
-        println!(
-            "e2e_ort: no cases registered yet (add ResNet / Llama in items 60–61); nothing to run"
-        );
-        return;
-    }
+    assert!(
+        !cases.is_empty(),
+        "e2e_ort: case registry is empty"
+    );
 
     let mut failures: Vec<(String, String)> = Vec::new();
     let mut passed = 0usize;
@@ -40,8 +44,12 @@ fn run_full_model_e2e() {
         match run_one(case) {
             Ok(result) => {
                 passed += 1;
+                let top = result
+                    .top1
+                    .map(|t| format!(" top1={t}"))
+                    .unwrap_or_default();
                 println!(
-                    "ok  {}  max_abs_err={:.6e}",
+                    "ok  {}  max_abs_err={:.6e}{top}",
                     result.case_id, result.max_abs_err
                 );
             }
@@ -68,25 +76,19 @@ fn run_full_model_e2e() {
 }
 
 fn run_one(case: &Case) -> Result<runner::CaseResult, String> {
-    let resolver = common::e2e_assets::AssetResolver::<common::e2e_assets::HttpBackend>::from_env();
-    let sidecar = resolver
-        .load_sidecar(case.id, case.artifact_id)
-        .map_err(|e| format!("load sidecar: {e}"))?;
-    runner::check_sidecar_pins(&sidecar)?;
     runner::run_case(case)
 }
 
 #[test]
-fn case_registry_is_wired() {
-    // Host-only: registry exists; cases land with items 60–61.
-    let _ = cases::all();
+fn resnet34_case_is_registered() {
+    let cases = cases::all();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].id, "resnet34");
+    assert_eq!(cases[0].expect_top1, Some(207));
 }
 
 #[test]
 fn huggingface_base_url_shape() {
     let url = common::e2e_assets::huggingface_base_url("org/rmlk-e2e", "main");
-    assert_eq!(
-        url,
-        "https://huggingface.co/org/rmlk-e2e/resolve/main"
-    );
+    assert_eq!(url, "https://huggingface.co/org/rmlk-e2e/resolve/main");
 }

@@ -29,7 +29,7 @@ fn sample_sidecar(case_id: &str, artifact_id: &str, files: HashMap<String, FileE
         "artifact_id": artifact_id,
         "onnx_ir_version": 10,
         "onnx_opset": 14,
-        "ort_version": "1.28.0",
+        "ort_version": "1.24.2",
         "files": files,
     });
     serde_json::to_string_pretty(&value).unwrap() + "\n"
@@ -214,7 +214,7 @@ fn load_sidecar_parses_pins() {
         .unwrap();
     assert_eq!(sidecar.onnx_ir_version, 10);
     assert_eq!(sidecar.onnx_opset, 14);
-    assert_eq!(sidecar.ort_version, "1.28.0");
+    assert_eq!(sidecar.ort_version, "1.24.2");
     assert!(sidecar.files.contains_key("model"));
 }
 

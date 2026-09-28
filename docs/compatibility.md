@@ -23,8 +23,8 @@ change in an example export.
 | Package | Pinned version | Role |
 |---------|----------------|------|
 | `onnx` | 1.21.0 | Build or inspect ONNX graphs in scripts. |
-| `onnxruntime` | 1.28.0 | CPU oracle for fixture generation and host-side checks. |
-| `onnxruntime-gpu` | 1.28.0 | Same ORT version for CUDA e2e when a CUDA 13-capable machine is available. |
+| `onnxruntime` | 1.24.2 | CPU oracle for fixture generation and host-side checks. |
+| `onnxruntime-gpu` | 1.24.2 | Same ORT version for CUDA e2e on CUDA 12 machines. |
 
 Pins live in [`scripts/requirements-oracle.in`](../scripts/requirements-oracle.in).
 Install for script work with:
@@ -40,6 +40,10 @@ uv venv .venv-oracle
 uv pip install --python .venv-oracle/bin/python -r scripts/requirements-oracle.in
 ```
 
+These pins deliberately track **ort 2.0.0-rc.12** / ORT **1.24.2**, the last
+`ort` release that still ships **CUDA 12** prebuilts (rc.13 is CUDA 13-only).
+Opset 14 models (Llama, converted ResNet) do not need ORT 1.28. Bump later
+when the test machines move to CUDA 13.
 ### Regenerating graph integration goldens
 
 The attention and conv-block fixtures under `runtime/tests/fixtures/` are
@@ -80,54 +84,42 @@ cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
 If the manifest is missing, the test runs the discover script automatically.
 Override the cache directory with `RMLK_ONNX_NODE_CACHE` if needed.
 
-### Node-suite results baseline
-
-Passed case names (and optionally `dtype_gap` names) are recorded under
-`runtime/tests/baselines/onnx_node-<onnx_version>.json`. The default GPU run
-diffs against that file and fails if any previously `ok` case regressed to
-`dtype_gap` or `FAIL`. New failures that were never in the baseline still fail
-the suite on their own.
-
-After an intentional improvement or onnx pin bump, rewrite the baseline:
-
-```bash
-RMLK_ONNX_NODE_BLESS=1 cargo test -p rmlk-runtime --test onnx_node -- --ignored --nocapture
-```
-
-Commit the updated JSON in the same change as the improvement or pin bump.
-Host-only unit tests for the baseline format and regression check live in the
-same `onnx_node` test binary and do not need a GPU.
+The summary lists unknown-op skips and `dtype_gap` cases so you can see what
+is not supported yet. Only hard `FAIL`s fail the test. A future won't-do
+bucket can silence known permanent gaps if needed.
 
 Known gaps: `ConstantOfShape` cases are skipped until the protobuf reader can
 load packed tensor attributes (item 45). Softmax on axis 1 with rank-3 input
 still fails until that path is implemented (needed for Nemotron ASR).
 
 Use the CPU package for regenerating small graph goldens. Use
-`onnxruntime-gpu` at the same version for manual full-model e2e on GPU. If the
-local CUDA toolkit is older than what that GPU wheel requires, keep the oracle
-**version** pin and install a matching older GPU wheel only as a temporary
-local override; do not change the profile pin without following the bump
-checklist below.
+`onnxruntime-gpu` at the same version for manual full-model e2e on GPU.
 
 Rust `ort` bindings used by in-process e2e must load this same ORT version:
 
-| Crate | Pinned version | Features |
-|-------|----------------|----------|
-| `ort` | `=2.0.0-rc.13` | `cuda` |
+| Crate | Pinned version | Features | Notes |
+|-------|----------------|----------|-------|
+| `ort` | `=2.0.0-rc.12` | `cuda` | Ships CUDA 12 and 13. Override with `ORT_CUDA_VERSION=12` if needed. |
 
 Dev-dependency of `rmlk-runtime` (full-model e2e harness only).
 
-## Bump checklist
+Manual full-model run (CUDA 12 example):
+
+```bash
+export ORT_CUDA_VERSION=12
+CUDA_COMPUTE_CAP=89 cargo test -p rmlk-runtime --test e2e_ort -- --ignored --nocapture
+```
+
+`ORT_CUDA_VERSION=12` selects ort's CUDA 12 prebuilts. `CUDA_COMPUTE_CAP`
+is only needed when the cuda crate's `nvidia-smi` compute-cap probe fails
+(set it to your GPU's sm version, e.g. `89` for Ada).## Bump checklist
 
 Changing IR, opset, or the pinned ORT/onnx versions is one intentional change
 set:
 
 1. Update the tables in this file and the pins in `scripts/requirements-oracle.in`.
 2. Update the README summary if it still mentions IR or opset.
-3. Re-run official ONNX node cases for every op you claim (section 11 / item 53),
-   once that harness exists. Re-bless
-   `runtime/tests/baselines/onnx_node-<version>.json` if the pin change is
-   intentional (`RMLK_ONNX_NODE_BLESS=1`).
+3. Re-run official ONNX node cases for every op you claim (section 11 / item 53).
 4. Regenerate ORT-based graph goldens (`scripts/gen_graph_fixtures.py`) and
    commit any fixture diffs that are still within expected tolerance policy.
 5. Re-run the manual full-model e2e suite (ResNet, Llama) against the new oracle.

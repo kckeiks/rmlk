@@ -3,9 +3,12 @@
 #
 #   python3 -m pip install -r scripts/requirements-oracle.in
 #
-# For manual GPU e2e on a CUDA 13 machine, install the same ORT version with:
-#   python3 -m pip install onnxruntime-gpu==1.28.0
+# For manual GPU e2e, install the same ORT version with:
+#   python3 -m pip install onnxruntime-gpu==1.24.2
 # (Do not install both onnxruntime and onnxruntime-gpu in one env.)
+#
+# Matched to Rust `ort = "=2.0.0-rc.12"` (last ort release with CUDA 12
+# prebuilts; set ORT_CUDA_VERSION=12 if auto-detect picks wrong).
 
 onnx==1.21.0
-onnxruntime==1.28.0
+onnxruntime==1.24.2

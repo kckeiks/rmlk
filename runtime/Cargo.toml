@@ -46,8 +46,9 @@ sha2 = "0.10"
 tempfile = "3"
 ureq = "2.12"
 
-# Pinned ORT 1.28 oracle for full-model e2e (see docs/compatibility.md).
-ort = { version = "=2.0.0-rc.13", features = ["cuda"] }
+# Pinned ORT 1.24.2 oracle for full-model e2e (see docs/compatibility.md).
+# ort 2.0.0-rc.12 ships CUDA 12 + 13 prebuilts; rc.13 is CUDA 13-only.
+ort = { version = "=2.0.0-rc.12", features = ["cuda"] }
 
 [features]
 default = []

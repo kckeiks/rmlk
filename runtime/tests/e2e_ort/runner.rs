@@ -1,8 +1,9 @@
 //! Shared rmlk vs ORT runner for full-model e2e cases.
 
-use crate::cases::Case;
+use crate::cases::{Case, FeedKind};
 use crate::compare::assert_close_named;
 use crate::common::e2e_assets::{AssetResolver, FileEntry, HttpBackend, Sidecar};
+use crate::preprocess::imagenet_resnet_nchw;
 use ort::ep;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -14,6 +15,7 @@ use std::path::Path;
 pub struct CaseResult {
     pub case_id: String,
     pub max_abs_err: f32,
+    pub top1: Option<usize>,
 }
 
 pub fn run_case(case: &Case) -> Result<CaseResult, String> {
@@ -21,6 +23,7 @@ pub fn run_case(case: &Case) -> Result<CaseResult, String> {
     let sidecar = resolver
         .load_sidecar(case.id, case.artifact_id)
         .map_err(|e| format!("{}: load sidecar: {e}", case.id))?;
+    check_sidecar_pins(&sidecar)?;
 
     let model_path = resolver
         .resolve(case.id, case.artifact_id, "model")
@@ -37,7 +40,10 @@ pub fn run_case(case: &Case) -> Result<CaseResult, String> {
             .files
             .get(binding.role)
             .ok_or_else(|| format!("{}: sidecar missing role {}", case.id, binding.role))?;
-        let (data, shape) = load_f32_tensor(&path, entry)?;
+        let (data, shape) = match binding.kind {
+            FeedKind::RawF32 => load_f32_tensor(&path, entry)?,
+            FeedKind::ImageNetResNet => imagenet_resnet_nchw(&path)?,
+        };
         feeds_ort.insert(binding.name.to_string(), (data.clone(), shape.clone()));
         feeds_rmlk.insert(binding.name.to_string(), (data, shape).into());
     }
@@ -46,6 +52,7 @@ pub fn run_case(case: &Case) -> Result<CaseResult, String> {
     let mut rmlk_outputs = run_rmlk(&model_path, feeds_rmlk)?;
 
     let mut max_abs_err = 0.0f32;
+    let mut top1 = None;
     for out in case.outputs {
         let expected = ort_outputs
             .get(out.name)
@@ -60,11 +67,34 @@ pub fn run_case(case: &Case) -> Result<CaseResult, String> {
             max_abs_err = max_abs_err.max(err);
         }
         assert_close_named(out.name, &actual, expected, case.atol, case.rtol)?;
+
+        if top1.is_none() {
+            let rmlk_top = argmax(&actual);
+            let ort_top = argmax(expected);
+            if rmlk_top != ort_top {
+                return Err(format!(
+                    "{}: top-1 mismatch rmlk={rmlk_top} ort={ort_top} on `{}`",
+                    case.id, out.name
+                ));
+            }
+            top1 = Some(rmlk_top);
+        }
+    }
+
+    if let Some(want) = case.expect_top1 {
+        let got = top1.ok_or_else(|| format!("{}: no output to compute top-1", case.id))?;
+        if got != want {
+            return Err(format!(
+                "{}: expected top-1 class {want}, got {got}",
+                case.id
+            ));
+        }
     }
 
     Ok(CaseResult {
         case_id: case.id.to_string(),
         max_abs_err,
+        top1,
     })
 }
 
@@ -72,11 +102,10 @@ fn run_rmlk(
     model_path: &Path,
     feeds: HashMap<String, Value>,
 ) -> Result<HashMap<String, Value>, String> {
-    let builder = Builder::from_onnx_path(model_path).map_err(|e| format!("rmlk from_onnx_path: {e}"))?;
+    let builder =
+        Builder::from_onnx_path(model_path).map_err(|e| format!("rmlk from_onnx_path: {e}"))?;
     let mut instance = builder.build().map_err(|e| format!("rmlk build: {e}"))?;
-    instance
-        .run(feeds)
-        .map_err(|e| format!("rmlk run: {e}"))
+    instance.run(feeds).map_err(|e| format!("rmlk run: {e}"))
 }
 
 fn run_ort_cuda(
@@ -116,7 +145,7 @@ fn load_f32_tensor(path: &Path, entry: &FileEntry) -> Result<(Vec<f32>, Vec<usiz
     let dtype = entry.dtype.as_deref().unwrap_or("f32");
     if dtype != "f32" && dtype != "float" && dtype != "float32" {
         return Err(format!(
-            "{}: unsupported dtype `{dtype}` (harness currently loads f32 only)",
+            "{}: unsupported dtype `{dtype}` (use FeedKind::RawF32 only with f32)",
             path.display()
         ));
     }
@@ -163,21 +192,29 @@ fn max_abs_diff(actual: &[f32], expected: &[f32]) -> Option<f32> {
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
 }
 
+fn argmax(data: &[f32]) -> usize {
+    data.iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
 
-/// Validate sidecar pin fields against the compatibility profile (soft check).
+/// Sidecar pins must stay within the compatibility profile (opset/IR at or below
+/// the supported surface; ORT version exact).
 pub fn check_sidecar_pins(sidecar: &Sidecar) -> Result<(), String> {
-    const WANT_IR: u64 = 10;
-    const WANT_OPSET: u64 = 14;
-    const WANT_ORT: &str = "1.28.0";
-    if sidecar.onnx_ir_version != WANT_IR {
+    const MAX_IR: u64 = 10;
+    const MAX_OPSET: u64 = 14;
+    const WANT_ORT: &str = "1.24.2";
+    if sidecar.onnx_ir_version > MAX_IR {
         return Err(format!(
-            "sidecar onnx_ir_version {} != {WANT_IR} (see docs/compatibility.md)",
+            "sidecar onnx_ir_version {} > {MAX_IR} (see docs/compatibility.md)",
             sidecar.onnx_ir_version
         ));
     }
-    if sidecar.onnx_opset != WANT_OPSET {
+    if sidecar.onnx_opset > MAX_OPSET {
         return Err(format!(
-            "sidecar onnx_opset {} != {WANT_OPSET} (see docs/compatibility.md)",
+            "sidecar onnx_opset {} > {MAX_OPSET} (see docs/compatibility.md)",
             sidecar.onnx_opset
         ));
     }

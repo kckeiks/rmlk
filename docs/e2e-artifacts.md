@@ -55,7 +55,7 @@ Example keys:
 
 ```text
 resnet34/2026-09-27/model.onnx
-resnet34/2026-09-27/input_labrador.f32
+resnet34/2026-09-27/dog.jpeg
 resnet34/2026-09-27/sidecar.json
 llama3.2/2026-09-27/model.onnx
 llama3.2/2026-09-27/tokenizer.json
@@ -74,10 +74,16 @@ unless the sidecar overrides them via `files`.
 | Role | Typical filename | Notes |
 |------|------------------|-------|
 | `model` | `model.onnx` | ONNX graph loaded by rmlk and ORT. |
-| `input` | case-specific (e.g. `input_labrador.f32`) | Fixed preprocessed tensor bytes for ResNet-style cases. |
+| `image` | e.g. `dog.jpeg` | Source photo for vision cases; harness applies a fixed preprocess (ResNet: torchvision resize/crop/normalize). Prefer this over checking in float blobs. |
+| `input` | case-specific `.f32` | Optional raw little-endian tensor when preprocess is not in-harness. |
 | `tokenizer` | `tokenizer.json` | Llama-style cases. |
 | `prompt` | `prompt.txt` | UTF-8 prompt for greedy decode cases. |
 | `sidecar` | `sidecar.json` | Metadata and checksums for the set. |
+
+The ResNet34 dog JPEG is also kept in git as the pack source at
+`runtime/tests/fixtures/e2e/resnet34/dog.jpeg`. Pack / publish with
+`scripts/pack_e2e_resnet34.py` (converts the ONNX to opset 14 and writes the
+sidecar). The 84 MB weights stay out of git.
 
 ## Checksums
 
@@ -101,7 +107,7 @@ harness may skip the check but should log that fact.
   "artifact_id": "2026-09-27",
   "onnx_ir_version": 10,
   "onnx_opset": 14,
-  "ort_version": "1.28.0",
+  "ort_version": "1.24.2",
   "files": {
     "model": {
       "path": "model.onnx",
@@ -194,7 +200,7 @@ export RMLK_E2E_BASE_URL=https://huggingface.co/rmlk-project/e2e-artifacts/resol
 
 # Use a model already on disk; skip download for that role only.
 export RMLK_E2E_ASSET_RESNET34_MODEL=/data/models/resnet34.onnx
-export RMLK_E2E_ASSET_RESNET34_INPUT=/data/fixtures/labrador.f32
+export RMLK_E2E_ASSET_RESNET34_IMAGE=/data/fixtures/dog.jpeg
 export RMLK_E2E_ASSET_RESNET34_SIDECAR=/data/fixtures/sidecar.json
 
 export RMLK_E2E_ASSET_LLAMA3_2_MODEL=/data/models/llama3.2.onnx
@@ -215,8 +221,8 @@ outside `[A-Z0-9]` with `_`, then
    (e.g. `huggingface-cli upload …`).
 4. Write `sidecar.json` with checksums and pin versions; upload it last.
 5. Point the committed harness case manifest at the new `artifact_id`.
-6. Re-run e2e; re-bless the e2e results baseline (item 64) if verdicts change
-   intentionally.
+6. Re-run e2e against the new oracle; update sidecars/checksums if model bytes
+   changed.
 
 ## Out of scope
 
