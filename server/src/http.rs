@@ -44,7 +44,7 @@ async fn handle_socket(mut socket: WebSocket, sessions: SessionStore) {
 
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => {
-            let id = sessions.lock().await.open();
+            let (id, _state) = sessions.lock().await.open();
             if send_frame(
                 &mut socket,
                 &ServerFrame::OpenAck {
@@ -54,11 +54,13 @@ async fn handle_socket(mut socket: WebSocket, sessions: SessionStore) {
             .await
             .is_err()
             {
-                let _ = sessions.lock().await.close(id);
+                let _ = sessions.lock().await.unregister(id);
                 return;
             }
+            // `_state` is connection-owned; audio push in 3.7 uses it without
+            // holding the registry lock.
             drain_until_close(&mut socket).await;
-            let _ = sessions.lock().await.close(id);
+            let _ = sessions.lock().await.unregister(id);
         }
         Ok(_) => {
             send_error_and_close(
