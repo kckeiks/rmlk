@@ -12,10 +12,14 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 log = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]
+http-body-util = "0.1"
 proptest = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tower = { version = "0.5", features = ["util"] }

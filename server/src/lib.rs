@@ -1,6 +1,7 @@
 //! rmlk inference server.
 
 pub mod engine;
+pub mod http;
 pub mod protocol;
 pub mod scheduler;
 pub mod session;
