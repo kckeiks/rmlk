@@ -467,4 +467,48 @@ mod tests {
         );
         sessions.enqueue_audio(id, &[3]).unwrap();
     }
+
+    #[test]
+    fn two_sessions_interleaved_no_crosstalk() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let a = sessions.open();
+        let b = sessions.open();
+        assert_ne!(a, b);
+
+        assert_eq!(
+            sessions.push_audio(a, &[0]).unwrap(),
+            vec![EngineEvent::Partial {
+                text: "partial-1".into()
+            }]
+        );
+        assert_eq!(
+            sessions.push_audio(b, &[0]).unwrap(),
+            vec![EngineEvent::Partial {
+                text: "partial-1".into()
+            }]
+        );
+        assert_eq!(
+            sessions.push_audio(a, &[0]).unwrap(),
+            vec![EngineEvent::Partial {
+                text: "partial-2".into()
+            }]
+        );
+
+        assert_eq!(sessions.get(a).unwrap().chunks_pushed(), 2);
+        assert_eq!(sessions.get(b).unwrap().chunks_pushed(), 1);
+
+        assert_eq!(
+            sessions.finalize(b).unwrap(),
+            vec![EngineEvent::Final {
+                text: "final-1".into()
+            }]
+        );
+        assert_eq!(
+            sessions.finalize(a).unwrap(),
+            vec![EngineEvent::Final {
+                text: "final-2".into()
+            }]
+        );
+        assert!(sessions.is_empty());
+    }
 }
