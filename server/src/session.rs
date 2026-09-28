@@ -182,6 +182,13 @@ impl<E: Engine> Sessions<E> {
         let state = map.get_mut(id)?;
         Ok(engine.push_audio(state, pcm16)?)
     }
+
+    /// Finalize a session: flush the engine, remove it from the map, return events.
+    pub fn finalize(&mut self, id: SessionId) -> Result<Vec<EngineEvent>, SessionError> {
+        let Self { map, engine } = self;
+        let mut state = map.remove(id)?;
+        Ok(engine.finalize(&mut state)?)
+    }
 }
 
 #[cfg(test)]
@@ -253,6 +260,26 @@ mod tests {
         let id = SessionId::from_raw(9);
         assert_eq!(
             sessions.push_audio(id, &[]).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+    }
+
+    #[test]
+    fn finalize_returns_final_and_removes_session() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions.push_audio(id, &[0]).unwrap();
+
+        let events = sessions.finalize(id).unwrap();
+        assert_eq!(
+            events,
+            vec![EngineEvent::Final {
+                text: "final-1".into()
+            }]
+        );
+        assert!(sessions.is_empty());
+        assert_eq!(
+            sessions.get(id).unwrap_err(),
             SessionError::Unknown(id)
         );
     }
