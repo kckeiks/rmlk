@@ -1,6 +1,4 @@
 //! rmlk inference server.
-//!
-//! See `TODO.md` for the phased build plan.
 
 pub mod engine;
 pub mod protocol;
