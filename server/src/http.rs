@@ -39,7 +39,8 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-fn new_app_state() -> AppState {
+/// Default in-process app state (mock engine).
+pub fn new_app_state() -> AppState {
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
         engine: Arc::new(Mutex::new(MockEngine::new())),
@@ -47,8 +48,8 @@ fn new_app_state() -> AppState {
     }
 }
 
-#[cfg(test)]
-fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
+/// App state that counts `StreamState` drops (integration tests).
+pub fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
         engine: Arc::new(Mutex::new(MockEngine::new())),
@@ -270,64 +271,15 @@ pub async fn shutdown_on_ctrl_c() {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
-
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
-    use futures_util::{SinkExt, StreamExt};
     use http_body_util::BodyExt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
-    use tokio_tungstenite::tungstenite::Message as WsMessage;
     use tower::ServiceExt;
 
-    use super::{
-        new_app_state, new_app_state_with_drop_counter, router, serve_with_state, AppState,
-    };
-    use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-
-    async fn spawn_server() -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
-        spawn_server_with_state(new_app_state()).await
-    }
-
-    async fn spawn_server_with_state(
-        state: AppState,
-    ) -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-        let server = tokio::spawn(async move {
-            let _ = serve_with_state(
-                listener,
-                async {
-                    let _ = shutdown_rx.await;
-                },
-                state,
-            )
-            .await;
-        });
-        (addr, shutdown_tx, server)
-    }
-
-    async fn open_session(
-        ws: &mut tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    ) {
-        let open = ClientFrame::Open.encode().unwrap();
-        ws.send(WsMessage::Binary(open.into())).await.unwrap();
-        let reply = ws.next().await.unwrap().unwrap();
-        let WsMessage::Binary(bytes) = reply else {
-            panic!("expected OpenAck, got {reply:?}");
-        };
-        assert!(matches!(
-            ServerFrame::decode(&bytes).unwrap(),
-            ServerFrame::OpenAck { .. }
-        ));
-    }
+    use super::{new_app_state, router, serve_with_state};
 
     #[tokio::test]
     async fn health_returns_ok() {
@@ -348,7 +300,19 @@ mod tests {
 
     #[tokio::test]
     async fn graceful_shutdown_stops_serving() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            let _ = serve_with_state(
+                listener,
+                async {
+                    let _ = shutdown_rx.await;
+                },
+                new_app_state(),
+            )
+            .await;
+        });
 
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
         stream
@@ -360,189 +324,6 @@ mod tests {
         let response = std::str::from_utf8(&buf[..n]).unwrap();
         assert!(response.contains("200"), "{response}");
         assert!(response.contains("ok"), "{response}");
-
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_rejects_garbage_first_frame() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        ws.send(WsMessage::Binary(vec![0xff, 0, 0, 0, 0].into()))
-            .await
-            .unwrap();
-
-        let reply = ws.next().await.unwrap().unwrap();
-        let WsMessage::Binary(bytes) = reply else {
-            panic!("expected binary Error frame, got {reply:?}");
-        };
-        assert_eq!(
-            ServerFrame::decode(&bytes).unwrap(),
-            ServerFrame::Error {
-                code: error_code::MALFORMED_FRAME,
-                message: error_message::MALFORMED_FRAME.into(),
-            }
-        );
-
-        let close = ws.next().await.unwrap().unwrap();
-        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
-
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_rejects_non_open_first_frame() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        let audio = ClientFrame::Audio { pcm16: vec![0] }
-            .encode()
-            .unwrap();
-        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
-
-        let reply = ws.next().await.unwrap().unwrap();
-        let WsMessage::Binary(bytes) = reply else {
-            panic!("expected binary Error frame, got {reply:?}");
-        };
-        assert_eq!(
-            ServerFrame::decode(&bytes).unwrap(),
-            ServerFrame::Error {
-                code: error_code::UNEXPECTED_FRAME,
-                message: error_message::EXPECTED_OPEN.into(),
-            }
-        );
-
-        let close = ws.next().await.unwrap().unwrap();
-        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
-
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_open_returns_open_ack() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        open_session(&mut ws).await;
-
-        ws.close(None).await.unwrap();
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_audio_returns_partial() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        open_session(&mut ws).await;
-
-        let audio = ClientFrame::Audio {
-            pcm16: vec![0, 1, 2],
-        }
-        .encode()
-        .unwrap();
-        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
-
-        let reply = ws.next().await.unwrap().unwrap();
-        let WsMessage::Binary(bytes) = reply else {
-            panic!("expected binary Partial, got {reply:?}");
-        };
-        assert_eq!(
-            ServerFrame::decode(&bytes).unwrap(),
-            ServerFrame::Partial {
-                text: "partial-1".into()
-            }
-        );
-
-        ws.close(None).await.unwrap();
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_finalize_returns_final_and_closes() {
-        let (addr, shutdown_tx, server) = spawn_server().await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        open_session(&mut ws).await;
-
-        let audio = ClientFrame::Audio { pcm16: vec![0] }
-            .encode()
-            .unwrap();
-        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
-        let partial = ws.next().await.unwrap().unwrap();
-        assert!(matches!(partial, WsMessage::Binary(_)));
-
-        let finalize = ClientFrame::Finalize.encode().unwrap();
-        ws.send(WsMessage::Binary(finalize.into())).await.unwrap();
-
-        let reply = ws.next().await.unwrap().unwrap();
-        let WsMessage::Binary(bytes) = reply else {
-            panic!("expected binary Final, got {reply:?}");
-        };
-        assert_eq!(
-            ServerFrame::decode(&bytes).unwrap(),
-            ServerFrame::Final {
-                text: "final-1".into()
-            }
-        );
-
-        let close = ws.next().await.unwrap().unwrap();
-        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
-
-        shutdown_tx.send(()).unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn websocket_disconnect_frees_session() {
-        let drops = Arc::new(AtomicUsize::new(0));
-        let state = new_app_state_with_drop_counter(Arc::clone(&drops));
-        let (addr, shutdown_tx, server) = spawn_server_with_state(state.clone()).await;
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-
-        open_session(&mut ws).await;
-        assert_eq!(state.live_session_count().await, 1);
-
-        let audio = ClientFrame::Audio { pcm16: vec![0] }
-            .encode()
-            .unwrap();
-        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
-        let _partial = ws.next().await.unwrap().unwrap();
-
-        // Disconnect mid-call without Finalize.
-        ws.close(None).await.unwrap();
-        drop(ws);
-
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while state.live_session_count().await != 0
-                || drops.load(Ordering::SeqCst) != 1
-            {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("session should be freed after client disconnect");
-
-        assert_eq!(state.live_session_count().await, 0);
-        assert_eq!(drops.load(Ordering::SeqCst), 1);
 
         shutdown_tx.send(()).unwrap();
         server.await.unwrap();
