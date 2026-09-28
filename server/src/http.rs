@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -19,6 +20,15 @@ use crate::session::{SessionError, SessionRegistry, StreamState};
 pub struct AppState {
     registry: Arc<Mutex<SessionRegistry>>,
     engine: Arc<Mutex<MockEngine>>,
+    /// When set, each opened stream increments this on drop (tests).
+    drop_counter: Option<Arc<AtomicUsize>>,
+}
+
+impl AppState {
+    /// Number of live sessions in the registry.
+    pub async fn live_session_count(&self) -> usize {
+        self.registry.lock().await.len()
+    }
 }
 
 /// Application router with shared registry + engine.
@@ -33,6 +43,16 @@ fn new_app_state() -> AppState {
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
         engine: Arc::new(Mutex::new(MockEngine::new())),
+        drop_counter: None,
+    }
+}
+
+#[cfg(test)]
+fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
+    AppState {
+        registry: Arc::new(Mutex::new(SessionRegistry::default())),
+        engine: Arc::new(Mutex::new(MockEngine::new())),
+        drop_counter: Some(drop_counter),
     }
 }
 
@@ -51,7 +71,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => {
-            let (id, stream) = state.registry.lock().await.open();
+            let (id, mut stream) = state.registry.lock().await.open();
+            if let Some(counter) = &state.drop_counter {
+                stream.track_drops(Arc::clone(counter));
+            }
             if send_frame(
                 &mut socket,
                 &ServerFrame::OpenAck {
@@ -223,7 +246,16 @@ pub async fn serve(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, router(new_app_state()))
+    serve_with_state(listener, shutdown, new_app_state()).await
+}
+
+/// Serve with an explicit shared [`AppState`] (tests / custom wiring).
+pub async fn serve_with_state(
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+    state: AppState,
+) -> Result<()> {
+    axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
@@ -238,6 +270,10 @@ pub async fn shutdown_on_ctrl_c() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use futures_util::{SinkExt, StreamExt};
@@ -248,17 +284,29 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message as WsMessage;
     use tower::ServiceExt;
 
-    use super::{new_app_state, router, serve};
+    use super::{
+        new_app_state, new_app_state_with_drop_counter, router, serve_with_state, AppState,
+    };
     use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 
     async fn spawn_server() -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+        spawn_server_with_state(new_app_state()).await
+    }
+
+    async fn spawn_server_with_state(
+        state: AppState,
+    ) -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let server = tokio::spawn(async move {
-            let _ = serve(listener, async {
-                let _ = shutdown_rx.await;
-            })
+            let _ = serve_with_state(
+                listener,
+                async {
+                    let _ = shutdown_rx.await;
+                },
+                state,
+            )
             .await;
         });
         (addr, shutdown_tx, server)
@@ -456,6 +504,45 @@ mod tests {
 
         let close = ws.next().await.unwrap().unwrap();
         assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
+
+        shutdown_tx.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_disconnect_frees_session() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let state = new_app_state_with_drop_counter(Arc::clone(&drops));
+        let (addr, shutdown_tx, server) = spawn_server_with_state(state.clone()).await;
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .unwrap();
+
+        open_session(&mut ws).await;
+        assert_eq!(state.live_session_count().await, 1);
+
+        let audio = ClientFrame::Audio { pcm16: vec![0] }
+            .encode()
+            .unwrap();
+        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
+        let _partial = ws.next().await.unwrap().unwrap();
+
+        // Disconnect mid-call without Finalize.
+        ws.close(None).await.unwrap();
+        drop(ws);
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while state.live_session_count().await != 0
+                || drops.load(Ordering::SeqCst) != 1
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("session should be freed after client disconnect");
+
+        assert_eq!(state.live_session_count().await, 0);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
 
         shutdown_tx.send(()).unwrap();
         server.await.unwrap();
