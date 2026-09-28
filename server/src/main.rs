@@ -21,6 +21,6 @@ async fn main() -> Result<()> {
         rmlk_server::VERSION,
         listener.local_addr()?
     );
-    axum::serve(listener, rmlk_server::http::router()).await?;
+    rmlk_server::http::serve(listener, rmlk_server::http::shutdown_on_ctrl_c()).await?;
     Ok(())
 }
