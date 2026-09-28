@@ -1,6 +1,8 @@
 //! Per-call streaming session state.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use thiserror::Error;
 
@@ -27,6 +29,7 @@ impl SessionId {
 pub struct StreamState {
     session_id: SessionId,
     chunks_pushed: u64,
+    drop_counter: Option<Arc<AtomicUsize>>,
 }
 
 impl StreamState {
@@ -35,6 +38,7 @@ impl StreamState {
         Self {
             session_id,
             chunks_pushed: 0,
+            drop_counter: None,
         }
     }
 
@@ -52,6 +56,19 @@ impl StreamState {
     pub fn record_chunk(&mut self) -> u64 {
         self.chunks_pushed += 1;
         self.chunks_pushed
+    }
+
+    /// Increment `counter` when this state is dropped (tests / cleanup checks).
+    pub fn track_drops(&mut self, counter: Arc<AtomicUsize>) {
+        self.drop_counter = Some(counter);
+    }
+}
+
+impl Drop for StreamState {
+    fn drop(&mut self) {
+        if let Some(counter) = &self.drop_counter {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
     }
 }
 
@@ -195,10 +212,18 @@ impl<E: Engine> Sessions<E> {
         self.map.remove(id)?;
         Ok(())
     }
+
+    /// Close a session: free the map entry and drop stream state.
+    pub fn close(&mut self, id: SessionId) -> Result<(), SessionError> {
+        self.cancel(id)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::{SessionError, SessionId, SessionMap, Sessions};
     use crate::engine::{EngineEvent, MockEngine};
 
@@ -339,5 +364,40 @@ mod tests {
             sessions.cancel(id).unwrap_err(),
             SessionError::Unknown(id)
         );
+    }
+
+    #[test]
+    fn close_frees_map_entry_and_drops_state() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions
+            .get_mut(id)
+            .unwrap()
+            .track_drops(Arc::clone(&drops));
+
+        sessions.close(id).unwrap();
+        assert!(sessions.is_empty());
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn dropping_sessions_drops_open_stream_state() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        {
+            let mut sessions = Sessions::new(MockEngine::new());
+            let a = sessions.open();
+            let b = sessions.open();
+            sessions
+                .get_mut(a)
+                .unwrap()
+                .track_drops(Arc::clone(&drops));
+            sessions
+                .get_mut(b)
+                .unwrap()
+                .track_drops(Arc::clone(&drops));
+            assert_eq!(drops.load(Ordering::SeqCst), 0);
+        }
+        assert_eq!(drops.load(Ordering::SeqCst), 2);
     }
 }
