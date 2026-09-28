@@ -15,6 +15,22 @@ const SERVER_PARTIAL: u8 = 2;
 const SERVER_FINAL: u8 = 3;
 const SERVER_ERROR: u8 = 4;
 
+/// Wire `Error` codes (`server/docs/protocol.md`).
+pub mod error_code {
+    pub const MALFORMED_FRAME: u16 = 1;
+    pub const UNEXPECTED_FRAME: u16 = 2;
+    pub const BUSY: u16 = 3;
+    pub const INTERNAL: u16 = 4;
+}
+
+/// Default UTF-8 messages paired with [`error_code`] values.
+pub mod error_message {
+    pub const MALFORMED_FRAME: &str = "malformed frame";
+    pub const EXPECTED_OPEN: &str = "expected Open";
+    pub const BUSY: &str = "server busy";
+    pub const INTERNAL: &str = "internal server error";
+}
+
 /// Frames sent by the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {

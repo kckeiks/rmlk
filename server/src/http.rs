@@ -8,6 +8,8 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 
+use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
+
 /// Application router.
 pub fn router() -> Router {
     Router::new()
@@ -24,21 +26,58 @@ async fn ws_upgrade(ws: WebSocketUpgrade) -> impl IntoResponse {
 }
 
 async fn handle_socket(mut socket: WebSocket) {
-    while let Some(Ok(msg)) = socket.recv().await {
-        match msg {
-            Message::Text(text) if text.as_str() == "ping" => {
-                if socket
-                    .send(Message::Text("pong".into()))
-                    .await
-                    .is_err()
-                {
+    let Some(first) = recv_binary_frame(&mut socket).await else {
+        return;
+    };
+
+    match ClientFrame::decode(&first) {
+        Ok(ClientFrame::Open) => {
+            // Session open / OpenAck lands in the next checklist item.
+            while let Some(Ok(msg)) = socket.recv().await {
+                if matches!(msg, Message::Close(_)) {
                     break;
                 }
             }
-            Message::Close(_) => break,
+        }
+        Ok(_) => {
+            send_error_and_close(
+                &mut socket,
+                error_code::UNEXPECTED_FRAME,
+                error_message::EXPECTED_OPEN,
+            )
+            .await;
+        }
+        Err(_) => {
+            send_error_and_close(
+                &mut socket,
+                error_code::MALFORMED_FRAME,
+                error_message::MALFORMED_FRAME,
+            )
+            .await;
+        }
+    }
+}
+
+async fn recv_binary_frame(socket: &mut WebSocket) -> Option<axum::body::Bytes> {
+    while let Some(Ok(msg)) = socket.recv().await {
+        match msg {
+            Message::Binary(bytes) => return Some(bytes),
+            Message::Close(_) => return None,
             _ => {}
         }
     }
+    None
+}
+
+async fn send_error_and_close(socket: &mut WebSocket, code: u16, message: &str) {
+    let frame = ServerFrame::Error {
+        code,
+        message: message.into(),
+    };
+    if let Ok(bytes) = frame.encode() {
+        let _ = socket.send(Message::Binary(bytes.into())).await;
+    }
+    let _ = socket.send(Message::Close(None)).await;
 }
 
 /// Serve `router` until `shutdown` completes.
@@ -72,6 +111,20 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{router, serve};
+    use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
+
+    async fn spawn_server() -> (std::net::SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            let _ = serve(listener, async {
+                let _ = shutdown_rx.await;
+            })
+            .await;
+        });
+        (addr, shutdown_tx, server)
+    }
 
     #[tokio::test]
     async fn health_returns_ok() {
@@ -92,16 +145,7 @@ mod tests {
 
     #[tokio::test]
     async fn graceful_shutdown_stops_serving() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-
-        let server = tokio::spawn(async move {
-            serve(listener, async {
-                let _ = shutdown_rx.await;
-            })
-            .await
-        });
+        let (addr, shutdown_tx, server) = spawn_server().await;
 
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
         stream
@@ -115,32 +159,69 @@ mod tests {
         assert!(response.contains("ok"), "{response}");
 
         shutdown_tx.send(()).unwrap();
-        server.await.unwrap().unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]
-    async fn websocket_ping_pong() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-
-        let server = tokio::spawn(async move {
-            serve(listener, async {
-                let _ = shutdown_rx.await;
-            })
-            .await
-        });
-
+    async fn websocket_rejects_garbage_first_frame() {
+        let (addr, shutdown_tx, server) = spawn_server().await;
         let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
             .await
             .unwrap();
 
-        ws.send(WsMessage::Text("ping".into())).await.unwrap();
-        let reply = ws.next().await.unwrap().unwrap();
-        assert_eq!(reply, WsMessage::Text("pong".into()));
+        // Unknown type tag — not a valid client frame.
+        ws.send(WsMessage::Binary(vec![0xff, 0, 0, 0, 0].into()))
+            .await
+            .unwrap();
 
-        ws.close(None).await.unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        let WsMessage::Binary(bytes) = reply else {
+            panic!("expected binary Error frame, got {reply:?}");
+        };
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap(),
+            ServerFrame::Error {
+                code: error_code::MALFORMED_FRAME,
+                message: error_message::MALFORMED_FRAME.into(),
+            }
+        );
+
+        // Server should close afterward.
+        let close = ws.next().await.unwrap().unwrap();
+        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
+
         shutdown_tx.send(()).unwrap();
-        server.await.unwrap().unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_rejects_non_open_first_frame() {
+        let (addr, shutdown_tx, server) = spawn_server().await;
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .unwrap();
+
+        let audio = ClientFrame::Audio { pcm16: vec![0] }
+            .encode()
+            .unwrap();
+        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
+
+        let reply = ws.next().await.unwrap().unwrap();
+        let WsMessage::Binary(bytes) = reply else {
+            panic!("expected binary Error frame, got {reply:?}");
+        };
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap(),
+            ServerFrame::Error {
+                code: error_code::UNEXPECTED_FRAME,
+                message: error_message::EXPECTED_OPEN.into(),
+            }
+        );
+
+        let close = ws.next().await.unwrap().unwrap();
+        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
+
+        shutdown_tx.send(()).unwrap();
+        server.await.unwrap();
     }
 }
