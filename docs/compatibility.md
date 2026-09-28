@@ -114,6 +114,9 @@ CUDA_COMPUTE_CAP=89 cargo test -p rmlk-runtime --test e2e_ort -- --ignored --noc
 is only needed when the cuda crate's `nvidia-smi` compute-cap probe fails
 (set it to your GPU's sm version, e.g. `89` for Ada).
 
+How to run every suite (host, GPU unit, node, full-model e2e):
+[`testing.md`](testing.md).
+
 ## Bump checklist
 
 Changing IR, opset, or the pinned ORT/onnx versions is one intentional change
