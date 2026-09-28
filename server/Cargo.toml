@@ -19,7 +19,9 @@ thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]
+futures-util = { version = "=0.3.31", features = ["sink"] }
 http-body-util = "0.1"
 proptest = "1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = "0.29"
 tower = { version = "0.5", features = ["util"] }
