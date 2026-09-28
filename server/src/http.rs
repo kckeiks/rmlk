@@ -51,7 +51,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => {
-            let (id, mut stream) = state.registry.lock().await.open();
+            let (id, stream) = state.registry.lock().await.open();
             if send_frame(
                 &mut socket,
                 &ServerFrame::OpenAck {
@@ -64,7 +64,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                 let _ = state.registry.lock().await.unregister(id);
                 return;
             }
-            run_session(&mut socket, &mut stream, &state.engine).await;
+            run_session(&mut socket, stream, &state.engine).await;
             let _ = state.registry.lock().await.unregister(id);
         }
         Ok(_) => {
@@ -86,10 +86,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Connection-owned audio loop: engine lock only around push, never the registry.
+/// Connection-owned session loop: engine lock only around push/finalize, never the registry.
 async fn run_session(
     socket: &mut WebSocket,
-    stream: &mut StreamState,
+    mut stream: StreamState,
     engine: &Arc<Mutex<MockEngine>>,
 ) {
     while let Some(Ok(msg)) = socket.recv().await {
@@ -108,7 +108,7 @@ async fn run_session(
                                     error_message::BUSY,
                                 )
                                 .await;
-                                break;
+                                return;
                             }
                             Err(_) => {
                                 send_error_and_close(
@@ -117,17 +117,37 @@ async fn run_session(
                                     error_message::INTERNAL,
                                 )
                                 .await;
-                                break;
+                                return;
                             }
                         }
                     };
                     if send_engine_events(socket, events).await.is_err() {
-                        break;
+                        return;
                     }
                 }
-                Ok(ClientFrame::Finalize) | Ok(ClientFrame::Cancel) => {
-                    // Handled in later checklist items.
-                    break;
+                Ok(ClientFrame::Finalize) => {
+                    let events = {
+                        let mut engine = engine.lock().await;
+                        match stream.finalize(&mut *engine) {
+                            Ok(events) => events,
+                            Err(_) => {
+                                send_error_and_close(
+                                    socket,
+                                    error_code::INTERNAL,
+                                    error_message::INTERNAL,
+                                )
+                                .await;
+                                return;
+                            }
+                        }
+                    };
+                    let _ = send_engine_events(socket, events).await;
+                    let _ = socket.send(Message::Close(None)).await;
+                    return;
+                }
+                Ok(ClientFrame::Cancel) => {
+                    let _ = socket.send(Message::Close(None)).await;
+                    return;
                 }
                 Ok(ClientFrame::Open) => {
                     send_error_and_close(
@@ -136,7 +156,7 @@ async fn run_session(
                         error_message::EXPECTED_OPEN,
                     )
                     .await;
-                    break;
+                    return;
                 }
                 Err(_) => {
                     send_error_and_close(
@@ -145,7 +165,7 @@ async fn run_session(
                         error_message::MALFORMED_FRAME,
                     )
                     .await;
-                    break;
+                    return;
                 }
             },
             _ => {}
@@ -400,6 +420,43 @@ mod tests {
         );
 
         ws.close(None).await.unwrap();
+        shutdown_tx.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_finalize_returns_final_and_closes() {
+        let (addr, shutdown_tx, server) = spawn_server().await;
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .unwrap();
+
+        open_session(&mut ws).await;
+
+        let audio = ClientFrame::Audio { pcm16: vec![0] }
+            .encode()
+            .unwrap();
+        ws.send(WsMessage::Binary(audio.into())).await.unwrap();
+        let partial = ws.next().await.unwrap().unwrap();
+        assert!(matches!(partial, WsMessage::Binary(_)));
+
+        let finalize = ClientFrame::Finalize.encode().unwrap();
+        ws.send(WsMessage::Binary(finalize.into())).await.unwrap();
+
+        let reply = ws.next().await.unwrap().unwrap();
+        let WsMessage::Binary(bytes) = reply else {
+            panic!("expected binary Final, got {reply:?}");
+        };
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap(),
+            ServerFrame::Final {
+                text: "final-1".into()
+            }
+        );
+
+        let close = ws.next().await.unwrap().unwrap();
+        assert!(matches!(close, WsMessage::Close(_)), "{close:?}");
+
         shutdown_tx.send(()).unwrap();
         server.await.unwrap();
     }
