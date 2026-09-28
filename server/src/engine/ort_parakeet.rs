@@ -1,0 +1,170 @@
+//! Nemotron / Parakeet streaming engine backed by parakeet-rs + ORT.
+
+use std::path::{Path, PathBuf};
+
+use parakeet_rs::NemotronHandle;
+
+use super::{Engine, EngineError, EngineEvent};
+use crate::session::StreamState;
+
+/// Files required beside the ONNX graph for [`OrtParakeetEngine::load`].
+const REQUIRED_FILES: &[&str] = &[
+    "encoder.onnx",
+    "decoder_joint.onnx",
+    "tokenizer.model",
+];
+
+/// Env var for the ignored real-model load test (`RMLK_NEMOTRON_MODEL_DIR`).
+pub const MODEL_DIR_ENV: &str = "RMLK_NEMOTRON_MODEL_DIR";
+
+/// ORT-backed Nemotron streaming engine (shared model handle).
+///
+/// Construct with [`Self::load`]. Audio inference lands in later Phase 5 items;
+/// this type currently covers directory validation + model open.
+pub struct OrtParakeetEngine {
+    handle: NemotronHandle,
+    model_dir: PathBuf,
+}
+
+impl OrtParakeetEngine {
+    /// Load ONNX + tokenizer from `model_dir`.
+    ///
+    /// Expected layout (Nemotron English or multilingual 3.5 export):
+    /// `encoder.onnx` (+ optional `encoder.onnx.data`), `decoder_joint.onnx`,
+    /// `tokenizer.model`.
+    pub fn load(model_dir: impl AsRef<Path>) -> Result<Self, EngineError> {
+        let model_dir = model_dir.as_ref();
+        if !model_dir.is_dir() {
+            return Err(EngineError::Failed(format!(
+                "model directory not found: {}",
+                model_dir.display()
+            )));
+        }
+        for name in REQUIRED_FILES {
+            let path = model_dir.join(name);
+            if !path.is_file() {
+                return Err(EngineError::Failed(format!(
+                    "missing required model file: {}",
+                    path.display()
+                )));
+            }
+        }
+
+        let handle = NemotronHandle::load(model_dir, None).map_err(|err| {
+            EngineError::Failed(format!(
+                "failed to load Nemotron model from {}: {err}",
+                model_dir.display()
+            ))
+        })?;
+
+        Ok(Self {
+            handle,
+            model_dir: model_dir.to_path_buf(),
+        })
+    }
+
+    /// Directory this engine was loaded from.
+    pub fn model_dir(&self) -> &Path {
+        &self.model_dir
+    }
+
+    /// Shared Nemotron handle (for later per-call `Nemotron::from_shared`).
+    pub fn handle(&self) -> &NemotronHandle {
+        &self.handle
+    }
+}
+
+impl Engine for OrtParakeetEngine {
+    fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn push_audio(
+        &mut self,
+        _state: &mut StreamState,
+        _pcm16: &[i16],
+    ) -> Result<Vec<EngineEvent>, EngineError> {
+        Err(EngineError::Failed(
+            "OrtParakeetEngine push_audio not wired yet".into(),
+        ))
+    }
+
+    fn finalize(
+        &mut self,
+        _state: &mut StreamState,
+    ) -> Result<Vec<EngineEvent>, EngineError> {
+        Err(EngineError::Failed(
+            "OrtParakeetEngine finalize not wired yet".into(),
+        ))
+    }
+
+    fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OrtParakeetEngine, MODEL_DIR_ENV, REQUIRED_FILES};
+    use std::path::PathBuf;
+
+    #[test]
+    fn load_missing_directory_fails_clearly() {
+        let Err(err) = OrtParakeetEngine::load("/no/such/rmlk-nemotron-model-dir") else {
+            panic!("expected missing directory error");
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("model directory not found"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains("rmlk-nemotron-model-dir"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_missing_required_file_fails_clearly() {
+        let dir = tempfile::tempdir().unwrap();
+        let Err(err) = OrtParakeetEngine::load(dir.path()) else {
+            panic!("expected missing file error");
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing required model file"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains(REQUIRED_FILES[0]),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires Nemotron ONNX dir; set RMLK_NEMOTRON_MODEL_DIR"]
+    fn load_real_model_dir() {
+        let path = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
+            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
+        });
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_dir(),
+            "{MODEL_DIR_ENV} is not a directory: {}",
+            path.display()
+        );
+        let engine = OrtParakeetEngine::load(&path).expect("load real model");
+        assert_eq!(engine.model_dir(), path.as_path());
+        // Touch handle so the load is not optimized away.
+        let _ = engine.handle().mode();
+    }
+
+    #[test]
+    fn required_files_list_is_stable() {
+        // Expected names match parakeet-rs NemotronHandle docs.
+        assert_eq!(
+            REQUIRED_FILES,
+            &["encoder.onnx", "decoder_joint.onnx", "tokenizer.model"]
+        );
+    }
+}

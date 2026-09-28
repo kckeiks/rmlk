@@ -3,6 +3,11 @@
 //! Protocol and sessions talk only to this trait so backend types stay out of
 //! the wire API.
 
+#[cfg(feature = "ort")]
+mod ort_parakeet;
+#[cfg(feature = "ort")]
+pub use ort_parakeet::OrtParakeetEngine;
+
 use thiserror::Error;
 
 use crate::session::StreamState;

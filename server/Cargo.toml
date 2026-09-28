@@ -12,18 +12,19 @@ path = "src/main.rs"
 
 [features]
 default = []
-# Optional ONNX Runtime backend (CPU / host EP). Heavy native dep; off by default.
-ort = ["dep:ort"]
+# Optional parakeet-rs + ORT backend (CPU / host EP). Heavy native dep; off by default.
+ort = ["dep:parakeet-rs"]
 # ORT with CUDA EP. Implies `ort`.
-cuda = ["ort", "ort/cuda"]
+cuda = ["ort", "parakeet-rs/cuda"]
 
 [dependencies]
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 log = { workspace = true }
-# Same pin as `rmlk-runtime` (CUDA 12+13 prebuilts). Only linked with `--features ort|cuda`.
-ort = { version = "=2.0.0-rc.12", optional = true }
+# Pinned to 0.3.6: uses ort 2.0.0-rc.12 (same as rmlk-runtime). 0.3.7+ needs
+# ort rc.13 and conflicts with the workspace lock (rc.13 is CUDA-13-only).
+parakeet-rs = { version = "=0.3.6", optional = true }
 thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
@@ -31,6 +32,7 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 futures-util = { version = "=0.3.31", features = ["sink"] }
 http-body-util = "0.1"
 proptest = "1"
+tempfile = "3"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.29"
 tower = { version = "0.5", features = ["util"] }
