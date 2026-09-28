@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["cuda", "graph", "rocky", "runtime", "schema"]
+members = ["cuda", "graph", "rocky", "runtime", "schema", "server"]
 
 [workspace.dependencies]
 # Ergonomic error handling
