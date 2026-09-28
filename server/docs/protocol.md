@@ -1,6 +1,28 @@
 # rmlk-server wire protocol
 
-Transport: WebSocket. One connection carries one streaming session.
+Transport: WebSocket.
+
+## Connection and session model (v1)
+
+**One WebSocket connection ↔ one streaming session.**
+
+- The client opens at most one session per connection: first application
+  message must be `Open`; a second `Open` on the same socket is an error.
+- A second concurrent call uses a **second WebSocket** (and gets a distinct
+  session id). The server process shares a thin registry across connection
+  tasks; it does not multiplex multiple sessions on one socket in v1.
+
+### Ownership
+
+| Piece | Owner | Notes |
+|-------|--------|--------|
+| `StreamState` (mailbox, chunk counters, …) | Connection task | Data path; not stored in the registry |
+| Session id registry / allocator | Shared (`Arc`, short lock) | `open` / `unregister` only |
+| Engine | Shared (interim mutex; scheduler later) | Not held under the registry lock |
+
+Socket close, `Cancel`, or `Finalize` end the session: owned state is dropped
+and the id is unregistered. See `rmlk_server::http::AppState` and
+`rmlk_server::session::SessionRegistry`.
 
 The Rust codec (`rmlk_server::protocol`) encodes and decodes these frames as
 plain bytes. It does not depend on Axum, tungstenite, or other HTTP/WS types.

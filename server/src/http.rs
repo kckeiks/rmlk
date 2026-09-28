@@ -1,4 +1,8 @@
 //! HTTP routes served by the binary.
+//!
+//! [`AppState`] is cloned into each WebSocket upgrade task. The clone shares
+//! the same `Arc` registry and engine: registry locks are only taken for
+//! allocate/unregister; stream state stays on the connection task.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -18,7 +22,9 @@ use crate::session::{SessionError, SessionRegistry, StreamState};
 
 #[derive(Clone)]
 pub struct AppState {
+    /// Live session ids + allocator (shared across connection tasks).
     registry: Arc<Mutex<SessionRegistry>>,
+    /// Interim shared engine (not under the registry lock on the data path).
     engine: Arc<Mutex<MockEngine>>,
     /// When set, each opened stream increments this on drop (tests).
     drop_counter: Option<Arc<AtomicUsize>>,
@@ -327,5 +333,18 @@ mod tests {
 
         shutdown_tx.send(()).unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn app_state_clones_share_registry() {
+        let state = new_app_state();
+        let clone = state.clone();
+        {
+            let mut reg = state.registry.lock().await;
+            let _ = reg.open();
+            assert_eq!(reg.len(), 1);
+        }
+        assert_eq!(clone.live_session_count().await, 1);
+        assert_eq!(state.live_session_count().await, 1);
     }
 }
