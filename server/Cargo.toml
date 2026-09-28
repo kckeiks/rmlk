@@ -13,7 +13,7 @@ path = "src/main.rs"
 [features]
 default = []
 # Optional parakeet-rs + ORT backend (CPU / host EP). Heavy native dep; off by default.
-ort = ["dep:parakeet-rs"]
+ort = ["dep:parakeet-rs", "dep:hound"]
 # ORT with CUDA EP. Implies `ort`.
 cuda = ["ort", "parakeet-rs/cuda"]
 
@@ -21,6 +21,7 @@ cuda = ["ort", "parakeet-rs/cuda"]
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4.5", features = ["derive", "env"] }
+hound = { version = "3.5", optional = true }
 log = { workspace = true }
 # Pinned to 0.3.6: uses ort 2.0.0-rc.12 (same as rmlk-runtime). 0.3.7+ needs
 # ort rc.13 and conflicts with the workspace lock (rc.13 is CUDA-13-only).
