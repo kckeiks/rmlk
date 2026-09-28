@@ -127,7 +127,7 @@ mod tests {
             }]
         );
         assert_eq!(state.chunks_pushed(), 2);
-    }
+    }   
 
     #[test]
     fn mock_final_uses_chunk_count() {

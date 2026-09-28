@@ -92,6 +92,11 @@ impl SessionMap {
         self.sessions.get(&id).ok_or(SessionError::Unknown(id))
     }
 
+    /// Borrow session state by id, mutably.
+    pub fn get_mut(&mut self, id: SessionId) -> Result<&mut StreamState, SessionError> {
+        self.sessions.get_mut(&id).ok_or(SessionError::Unknown(id))
+    }
+
     /// Remove and return session state by id.
     pub fn remove(&mut self, id: SessionId) -> Result<StreamState, SessionError> {
         self.sessions
@@ -110,9 +115,64 @@ impl SessionMap {
     }
 }
 
+/// In-process session lifecycle over a map and an [`Engine`].
+#[derive(Debug)]
+pub struct Sessions<E> {
+    map: SessionMap,
+    engine: E,
+}
+
+impl<E> Sessions<E> {
+    /// Create a session registry backed by `engine`.
+    pub fn new(engine: E) -> Self {
+        Self {
+            map: SessionMap::new(),
+            engine,
+        }
+    }
+
+    /// Number of live sessions.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    /// Whether there are no live sessions.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Borrow the engine.
+    pub fn engine(&self) -> &E {
+        &self.engine
+    }
+
+    /// Borrow the engine mutably.
+    pub fn engine_mut(&mut self) -> &mut E {
+        &mut self.engine
+    }
+}
+
+impl<E: crate::engine::Engine> Sessions<E> {
+    /// Open a session: allocate `StreamState`, register it, return its id.
+    pub fn open(&mut self) -> SessionId {
+        self.map.create()
+    }
+
+    /// Borrow session state by id.
+    pub fn get(&self, id: SessionId) -> Result<&StreamState, SessionError> {
+        self.map.get(id)
+    }
+
+    /// Borrow session state by id, mutably.
+    pub fn get_mut(&mut self, id: SessionId) -> Result<&mut StreamState, SessionError> {
+        self.map.get_mut(id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SessionError, SessionId, SessionMap};
+    use super::{SessionError, SessionId, SessionMap, Sessions};
+    use crate::engine::MockEngine;
 
     #[test]
     fn create_then_remove() {
@@ -142,5 +202,18 @@ mod tests {
         let b = map.create();
         assert_ne!(a, b);
         assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn open_allocates_stream_and_registers() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        assert!(sessions.is_empty());
+
+        let id = sessions.open();
+        assert_eq!(sessions.len(), 1);
+
+        let state = sessions.get(id).unwrap();
+        assert_eq!(state.session_id(), id);
+        assert_eq!(state.chunks_pushed(), 0);
     }
 }
