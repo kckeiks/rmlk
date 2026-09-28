@@ -51,16 +51,16 @@ impl ClientFrame {
     /// Encode this frame to the binary wire format.
     pub fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Self::Open => Ok(encode_message(CLIENT_OPEN, &[])),
+            Self::Open => encode_message(CLIENT_OPEN, &[]),
             Self::Audio { pcm16 } => {
                 let mut payload = Vec::with_capacity(pcm16.len() * 2);
                 for sample in pcm16 {
                     payload.extend_from_slice(&sample.to_le_bytes());
                 }
-                Ok(encode_message(CLIENT_AUDIO, &payload))
+                encode_message(CLIENT_AUDIO, &payload)
             }
-            Self::Cancel => Ok(encode_message(CLIENT_CANCEL, &[])),
-            Self::Finalize => Ok(encode_message(CLIENT_FINALIZE, &[])),
+            Self::Cancel => encode_message(CLIENT_CANCEL, &[]),
+            Self::Finalize => encode_message(CLIENT_FINALIZE, &[]),
         }
     }
 
@@ -93,15 +93,15 @@ impl ServerFrame {
     pub fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
             Self::OpenAck { session_id } => {
-                Ok(encode_message(SERVER_OPEN_ACK, &session_id.to_le_bytes()))
+                encode_message(SERVER_OPEN_ACK, &session_id.to_le_bytes())
             }
-            Self::Partial { text } => Ok(encode_message(SERVER_PARTIAL, text.as_bytes())),
-            Self::Final { text } => Ok(encode_message(SERVER_FINAL, text.as_bytes())),
+            Self::Partial { text } => encode_message(SERVER_PARTIAL, text.as_bytes()),
+            Self::Final { text } => encode_message(SERVER_FINAL, text.as_bytes()),
             Self::Error { code, message } => {
                 let mut payload = Vec::with_capacity(2 + message.len());
                 payload.extend_from_slice(&code.to_le_bytes());
                 payload.extend_from_slice(message.as_bytes());
-                Ok(encode_message(SERVER_ERROR, &payload))
+                encode_message(SERVER_ERROR, &payload)
             }
         }
     }
@@ -129,13 +129,16 @@ impl ServerFrame {
     }
 }
 
-fn encode_message(tag: u8, payload: &[u8]) -> Vec<u8> {
+fn encode_message(tag: u8, payload: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+    if payload.len() > MAX_PAYLOAD_LEN as usize {
+        return Err(ProtocolError::PayloadTooLarge);
+    }
     let len = payload.len() as u32;
     let mut out = Vec::with_capacity(1 + 4 + payload.len());
     out.push(tag);
     out.extend_from_slice(&len.to_le_bytes());
     out.extend_from_slice(payload);
-    out
+    Ok(out)
 }
 
 fn decode_message(bytes: &[u8]) -> Result<(u8, &[u8]), ProtocolError> {
@@ -367,6 +370,87 @@ mod tests {
         let bytes = [4, 3, 0, 0, 0, 1, 0, 0xff];
         assert_eq!(
             ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn truncated_header() {
+        assert_eq!(
+            ClientFrame::decode(&[]).unwrap_err(),
+            ProtocolError::Truncated
+        );
+        assert_eq!(
+            ClientFrame::decode(&[1, 0, 0, 0]).unwrap_err(),
+            ProtocolError::Truncated
+        );
+    }
+
+    #[test]
+    fn truncated_payload() {
+        // Claims 2 payload bytes; only 1 follows.
+        let bytes = [1, 2, 0, 0, 0, 0xff];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::Truncated
+        );
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::Truncated
+        );
+    }
+
+    #[test]
+    fn oversized_payload_len() {
+        // Length = MAX_PAYLOAD_LEN + 1; no payload bytes needed.
+        let bytes = [1, 1, 0, 0, 1];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::PayloadTooLarge
+        );
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::PayloadTooLarge
+        );
+    }
+
+    #[test]
+    fn encode_rejects_oversized_payload() {
+        let payload = vec![0u8; (super::MAX_PAYLOAD_LEN as usize) + 1];
+        assert_eq!(
+            super::encode_message(1, &payload).unwrap_err(),
+            ProtocolError::PayloadTooLarge
+        );
+    }
+
+    #[test]
+    fn unknown_client_tag_type() {
+        let bytes = [0, 0, 0, 0, 0];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::UnknownType(0)
+        );
+        let bytes = [255, 0, 0, 0, 0];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::UnknownType(255)
+        );
+    }
+
+    #[test]
+    fn unknown_server_tag_type() {
+        let bytes = [5, 0, 0, 0, 0];
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::UnknownType(5)
+        );
+    }
+
+    #[test]
+    fn trailing_bytes_are_invalid_payload() {
+        let bytes = [1, 0, 0, 0, 0, 0xff];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
     }
