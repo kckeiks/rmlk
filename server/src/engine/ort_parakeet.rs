@@ -81,6 +81,22 @@ fn pcm16_to_f32(pcm16: &[i16]) -> Vec<f32> {
     pcm16.iter().map(|&s| s as f32 / 32768.0).collect()
 }
 
+/// Split PCM into fixed-size streaming steps, zero-padding the last chunk.
+fn pcm_chunks(pcm: &[i16], chunk_samples: usize) -> Vec<Vec<i16>> {
+    if pcm.is_empty() || chunk_samples == 0 {
+        return Vec::new();
+    }
+    pcm.chunks(chunk_samples)
+        .map(|chunk| {
+            let mut padded = chunk.to_vec();
+            if padded.len() < chunk_samples {
+                padded.resize(chunk_samples, 0);
+            }
+            padded
+        })
+        .collect()
+}
+
 fn call_mut(
     state: &mut StreamState<Nemotron>,
 ) -> Result<&mut Nemotron, EngineError> {
@@ -88,6 +104,10 @@ fn call_mut(
         EngineError::Failed("stream not open; call open_stream first".into())
     })
 }
+
+/// Silent chunks fed at finalize to drain the streaming decoder
+/// (same pattern as parakeet-rs `examples/streaming.rs`).
+const FLUSH_SILENCE_CHUNKS: usize = 3;
 
 impl Engine for OrtParakeetEngine {
     type CallState = Nemotron;
@@ -126,6 +146,15 @@ impl Engine for OrtParakeetEngine {
         &mut self,
         state: &mut StreamState<Self::CallState>,
     ) -> Result<Vec<EngineEvent>, EngineError> {
+        if state.has_engine_call() {
+            let silence = vec![0.0f32; CHUNK_SAMPLES];
+            let call = call_mut(state)?;
+            for _ in 0..FLUSH_SILENCE_CHUNKS {
+                call.transcribe_chunk(&silence).map_err(|err| {
+                    EngineError::Failed(format!("Nemotron flush chunk failed: {err}"))
+                })?;
+            }
+        }
         let text = state
             .engine_call()
             .map(|call| call.get_transcript())
@@ -146,8 +175,8 @@ impl Engine for OrtParakeetEngine {
 #[cfg(test)]
 mod tests {
     use super::{
-        pcm16_to_f32, OrtParakeetEngine, CHUNK_SAMPLES, FIXTURE_WAV_ENV, MODEL_DIR_ENV,
-        REQUIRED_FILES,
+        pcm16_to_f32, pcm_chunks, OrtParakeetEngine, CHUNK_SAMPLES, FIXTURE_WAV_ENV,
+        MODEL_DIR_ENV, REQUIRED_FILES,
     };
     use crate::engine::{Engine, EngineEvent};
     use crate::session::StreamState;
@@ -278,6 +307,82 @@ mod tests {
             matches!(finals[0], EngineEvent::Final { .. }),
             "expected Final, got {:?}",
             finals[0]
+        );
+        assert!(!state.has_engine_call());
+    }
+
+    #[test]
+    fn pcm_chunks_pads_last_and_preserves_order() {
+        let pcm: Vec<i16> = (0..10).collect();
+        let chunks = pcm_chunks(&pcm, 4);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], vec![0, 1, 2, 3]);
+        assert_eq!(chunks[1], vec![4, 5, 6, 7]);
+        assert_eq!(chunks[2], vec![8, 9, 0, 0]);
+        assert!(pcm_chunks(&[], 4).is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires model + WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_FIXTURE_WAV"]
+    fn multi_chunk_streaming_preserves_state_across_steps() {
+        let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
+            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
+        });
+        let wav_path = std::env::var(FIXTURE_WAV_ENV).unwrap_or_else(|_| {
+            panic!("{FIXTURE_WAV_ENV} must point at a 16 kHz mono PCM16 WAV")
+        });
+
+        let mut engine = OrtParakeetEngine::load(&model_dir).expect("load model");
+        let pcm = load_wav_pcm16(Path::new(&wav_path));
+        assert!(
+            pcm.len() > CHUNK_SAMPLES,
+            "fixture must be longer than one chunk ({} samples); got {}",
+            CHUNK_SAMPLES,
+            pcm.len()
+        );
+
+        let chunks = pcm_chunks(&pcm, CHUNK_SAMPLES);
+        assert!(chunks.len() >= 2);
+
+        let mut state = StreamState::default();
+        engine.open_stream(&mut state).unwrap();
+
+        let mut last_transcript = String::new();
+        for (i, chunk) in chunks.iter().enumerate() {
+            let events = engine.push_audio(&mut state, chunk).unwrap_or_else(|err| {
+                panic!("push_audio failed on chunk {i}: {err}")
+            });
+            for event in &events {
+                match event {
+                    EngineEvent::Partial { text } => {
+                        // Cumulative transcript must not shrink across steps.
+                        assert!(
+                            text.len() >= last_transcript.len()
+                                || text.starts_with(last_transcript.trim()),
+                            "transcript shrank at chunk {i}: before={last_transcript:?} after={text:?}"
+                        );
+                        last_transcript = text.clone();
+                    }
+                    other => panic!("unexpected event on chunk {i}: {other:?}"),
+                }
+            }
+        }
+        assert_eq!(state.chunks_pushed(), chunks.len() as u64);
+
+        let finals = engine.finalize(&mut state).expect("finalize");
+        assert_eq!(finals.len(), 1);
+        let EngineEvent::Final { text } = &finals[0] else {
+            panic!("expected Final, got {:?}", finals[0]);
+        };
+        println!("multi-chunk final ({chunks} chunks): {text}", chunks = chunks.len());
+        assert!(
+            !text.trim().is_empty(),
+            "expected non-empty transcript after multi-chunk streaming"
+        );
+        // Full utterance should carry more than a single 560 ms glance.
+        assert!(
+            text.split_whitespace().count() >= 2,
+            "expected ≥2 words after multi-chunk; got {text:?}"
         );
         assert!(!state.has_engine_call());
     }
