@@ -7,13 +7,15 @@ use thiserror::Error;
 const MAX_PAYLOAD_LEN: u32 = 16 << 20; // 16 MiB
 
 const CLIENT_OPEN: u8 = 1;
+const CLIENT_AUDIO: u8 = 2;
 const SERVER_OPEN_ACK: u8 = 1;
 
 /// Frames sent by the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     Open,
-    Audio,
+    /// Mono PCM16 little-endian samples at 16 kHz (no WAV header).
+    Audio { pcm16: Vec<i16> },
     Cancel,
     Finalize,
 }
@@ -47,7 +49,14 @@ impl ClientFrame {
     pub fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
             Self::Open => Ok(encode_message(CLIENT_OPEN, &[])),
-            Self::Audio | Self::Cancel | Self::Finalize => Err(ProtocolError::Unsupported),
+            Self::Audio { pcm16 } => {
+                let mut payload = Vec::with_capacity(pcm16.len() * 2);
+                for sample in pcm16 {
+                    payload.extend_from_slice(&sample.to_le_bytes());
+                }
+                Ok(encode_message(CLIENT_AUDIO, &payload))
+            }
+            Self::Cancel | Self::Finalize => Err(ProtocolError::Unsupported),
         }
     }
 
@@ -61,7 +70,10 @@ impl ClientFrame {
                 }
                 Ok(Self::Open)
             }
-            2 | 3 | 4 => Err(ProtocolError::Unsupported),
+            CLIENT_AUDIO => Ok(Self::Audio {
+                pcm16: decode_pcm16_le(payload)?,
+            }),
+            3 | 4 => Err(ProtocolError::Unsupported),
             other => Err(ProtocolError::UnknownType(other)),
         }
     }
@@ -126,6 +138,17 @@ fn read_u64_le(payload: &[u8]) -> Result<u64, ProtocolError> {
     Ok(u64::from_le_bytes(bytes))
 }
 
+fn decode_pcm16_le(payload: &[u8]) -> Result<Vec<i16>, ProtocolError> {
+    if payload.len() % 2 != 0 {
+        return Err(ProtocolError::InvalidPayload);
+    }
+    let mut samples = Vec::with_capacity(payload.len() / 2);
+    for chunk in payload.chunks_exact(2) {
+        samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    }
+    Ok(samples)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ClientFrame, ProtocolError, ServerFrame};
@@ -133,7 +156,7 @@ mod tests {
     #[test]
     fn frame_and_error_types_exist() {
         let _ = ClientFrame::Open;
-        let _ = ClientFrame::Audio;
+        let _ = ClientFrame::Audio { pcm16: vec![] };
         let _ = ClientFrame::Cancel;
         let _ = ClientFrame::Finalize;
 
@@ -182,6 +205,32 @@ mod tests {
         let bytes = [1, 4, 0, 0, 0, 1, 2, 3, 4];
         assert_eq!(
             ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn audio_round_trip() {
+        let frame = ClientFrame::Audio {
+            pcm16: vec![0, -1, 1, i16::MAX, i16::MIN],
+        };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(ClientFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn audio_empty_payload_round_trip() {
+        let frame = ClientFrame::Audio { pcm16: vec![] };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(bytes, [2, 0, 0, 0, 0]);
+        assert_eq!(ClientFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn audio_rejects_odd_byte_length() {
+        let bytes = [2, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ClientFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
     }

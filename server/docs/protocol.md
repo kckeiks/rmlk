@@ -74,7 +74,7 @@ Audio before `Open`, or after `Finalize` / `Cancel`, is a protocol error.
 | Wire name | Rust enum variant |
 |-----------|-------------------|
 | `Open` | `ClientFrame::Open` |
-| `Audio` | `ClientFrame::Audio` |
+| `Audio` | `ClientFrame::Audio { pcm16 }` — `Vec<i16>`, wire bytes are LE PCM16 @ 16 kHz mono |
 | `Cancel` | `ClientFrame::Cancel` |
 | `Finalize` | `ClientFrame::Finalize` |
 | `OpenAck` | `ServerFrame::OpenAck { session_id }` |
