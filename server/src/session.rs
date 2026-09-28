@@ -6,12 +6,57 @@ use thiserror::Error;
 
 /// Opaque handle for a live streaming call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct SessionId(pub u64);
+pub struct SessionId(u64);
+
+impl SessionId {
+    /// Wrap a raw id (wire / allocator).
+    pub fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Raw id for the wire protocol (`OpenAck`).
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
+}
 
 /// Per-call streaming state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StreamState {
-    pub session_id: SessionId,
+    session_id: SessionId,
+    chunks_pushed: u64,
+}
+
+impl StreamState {
+    /// Create state for `session_id` with no audio pushed yet.
+    pub fn new(session_id: SessionId) -> Self {
+        Self {
+            session_id,
+            chunks_pushed: 0,
+        }
+    }
+
+    /// Session this state belongs to.
+    pub fn session_id(&self) -> SessionId {
+        self.session_id
+    }
+
+    /// Number of audio chunks pushed so far.
+    pub fn chunks_pushed(&self) -> u64 {
+        self.chunks_pushed
+    }
+
+    /// Record one pushed audio chunk; returns the new count.
+    pub fn record_chunk(&mut self) -> u64 {
+        self.chunks_pushed += 1;
+        self.chunks_pushed
+    }
+}
+
+impl Default for StreamState {
+    fn default() -> Self {
+        Self::new(SessionId::default())
+    }
 }
 
 /// Session lookup failures.
@@ -36,9 +81,9 @@ impl SessionMap {
 
     /// Allocate a new session id, insert default state, and return the id.
     pub fn create(&mut self) -> SessionId {
-        let id = SessionId(self.next_id);
+        let id = SessionId::from_raw(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
-        self.sessions.insert(id, StreamState { session_id: id });
+        self.sessions.insert(id, StreamState::new(id));
         id
     }
 
@@ -74,10 +119,10 @@ mod tests {
         let mut map = SessionMap::new();
         let id = map.create();
         assert_eq!(map.len(), 1);
-        assert_eq!(map.get(id).unwrap().session_id, id);
+        assert_eq!(map.get(id).unwrap().session_id(), id);
 
         let state = map.remove(id).unwrap();
-        assert_eq!(state.session_id, id);
+        assert_eq!(state.session_id(), id);
         assert!(map.is_empty());
         assert_eq!(map.get(id).unwrap_err(), SessionError::Unknown(id));
     }
@@ -85,7 +130,7 @@ mod tests {
     #[test]
     fn unknown_id_errors() {
         let mut map = SessionMap::new();
-        let id = SessionId(42);
+        let id = SessionId::from_raw(42);
         assert_eq!(map.get(id).unwrap_err(), SessionError::Unknown(id));
         assert_eq!(map.remove(id).unwrap_err(), SessionError::Unknown(id));
     }
