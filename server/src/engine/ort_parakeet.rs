@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use parakeet_rs::NemotronHandle;
+use parakeet_rs::{Nemotron, NemotronHandle};
 
 use super::{Engine, EngineError, EngineEvent};
 use crate::session::StreamState;
@@ -75,13 +75,20 @@ impl OrtParakeetEngine {
 }
 
 impl Engine for OrtParakeetEngine {
-    fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+    type CallState = Nemotron;
+
+    fn open_stream(
+        &mut self,
+        state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError> {
+        // Per-call caches / decoder state / transcript live inside `Nemotron`.
+        state.set_engine_call(Nemotron::from_shared(&self.handle));
         Ok(())
     }
 
     fn push_audio(
         &mut self,
-        _state: &mut StreamState,
+        _state: &mut StreamState<Self::CallState>,
         _pcm16: &[i16],
     ) -> Result<Vec<EngineEvent>, EngineError> {
         Err(EngineError::Failed(
@@ -91,14 +98,19 @@ impl Engine for OrtParakeetEngine {
 
     fn finalize(
         &mut self,
-        _state: &mut StreamState,
+        state: &mut StreamState<Self::CallState>,
     ) -> Result<Vec<EngineEvent>, EngineError> {
+        state.clear_engine_call();
         Err(EngineError::Failed(
             "OrtParakeetEngine finalize not wired yet".into(),
         ))
     }
 
-    fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+    fn cancel(
+        &mut self,
+        state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError> {
+        state.clear_engine_call();
         Ok(())
     }
 }
@@ -106,6 +118,8 @@ impl Engine for OrtParakeetEngine {
 #[cfg(test)]
 mod tests {
     use super::{OrtParakeetEngine, MODEL_DIR_ENV, REQUIRED_FILES};
+    use crate::engine::Engine;
+    use crate::session::StreamState;
     use std::path::PathBuf;
 
     #[test]
@@ -155,8 +169,15 @@ mod tests {
         );
         let engine = OrtParakeetEngine::load(&path).expect("load real model");
         assert_eq!(engine.model_dir(), path.as_path());
-        // Touch handle so the load is not optimized away.
         let _ = engine.handle().mode();
+
+        let mut engine = engine;
+        let mut state = StreamState::default();
+        engine.open_stream(&mut state).unwrap();
+        assert!(state.has_engine_call());
+        assert!(state.engine_call().is_some());
+        engine.cancel(&mut state).unwrap();
+        assert!(!state.has_engine_call());
     }
 
     #[test]

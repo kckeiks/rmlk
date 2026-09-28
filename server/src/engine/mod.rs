@@ -30,25 +30,36 @@ pub enum EngineError {
 ///
 /// Lifecycle per call: [`open_stream`] → zero or more [`push_audio`] →
 /// [`finalize`] or [`cancel`].
+///
+/// [`CallState`] is monomorphized into [`StreamState`] — no type erasure.
 pub trait Engine: Send {
+    /// Per-call caches / tokens / transcript owned by the connection task.
+    type CallState: Send;
+
     /// Prepare per-call inference state when a session opens.
-    fn open_stream(&mut self, state: &mut StreamState) -> Result<(), EngineError>;
+    fn open_stream(
+        &mut self,
+        state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError>;
 
     /// Feed mono PCM16 samples. May emit zero or more partials.
     fn push_audio(
         &mut self,
-        state: &mut StreamState,
+        state: &mut StreamState<Self::CallState>,
         pcm16: &[i16],
     ) -> Result<Vec<EngineEvent>, EngineError>;
 
     /// End of audio for this stream. Emits a final transcript event.
     fn finalize(
         &mut self,
-        state: &mut StreamState,
+        state: &mut StreamState<Self::CallState>,
     ) -> Result<Vec<EngineEvent>, EngineError>;
 
     /// Drop per-call inference state without emitting a final transcript.
-    fn cancel(&mut self, state: &mut StreamState) -> Result<(), EngineError>;
+    fn cancel(
+        &mut self,
+        state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError>;
 }
 
 /// Deterministic engine for tests: text derived from chunk count only.
@@ -63,13 +74,18 @@ impl MockEngine {
 }
 
 impl Engine for MockEngine {
-    fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+    type CallState = ();
+
+    fn open_stream(
+        &mut self,
+        _state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError> {
         Ok(())
     }
 
     fn push_audio(
         &mut self,
-        state: &mut StreamState,
+        state: &mut StreamState<Self::CallState>,
         _pcm16: &[i16],
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let n = state.record_chunk();
@@ -80,14 +96,17 @@ impl Engine for MockEngine {
 
     fn finalize(
         &mut self,
-        state: &mut StreamState,
+        state: &mut StreamState<Self::CallState>,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         Ok(vec![EngineEvent::Final {
             text: format!("final-{}", state.chunks_pushed()),
         }])
     }
 
-    fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+    fn cancel(
+        &mut self,
+        _state: &mut StreamState<Self::CallState>,
+    ) -> Result<(), EngineError> {
         Ok(())
     }
 }
@@ -100,13 +119,18 @@ mod tests {
     struct NoopEngine;
 
     impl Engine for NoopEngine {
-        fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        type CallState = ();
+
+        fn open_stream(
+            &mut self,
+            _state: &mut StreamState<Self::CallState>,
+        ) -> Result<(), EngineError> {
             Ok(())
         }
 
         fn push_audio(
             &mut self,
-            _state: &mut StreamState,
+            _state: &mut StreamState<Self::CallState>,
             _pcm16: &[i16],
         ) -> Result<Vec<EngineEvent>, EngineError> {
             Ok(Vec::new())
@@ -114,14 +138,17 @@ mod tests {
 
         fn finalize(
             &mut self,
-            _state: &mut StreamState,
+            _state: &mut StreamState<Self::CallState>,
         ) -> Result<Vec<EngineEvent>, EngineError> {
             Ok(vec![EngineEvent::Final {
                 text: String::new(),
             }])
         }
 
-        fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        fn cancel(
+            &mut self,
+            _state: &mut StreamState<Self::CallState>,
+        ) -> Result<(), EngineError> {
             Ok(())
         }
     }
@@ -133,14 +160,19 @@ mod tests {
     }
 
     impl Engine for SpyEngine {
-        fn open_stream(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        type CallState = ();
+
+        fn open_stream(
+            &mut self,
+            _state: &mut StreamState<Self::CallState>,
+        ) -> Result<(), EngineError> {
             self.opens += 1;
             Ok(())
         }
 
         fn push_audio(
             &mut self,
-            state: &mut StreamState,
+            state: &mut StreamState<Self::CallState>,
             pcm16: &[i16],
         ) -> Result<Vec<EngineEvent>, EngineError> {
             MockEngine.push_audio(state, pcm16)
@@ -148,12 +180,15 @@ mod tests {
 
         fn finalize(
             &mut self,
-            state: &mut StreamState,
+            state: &mut StreamState<Self::CallState>,
         ) -> Result<Vec<EngineEvent>, EngineError> {
             MockEngine.finalize(state)
         }
 
-        fn cancel(&mut self, _state: &mut StreamState) -> Result<(), EngineError> {
+        fn cancel(
+            &mut self,
+            _state: &mut StreamState<Self::CallState>,
+        ) -> Result<(), EngineError> {
             self.cancels += 1;
             Ok(())
         }
@@ -161,7 +196,7 @@ mod tests {
 
     #[test]
     fn engine_trait_object_smoke() {
-        let mut engine: Box<dyn Engine> = Box::new(NoopEngine);
+        let mut engine: Box<dyn Engine<CallState = ()>> = Box::new(NoopEngine);
         let mut state = StreamState::new(SessionId::from_raw(1), 16);
         engine.open_stream(&mut state).unwrap();
         assert!(engine.push_audio(&mut state, &[]).unwrap().is_empty());

@@ -1,6 +1,7 @@
 //! Per-call streaming session state and thin live-session registry.
 
 use std::collections::{HashSet, VecDeque};
+use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -28,16 +29,31 @@ impl SessionId {
 }
 
 /// Per-call streaming state (owned by the connection task on the data path).
-#[derive(Debug)]
-pub struct StreamState {
+///
+/// `C` is the engine’s [`Engine::CallState`] (caches / tokens / transcript).
+/// Protocol code must not depend on `C`’s fields — only the engine does.
+pub struct StreamState<C = ()> {
     session_id: SessionId,
     chunks_pushed: u64,
     drop_counter: Option<Arc<AtomicUsize>>,
     mailbox_capacity: usize,
     mailbox: VecDeque<Vec<i16>>,
+    engine_call: Option<C>,
 }
 
-impl StreamState {
+impl<C> fmt::Debug for StreamState<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamState")
+            .field("session_id", &self.session_id)
+            .field("chunks_pushed", &self.chunks_pushed)
+            .field("mailbox_len", &self.mailbox.len())
+            .field("mailbox_capacity", &self.mailbox_capacity)
+            .field("has_engine_call", &self.engine_call.is_some())
+            .finish()
+    }
+}
+
+impl<C> StreamState<C> {
     /// Create state for `session_id` with an empty inbound mailbox.
     pub fn new(session_id: SessionId, mailbox_capacity: usize) -> Self {
         Self {
@@ -46,6 +62,7 @@ impl StreamState {
             drop_counter: None,
             mailbox_capacity,
             mailbox: VecDeque::new(),
+            engine_call: None,
         }
     }
 
@@ -75,6 +92,36 @@ impl StreamState {
         self.drop_counter = Some(counter);
     }
 
+    /// Whether engine-private per-call state is present.
+    pub fn has_engine_call(&self) -> bool {
+        self.engine_call.is_some()
+    }
+
+    /// Store engine-private per-call state (caches / tokens / transcript).
+    pub fn set_engine_call(&mut self, value: C) {
+        self.engine_call = Some(value);
+    }
+
+    /// Borrow engine-private state, if present.
+    pub fn engine_call(&self) -> Option<&C> {
+        self.engine_call.as_ref()
+    }
+
+    /// Mutably borrow engine-private state, if present.
+    pub fn engine_call_mut(&mut self) -> Option<&mut C> {
+        self.engine_call.as_mut()
+    }
+
+    /// Take engine-private state, clearing the slot.
+    pub fn take_engine_call(&mut self) -> Option<C> {
+        self.engine_call.take()
+    }
+
+    /// Drop engine-private per-call state (cancel / reset).
+    pub fn clear_engine_call(&mut self) {
+        self.engine_call = None;
+    }
+
     /// Enqueue PCM16 samples. Errors with [`SessionError::Busy`] when full.
     pub fn enqueue_audio(&mut self, pcm16: &[i16]) -> Result<(), SessionError> {
         if self.mailbox.len() >= self.mailbox_capacity {
@@ -85,7 +132,7 @@ impl StreamState {
     }
 
     /// Drain the inbound mailbox through `engine`; return emitted events.
-    pub fn process_inbound<E: Engine>(
+    pub fn process_inbound<E: Engine<CallState = C>>(
         &mut self,
         engine: &mut E,
     ) -> Result<Vec<EngineEvent>, SessionError> {
@@ -97,7 +144,7 @@ impl StreamState {
     }
 
     /// Enqueue PCM16 audio and process the mailbox; return emitted events.
-    pub fn push_audio<E: Engine>(
+    pub fn push_audio<E: Engine<CallState = C>>(
         &mut self,
         engine: &mut E,
         pcm16: &[i16],
@@ -107,7 +154,7 @@ impl StreamState {
     }
 
     /// Flush remaining audio through `engine` and return emitted events.
-    pub fn finalize<E: Engine>(
+    pub fn finalize<E: Engine<CallState = C>>(
         mut self,
         engine: &mut E,
     ) -> Result<Vec<EngineEvent>, SessionError> {
@@ -115,12 +162,15 @@ impl StreamState {
     }
 
     /// Cancel through `engine` without a final transcript, then drop state.
-    pub fn cancel<E: Engine>(mut self, engine: &mut E) -> Result<(), SessionError> {
+    pub fn cancel<E: Engine<CallState = C>>(
+        mut self,
+        engine: &mut E,
+    ) -> Result<(), SessionError> {
         Ok(engine.cancel(&mut self)?)
     }
 }
 
-impl Drop for StreamState {
+impl<C> Drop for StreamState<C> {
     fn drop(&mut self) {
         if let Some(counter) = &self.drop_counter {
             counter.fetch_add(1, Ordering::SeqCst);
@@ -128,7 +178,7 @@ impl Drop for StreamState {
     }
 }
 
-impl Default for StreamState {
+impl<C> Default for StreamState<C> {
     fn default() -> Self {
         Self::new(SessionId::default(), DEFAULT_MAILBOX_CAPACITY)
     }
@@ -164,7 +214,7 @@ impl SessionRegistry {
     }
 
     /// Allocate an id, register it as live, and return owned stream state.
-    pub fn open(&mut self) -> (SessionId, StreamState) {
+    pub fn open<C>(&mut self) -> (SessionId, StreamState<C>) {
         let id = SessionId::from_raw(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
         self.live.insert(id);
@@ -248,14 +298,16 @@ impl<E> Sessions<E> {
         &mut self.engine
     }
 
-    /// Open a session: register id and return owned stream state.
-    pub fn open(&mut self) -> (SessionId, StreamState) {
-        self.registry.open()
-    }
-
     /// Unregister a live id (caller drops owned stream state).
     pub fn unregister(&mut self, id: SessionId) -> Result<(), SessionError> {
         self.registry.unregister(id)
+    }
+}
+
+impl<E: Engine> Sessions<E> {
+    /// Open a session: register id and return owned stream state.
+    pub fn open(&mut self) -> (SessionId, StreamState<E::CallState>) {
+        self.registry.open()
     }
 }
 
@@ -272,18 +324,67 @@ mod tests {
         let mut registry = SessionRegistry::new(16);
         assert!(registry.is_empty());
 
-        let (id, state) = registry.open();
+        let (id, state) = registry.open::<()>();
         assert_eq!(registry.len(), 1);
         assert!(registry.contains(id));
         assert_eq!(state.session_id(), id);
         assert_eq!(state.chunks_pushed(), 0);
+        assert!(!state.has_engine_call());
+    }
+
+    #[test]
+    fn engine_call_state_construct_mutate_reset_without_model() {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        struct FakeCallState {
+            transcript: String,
+            tokens: Vec<u32>,
+            cache_ticks: u64,
+        }
+
+        let mut state = StreamState::<FakeCallState>::default();
+        assert!(!state.has_engine_call());
+
+        state.set_engine_call(FakeCallState {
+            transcript: String::new(),
+            tokens: Vec::new(),
+            cache_ticks: 0,
+        });
+        assert!(state.has_engine_call());
+
+        {
+            let call = state.engine_call_mut().unwrap();
+            call.tokens.push(7);
+            call.transcript.push_str("hi");
+            call.cache_ticks = 3;
+        }
+        assert_eq!(
+            state.engine_call().unwrap(),
+            &FakeCallState {
+                transcript: "hi".into(),
+                tokens: vec![7],
+                cache_ticks: 3,
+            }
+        );
+
+        let taken = state.take_engine_call().unwrap();
+        assert_eq!(taken.cache_ticks, 3);
+        assert!(!state.has_engine_call());
+
+        state.set_engine_call(FakeCallState {
+            transcript: "x".into(),
+            tokens: vec![1],
+            cache_ticks: 0,
+        });
+        state.clear_engine_call();
+        assert!(!state.has_engine_call());
+        assert!(state.engine_call().is_none());
     }
 
     #[test]
     fn open_allocates_distinct_ids() {
         let mut registry = SessionRegistry::new(16);
-        let (a, _) = registry.open();
-        let (b, _) = registry.open();
+        let (a, _) = registry.open::<()>();
+        let (b, _) = registry.open::<()>();
         assert_ne!(a, b);
         assert_eq!(registry.len(), 2);
     }
@@ -372,8 +473,8 @@ mod tests {
         let drops = Arc::new(AtomicUsize::new(0));
         {
             let mut registry = SessionRegistry::new(16);
-            let (_, mut a) = registry.open();
-            let (_, mut b) = registry.open();
+            let (_, mut a) = registry.open::<()>();
+            let (_, mut b) = registry.open::<()>();
             a.track_drops(Arc::clone(&drops));
             b.track_drops(Arc::clone(&drops));
             assert_eq!(drops.load(Ordering::SeqCst), 0);

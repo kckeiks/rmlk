@@ -136,7 +136,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 /// Connection-owned session loop: engine lock only around push/finalize/cancel, never the registry.
 async fn run_session(
     socket: &mut WebSocket,
-    mut stream: StreamState,
+    mut stream: StreamState<()>,
     engine: &Arc<Mutex<MockEngine>>,
 ) {
     while let Some(Ok(msg)) = socket.recv().await {
@@ -382,7 +382,7 @@ mod tests {
         let clone = state.clone();
         {
             let mut reg = state.registry.lock().await;
-            let _ = reg.open();
+            let _ = reg.open::<()>();
             assert_eq!(reg.len(), 1);
         }
         assert_eq!(clone.live_session_count().await, 1);
