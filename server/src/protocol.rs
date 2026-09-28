@@ -201,6 +201,7 @@ fn decode_error_payload(payload: &[u8]) -> Result<(u16, String), ProtocolError> 
 #[cfg(test)]
 mod tests {
     use super::{ClientFrame, ProtocolError, ServerFrame};
+    use proptest::prelude::*;
 
     #[test]
     fn open_round_trip() {
@@ -453,5 +454,44 @@ mod tests {
             ClientFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
+    }
+
+    fn arb_client_frame() -> impl Strategy<Value = ClientFrame> {
+        prop_oneof![
+            Just(ClientFrame::Open),
+            Just(ClientFrame::Cancel),
+            Just(ClientFrame::Finalize),
+            prop::collection::vec(any::<i16>(), 0..2048)
+                .prop_map(|pcm16| ClientFrame::Audio { pcm16 }),
+        ]
+    }
+
+    fn arb_utf8(max_chars: usize) -> impl Strategy<Value = String> {
+        prop::collection::vec(any::<char>(), 0..=max_chars)
+            .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    fn arb_server_frame() -> impl Strategy<Value = ServerFrame> {
+        prop_oneof![
+            any::<u64>().prop_map(|session_id| ServerFrame::OpenAck { session_id }),
+            arb_utf8(256).prop_map(|text| ServerFrame::Partial { text }),
+            arb_utf8(256).prop_map(|text| ServerFrame::Final { text }),
+            (any::<u16>(), arb_utf8(256))
+                .prop_map(|(code, message)| ServerFrame::Error { code, message }),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn client_frame_round_trip_prop(frame in arb_client_frame()) {
+            let bytes = frame.encode().expect("encode");
+            prop_assert_eq!(ClientFrame::decode(&bytes).expect("decode"), frame);
+        }
+
+        #[test]
+        fn server_frame_round_trip_prop(frame in arb_server_frame()) {
+            let bytes = frame.encode().expect("encode");
+            prop_assert_eq!(ServerFrame::decode(&bytes).expect("decode"), frame);
+        }
     }
 }
