@@ -139,3 +139,164 @@ async fn disconnect_frees_session() {
 
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn two_clients_distinct_ids_and_finals() {
+    let server = TestServer::spawn(new_app_state()).await;
+    let mut a = server.connect().await;
+    let mut b = server.connect().await;
+
+    let id_a = a.open_session().await;
+    let id_b = b.open_session().await;
+    assert_ne!(id_a, id_b);
+    assert_eq!(server.state.live_session_count().await, 2);
+
+    a.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    assert_eq!(
+        a.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-1".into()
+        }
+    );
+
+    b.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-1".into()
+        }
+    );
+    b.send_frame(&ClientFrame::Audio { pcm16: vec![1] })
+        .await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-2".into()
+        }
+    );
+
+    a.send_frame(&ClientFrame::Finalize).await;
+    assert_eq!(
+        a.recv_frame().await,
+        ServerFrame::Final {
+            text: "final-1".into()
+        }
+    );
+    assert!(matches!(a.recv_raw().await, WsMessage::Close(_)));
+
+    b.send_frame(&ClientFrame::Finalize).await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Final {
+            text: "final-2".into()
+        }
+    );
+    assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count().await != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("both sessions should unregister");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn cancel_on_a_does_not_affect_b() {
+    let server = TestServer::spawn(new_app_state()).await;
+    let mut a = server.connect().await;
+    let mut b = server.connect().await;
+
+    a.open_session().await;
+    b.open_session().await;
+    assert_eq!(server.state.live_session_count().await, 2);
+
+    a.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    let _ = a.recv_frame().await;
+    a.send_frame(&ClientFrame::Cancel).await;
+    assert!(matches!(a.recv_raw().await, WsMessage::Close(_)));
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count().await != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("A should unregister after cancel");
+
+    // B's chunk count is independent (still at 0 pushes so far).
+    b.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-1".into()
+        }
+    );
+    b.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-2".into()
+        }
+    );
+    b.send_frame(&ClientFrame::Finalize).await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Final {
+            text: "final-2".into()
+        }
+    );
+    assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count().await != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("B should unregister after finalize");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn disconnect_on_a_does_not_affect_b() {
+    let server = TestServer::spawn(new_app_state()).await;
+    let mut a = server.connect().await;
+    let mut b = server.connect().await;
+
+    a.open_session().await;
+    b.open_session().await;
+
+    a.send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    let _ = a.recv_frame().await;
+    a.close().await;
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count().await != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("A should unregister after disconnect");
+
+    b.send_frame(&ClientFrame::Finalize).await;
+    assert_eq!(
+        b.recv_frame().await,
+        ServerFrame::Final {
+            text: "final-0".into()
+        }
+    );
+    assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
+
+    server.shutdown().await;
+}
