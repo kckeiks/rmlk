@@ -1,5 +1,17 @@
 //! Float comparison helpers for rmlk vs ORT outputs.
 
+/// Max `|a - e|` over paired elements, or `None` if lengths differ.
+pub fn max_abs_diff(actual: &[f32], expected: &[f32]) -> Option<f32> {
+    if actual.len() != expected.len() {
+        return None;
+    }
+    actual
+        .iter()
+        .zip(expected.iter())
+        .map(|(a, e)| (a - e).abs())
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+}
+
 /// Element-wise closeness: `|a - e| <= atol + rtol * |e|`.
 ///
 /// On failure, reports the index with the largest `abs_err / tol` ratio among

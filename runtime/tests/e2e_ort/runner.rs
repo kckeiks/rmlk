@@ -1,8 +1,9 @@
 //! Shared rmlk vs ORT runner for full-model e2e cases.
 
-use crate::cases::{Case, FeedKind};
-use crate::compare::assert_close_named;
+use crate::cases::{Case, CaseKind, FeedKind};
+use crate::compare::{assert_close_named, max_abs_diff};
 use crate::common::e2e_assets::{AssetResolver, FileEntry, HttpBackend, Sidecar};
+use crate::llama;
 use crate::preprocess::imagenet_resnet_nchw;
 use ort::ep;
 use ort::session::Session;
@@ -19,6 +20,19 @@ pub struct CaseResult {
 }
 
 pub fn run_case(case: &Case) -> Result<CaseResult, String> {
+    match case.kind {
+        CaseKind::Feed => run_feed_case(case),
+        CaseKind::LlamaGreedy { max_new_tokens } => llama::run_llama_greedy(
+            case.id,
+            case.artifact_id,
+            max_new_tokens,
+            case.atol,
+            case.rtol,
+        ),
+    }
+}
+
+fn run_feed_case(case: &Case) -> Result<CaseResult, String> {
     let resolver = AssetResolver::<HttpBackend>::from_env();
     let sidecar = resolver
         .load_sidecar(case.id, case.artifact_id)
@@ -179,17 +193,6 @@ fn load_f32_tensor(path: &Path, entry: &FileEntry) -> Result<(Vec<f32>, Vec<usiz
         ));
     }
     Ok((data, shape))
-}
-
-fn max_abs_diff(actual: &[f32], expected: &[f32]) -> Option<f32> {
-    if actual.len() != expected.len() {
-        return None;
-    }
-    actual
-        .iter()
-        .zip(expected.iter())
-        .map(|(a, e)| (a - e).abs())
-        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
 }
 
 fn argmax(data: &[f32]) -> usize {

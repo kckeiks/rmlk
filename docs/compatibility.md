@@ -112,7 +112,9 @@ CUDA_COMPUTE_CAP=89 cargo test -p rmlk-runtime --test e2e_ort -- --ignored --noc
 
 `ORT_CUDA_VERSION=12` selects ort's CUDA 12 prebuilts. `CUDA_COMPUTE_CAP`
 is only needed when the cuda crate's `nvidia-smi` compute-cap probe fails
-(set it to your GPU's sm version, e.g. `89` for Ada).## Bump checklist
+(set it to your GPU's sm version, e.g. `89` for Ada).
+
+## Bump checklist
 
 Changing IR, opset, or the pinned ORT/onnx versions is one intentional change
 set:

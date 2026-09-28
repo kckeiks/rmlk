@@ -115,9 +115,11 @@ Compares rmlk to the pinned ORT CUDA EP on large models. Artifacts come from
 Hugging Face Hub (or local overrides); see `docs/e2e-artifacts.md`.
 
 ```bash
-# Pack ResNet34 once (opset-14 ONNX + dog.jpeg + sidecar into the local cache):
+# Pack artifacts once (weights stay out of git; Llama symlinks by default):
 PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
   python3 scripts/pack_e2e_resnet34.py --model /path/to/resnet34.onnx
+PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
+  python3 scripts/pack_e2e_llama32.py --model-dir ~/Models/Llama-3.2-3B-Instruct
 
 # Full-model e2e (GPU). On CUDA 12 hosts force ort's CUDA 12 prebuilts;
 # CUDA_COMPUTE_CAP skips a broken nvidia-smi probe during the cuda crate build.

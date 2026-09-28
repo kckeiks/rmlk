@@ -345,9 +345,9 @@ impl<B: AssetBackend> AssetResolver<B> {
                 path: path.display().to_string(),
             });
         }
-        let bytes =
-            fs::read(path).map_err(|e| ResolveError::Io(format!("read {}: {e}", path.display())))?;
-        verify_bytes(&bytes, entry, key)
+        // Stream the hash so multi-GB external weight files do not need to fit
+        // in memory (Llama `model.onnx_data` is ~12 GiB).
+        verify_path(path, entry, key)
     }
 }
 
@@ -402,7 +402,11 @@ pub fn remote_base_url_from_env() -> Option<String> {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
+    hex_encode(Sha256::digest(bytes))
+}
+
+fn hex_encode(digest: impl AsRef<[u8]>) -> String {
+    let digest = digest.as_ref();
     let mut out = String::with_capacity(digest.len() * 2);
     for b in digest {
         out.push_str(&format!("{b:02x}"));
@@ -420,6 +424,41 @@ fn verify_bytes(bytes: &[u8], entry: &FileEntry, key: &str) -> Result<(), Resolv
         });
     }
     let actual = sha256_hex(bytes);
+    if actual != entry.sha256 {
+        return Err(ResolveError::ChecksumMismatch {
+            key: key.to_string(),
+            expected: entry.sha256.clone(),
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn verify_path(path: &Path, entry: &FileEntry, key: &str) -> Result<(), ResolveError> {
+    let meta = fs::metadata(path)
+        .map_err(|e| ResolveError::Io(format!("stat {}: {e}", path.display())))?;
+    let actual_len = meta.len();
+    if actual_len != entry.bytes {
+        return Err(ResolveError::SizeMismatch {
+            key: key.to_string(),
+            expected: entry.bytes,
+            actual: actual_len,
+        });
+    }
+    let mut file = fs::File::open(path)
+        .map_err(|e| ResolveError::Io(format!("open {}: {e}", path.display())))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1024 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| ResolveError::Io(format!("read {}: {e}", path.display())))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = hex_encode(hasher.finalize());
     if actual != entry.sha256 {
         return Err(ResolveError::ChecksumMismatch {
             key: key.to_string(),

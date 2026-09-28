@@ -2,7 +2,7 @@
 
 /// How to turn a resolved artifact role into a model feed tensor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // RawF32 reserved for non-image cases (e.g. Llama tensors).
+#[allow(dead_code)] // RawF32 reserved for non-image feed cases.
 pub enum FeedKind {
     /// Little-endian f32 blob; sidecar must include `shape` (+ `dtype` f32).
     RawF32,
@@ -26,10 +26,20 @@ pub struct OutputBinding {
     pub name: &'static str,
 }
 
+/// How the shared runner executes a case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseKind {
+    /// Single forward: resolve input roles, compare named float outputs.
+    Feed,
+    /// Greedy decode loop (Llama); compare next-token ids + last-row logits.
+    LlamaGreedy { max_new_tokens: usize },
+}
+
 #[derive(Debug, Clone)]
 pub struct Case {
     pub id: &'static str,
     pub artifact_id: &'static str,
+    pub kind: CaseKind,
     pub atol: f32,
     pub rtol: f32,
     pub inputs: &'static [InputBinding],
@@ -50,6 +60,7 @@ const RESNET34_OUTPUTS: &[OutputBinding] = &[OutputBinding { name: "output" }];
 pub const RESNET34: Case = Case {
     id: "resnet34",
     artifact_id: "2026-09-27",
+    kind: CaseKind::Feed,
     // Full-model GPU vs GPU: looser than node-suite. Peak abs ~2e-3 observed;
     // small logits are limited by atol (rtol barely helps near zero).
     atol: 5e-3,
@@ -60,7 +71,20 @@ pub const RESNET34: Case = Case {
     expect_top1: Some(207),
 };
 
+/// Llama-3.2-3B-Instruct greedy decode (short prompt, few tokens).
+pub const LLAMA32: Case = Case {
+    id: "llama3.2",
+    artifact_id: "2026-09-27",
+    kind: CaseKind::LlamaGreedy { max_new_tokens: 8 },
+    // LLM decode vs ORT: start a bit looser than ResNet; tighten if stable.
+    atol: 1e-2,
+    rtol: 1e-2,
+    inputs: &[],
+    outputs: &[],
+    expect_top1: None,
+};
+
 /// All registered full-model cases.
 pub fn all() -> &'static [Case] {
-    &[RESNET34]
+    &[RESNET34, LLAMA32]
 }

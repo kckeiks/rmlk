@@ -74,6 +74,7 @@ unless the sidecar overrides them via `files`.
 | Role | Typical filename | Notes |
 |------|------------------|-------|
 | `model` | `model.onnx` | ONNX graph loaded by rmlk and ORT. |
+| `model_data` | `model.onnx_data` | External weight blob for models that use ONNX external data (Llama). Must sit beside `model.onnx`. |
 | `image` | e.g. `dog.jpeg` | Source photo for vision cases; harness applies a fixed preprocess (ResNet: torchvision resize/crop/normalize). Prefer this over checking in float blobs. |
 | `input` | case-specific `.f32` | Optional raw little-endian tensor when preprocess is not in-harness. |
 | `tokenizer` | `tokenizer.json` | Llama-style cases. |
@@ -84,6 +85,11 @@ The ResNet34 dog JPEG is also kept in git as the pack source at
 `runtime/tests/fixtures/e2e/resnet34/dog.jpeg`. Pack / publish with
 `scripts/pack_e2e_resnet34.py` (converts the ONNX to opset 14 and writes the
 sidecar). The 84 MB weights stay out of git.
+
+Llama prompt fixture: `runtime/tests/fixtures/e2e/llama3.2/prompt.txt`.
+Pack with `scripts/pack_e2e_llama32.py` (symlinks `model.onnx` +
+`model.onnx_data` by default; copies tokenizer + prompt). The ~12 GiB
+external weights stay out of git.
 
 ## Checksums
 
@@ -203,10 +209,16 @@ export RMLK_E2E_ASSET_RESNET34_MODEL=/data/models/resnet34.onnx
 export RMLK_E2E_ASSET_RESNET34_IMAGE=/data/fixtures/dog.jpeg
 export RMLK_E2E_ASSET_RESNET34_SIDECAR=/data/fixtures/sidecar.json
 
-export RMLK_E2E_ASSET_LLAMA3_2_MODEL=/data/models/llama3.2.onnx
+export RMLK_E2E_ASSET_LLAMA3_2_MODEL=/data/models/onnx/model.onnx
+export RMLK_E2E_ASSET_LLAMA3_2_MODEL_DATA=/data/models/onnx/model.onnx_data
 export RMLK_E2E_ASSET_LLAMA3_2_TOKENIZER=/data/models/tokenizer.json
 export RMLK_E2E_ASSET_LLAMA3_2_PROMPT=/data/fixtures/prompt.txt
+export RMLK_E2E_ASSET_LLAMA3_2_SIDECAR=/data/fixtures/sidecar.json
 ```
+
+`model.onnx_data` must remain a sibling of `model.onnx` (ONNX external-data
+lookup). Prefer overriding `model` to the original export directory so the
+data file resolves without an extra copy.
 
 Naming rule: take `case_id` and `role`, uppercase, replace every character
 outside `[A-Z0-9]` with `_`, then

@@ -6,11 +6,16 @@
 //!
 //! ResNet34 uses a versioned JPEG (`image` role) and ImageNet preprocess in
 //! process — see `docs/e2e-artifacts.md` and `scripts/pack_e2e_resnet34.py`.
+//! Llama-3.2 uses tokenizer + prompt artifacts and a short greedy decode —
+//! see `scripts/pack_e2e_llama32.py`.
 //!
 //! ```text
 //! # pack local artifacts (once):
 //! PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
 //!   python3 scripts/pack_e2e_resnet34.py --model ~/Downloads/resnet34.onnx
+//! PYTHONPATH=.venv-oracle/lib/python3.12/site-packages \
+//!   python3 scripts/pack_e2e_llama32.py \
+//!     --model-dir ~/Models/Llama-3.2-3B-Instruct
 //!
 //! # CUDA 12 hosts (ort 2.0.0-rc.12 ships both; force 12 if auto-detect is wrong):
 //! export ORT_CUDA_VERSION=12
@@ -23,6 +28,7 @@ mod common;
 
 mod cases;
 mod compare;
+mod llama;
 mod preprocess;
 mod runner;
 
@@ -80,11 +86,16 @@ fn run_one(case: &Case) -> Result<runner::CaseResult, String> {
 }
 
 #[test]
-fn resnet34_case_is_registered() {
+fn cases_are_registered() {
     let cases = cases::all();
-    assert_eq!(cases.len(), 1);
+    assert_eq!(cases.len(), 2);
     assert_eq!(cases[0].id, "resnet34");
     assert_eq!(cases[0].expect_top1, Some(207));
+    assert_eq!(cases[1].id, "llama3.2");
+    assert!(matches!(
+        cases[1].kind,
+        cases::CaseKind::LlamaGreedy { max_new_tokens: 8 }
+    ));
 }
 
 #[test]

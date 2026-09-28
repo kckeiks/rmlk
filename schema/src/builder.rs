@@ -211,10 +211,13 @@ impl GraphBuilder {
         node.set_name(name.clone());
         node.set_op(Op::NoOp);
         if let Some(dims) = dims {
+            // `0` is the IR stand-in for an ONNX `dim_param` / unknown size.
+            // Preserve that so runtime shape checks accept concrete feeds.
+            let has_dynamic_dims = dims.iter().any(|&d| d == 0);
             node.set_type_value(TypeValue::Tensor {
                 ty: dtype.into(),
                 dims,
-                has_dynamic_dims: false,
+                has_dynamic_dims,
             });
         }
         self.nodes.push(node);
@@ -295,6 +298,26 @@ mod tests {
         assert_eq!(add.output.as_deref(), Some([2].as_slice()));
         // Value node records its producer, matching the ONNX importer.
         assert_eq!(graph.node[2].input.as_deref(), Some([3].as_slice()));
+    }
+
+    #[test]
+    fn zero_dims_mark_dynamic() {
+        let mut g = GraphBuilder::new();
+        g.input("x", DataType::Float, [0, 8, 0, 128]).unwrap();
+        // Input passthrough is a valid graph (see allows_input_passthrough_output).
+        g.output("x").unwrap();
+        let graph = g.build().unwrap();
+        match &graph.node[0].value {
+            Some(TypeValue::Tensor {
+                dims,
+                has_dynamic_dims,
+                ..
+            }) => {
+                assert_eq!(dims, &vec![0, 8, 0, 128]);
+                assert!(*has_dynamic_dims);
+            }
+            other => panic!("expected tensor type value, got {other:?}"),
+        }
     }
 
     #[test]
