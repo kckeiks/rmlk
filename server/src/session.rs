@@ -189,6 +189,12 @@ impl<E: Engine> Sessions<E> {
         let mut state = map.remove(id)?;
         Ok(engine.finalize(&mut state)?)
     }
+
+    /// Cancel a session: drop state with no transcript events.
+    pub fn cancel(&mut self, id: SessionId) -> Result<(), SessionError> {
+        self.map.remove(id)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +286,24 @@ mod tests {
         assert!(sessions.is_empty());
         assert_eq!(
             sessions.get(id).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+    }
+
+    #[test]
+    fn cancel_drops_session_without_events() {
+        let mut sessions = Sessions::new(MockEngine::new());
+        let id = sessions.open();
+        sessions.push_audio(id, &[0]).unwrap();
+
+        sessions.cancel(id).unwrap();
+        assert!(sessions.is_empty());
+        assert_eq!(
+            sessions.get(id).unwrap_err(),
+            SessionError::Unknown(id)
+        );
+        assert_eq!(
+            sessions.push_audio(id, &[]).unwrap_err(),
             SessionError::Unknown(id)
         );
     }
