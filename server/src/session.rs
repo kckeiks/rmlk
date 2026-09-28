@@ -1,12 +1,15 @@
 //! Per-call streaming session state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use thiserror::Error;
 
 use crate::engine::{Engine, EngineError, EngineEvent};
+
+/// Default inbound audio queue depth per session.
+const DEFAULT_MAILBOX_CAPACITY: usize = 16;
 
 /// Opaque handle for a live streaming call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -30,15 +33,19 @@ pub struct StreamState {
     session_id: SessionId,
     chunks_pushed: u64,
     drop_counter: Option<Arc<AtomicUsize>>,
+    mailbox_capacity: usize,
+    mailbox: VecDeque<Vec<i16>>,
 }
 
 impl StreamState {
-    /// Create state for `session_id` with no audio pushed yet.
-    pub fn new(session_id: SessionId) -> Self {
+    /// Create state for `session_id` with an empty inbound mailbox.
+    pub fn new(session_id: SessionId, mailbox_capacity: usize) -> Self {
         Self {
             session_id,
             chunks_pushed: 0,
             drop_counter: None,
+            mailbox_capacity,
+            mailbox: VecDeque::new(),
         }
     }
 
@@ -52,6 +59,11 @@ impl StreamState {
         self.chunks_pushed
     }
 
+    /// Number of audio chunks waiting in the inbound mailbox.
+    pub fn mailbox_len(&self) -> usize {
+        self.mailbox.len()
+    }
+
     /// Record one pushed audio chunk; returns the new count.
     pub fn record_chunk(&mut self) -> u64 {
         self.chunks_pushed += 1;
@@ -61,6 +73,20 @@ impl StreamState {
     /// Increment `counter` when this state is dropped (tests / cleanup checks).
     pub fn track_drops(&mut self, counter: Arc<AtomicUsize>) {
         self.drop_counter = Some(counter);
+    }
+
+    /// Enqueue PCM16 samples. Errors with [`SessionError::Busy`] when full.
+    fn try_enqueue(&mut self, pcm16: Vec<i16>) -> Result<(), SessionError> {
+        if self.mailbox.len() >= self.mailbox_capacity {
+            return Err(SessionError::Busy);
+        }
+        self.mailbox.push_back(pcm16);
+        Ok(())
+    }
+
+    /// Pop the next inbound chunk, if any.
+    fn pop_inbound(&mut self) -> Option<Vec<i16>> {
+        self.mailbox.pop_front()
     }
 }
 
@@ -74,7 +100,7 @@ impl Drop for StreamState {
 
 impl Default for StreamState {
     fn default() -> Self {
-        Self::new(SessionId::default())
+        Self::new(SessionId::default(), DEFAULT_MAILBOX_CAPACITY)
     }
 }
 
@@ -83,6 +109,8 @@ impl Default for StreamState {
 pub enum SessionError {
     #[error("unknown session {0:?}")]
     Unknown(SessionId),
+    #[error("session mailbox full")]
+    Busy,
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
@@ -100,11 +128,12 @@ impl SessionMap {
         Self::default()
     }
 
-    /// Allocate a new session id, insert default state, and return the id.
-    pub fn create(&mut self) -> SessionId {
+    /// Allocate a new session id, insert state with `mailbox_capacity`, return id.
+    pub fn create(&mut self, mailbox_capacity: usize) -> SessionId {
         let id = SessionId::from_raw(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
-        self.sessions.insert(id, StreamState::new(id));
+        self.sessions
+            .insert(id, StreamState::new(id, mailbox_capacity));
         id
     }
 
@@ -141,14 +170,21 @@ impl SessionMap {
 pub struct Sessions<E> {
     map: SessionMap,
     engine: E,
+    mailbox_capacity: usize,
 }
 
 impl<E> Sessions<E> {
     /// Create a session registry backed by `engine`.
     pub fn new(engine: E) -> Self {
+        Self::with_mailbox_capacity(engine, DEFAULT_MAILBOX_CAPACITY)
+    }
+
+    /// Create a registry with a per-session inbound mailbox capacity.
+    pub fn with_mailbox_capacity(engine: E, mailbox_capacity: usize) -> Self {
         Self {
             map: SessionMap::new(),
             engine,
+            mailbox_capacity,
         }
     }
 
@@ -176,7 +212,7 @@ impl<E> Sessions<E> {
 impl<E: Engine> Sessions<E> {
     /// Open a session: allocate `StreamState`, register it, return its id.
     pub fn open(&mut self) -> SessionId {
-        self.map.create()
+        self.map.create(self.mailbox_capacity)
     }
 
     /// Borrow session state by id.
@@ -189,20 +225,35 @@ impl<E: Engine> Sessions<E> {
         self.map.get_mut(id)
     }
 
-    /// Push PCM16 audio to the session's engine; return any emitted events.
+    /// Enqueue PCM16 audio without running the engine.
+    pub fn enqueue_audio(&mut self, id: SessionId, pcm16: &[i16]) -> Result<(), SessionError> {
+        self.map.get_mut(id)?.try_enqueue(pcm16.to_vec())
+    }
+
+    /// Drain the inbound mailbox through the engine; return emitted events.
+    pub fn process_inbound(&mut self, id: SessionId) -> Result<Vec<EngineEvent>, SessionError> {
+        let Self { map, engine, .. } = self;
+        let state = map.get_mut(id)?;
+        let mut events = Vec::new();
+        while let Some(chunk) = state.pop_inbound() {
+            events.extend(engine.push_audio(state, &chunk)?);
+        }
+        Ok(events)
+    }
+
+    /// Enqueue PCM16 audio and process the mailbox; return emitted events.
     pub fn push_audio(
         &mut self,
         id: SessionId,
         pcm16: &[i16],
     ) -> Result<Vec<EngineEvent>, SessionError> {
-        let Self { map, engine } = self;
-        let state = map.get_mut(id)?;
-        Ok(engine.push_audio(state, pcm16)?)
+        self.enqueue_audio(id, pcm16)?;
+        self.process_inbound(id)
     }
 
     /// Finalize a session: flush the engine, remove it from the map, return events.
     pub fn finalize(&mut self, id: SessionId) -> Result<Vec<EngineEvent>, SessionError> {
-        let Self { map, engine } = self;
+        let Self { map, engine, .. } = self;
         let mut state = map.remove(id)?;
         Ok(engine.finalize(&mut state)?)
     }
@@ -230,7 +281,7 @@ mod tests {
     #[test]
     fn create_then_remove() {
         let mut map = SessionMap::new();
-        let id = map.create();
+        let id = map.create(16);
         assert_eq!(map.len(), 1);
         assert_eq!(map.get(id).unwrap().session_id(), id);
 
@@ -251,8 +302,8 @@ mod tests {
     #[test]
     fn create_allocates_distinct_ids() {
         let mut map = SessionMap::new();
-        let a = map.create();
-        let b = map.create();
+        let a = map.create(16);
+        let b = map.create(16);
         assert_ne!(a, b);
         assert_eq!(map.len(), 2);
     }
@@ -309,10 +360,7 @@ mod tests {
             }]
         );
         assert!(sessions.is_empty());
-        assert_eq!(
-            sessions.get(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
+        assert_eq!(sessions.get(id).unwrap_err(), SessionError::Unknown(id));
     }
 
     #[test]
@@ -323,10 +371,7 @@ mod tests {
 
         sessions.cancel(id).unwrap();
         assert!(sessions.is_empty());
-        assert_eq!(
-            sessions.get(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
+        assert_eq!(sessions.get(id).unwrap_err(), SessionError::Unknown(id));
         assert_eq!(
             sessions.push_audio(id, &[]).unwrap_err(),
             SessionError::Unknown(id)
@@ -399,5 +444,27 @@ mod tests {
             assert_eq!(drops.load(Ordering::SeqCst), 0);
         }
         assert_eq!(drops.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn enqueue_busy_when_mailbox_full() {
+        let mut sessions = Sessions::with_mailbox_capacity(MockEngine::new(), 1);
+        let id = sessions.open();
+
+        sessions.enqueue_audio(id, &[1]).unwrap();
+        assert_eq!(sessions.get(id).unwrap().mailbox_len(), 1);
+        assert_eq!(
+            sessions.enqueue_audio(id, &[2]).unwrap_err(),
+            SessionError::Busy
+        );
+
+        let events = sessions.process_inbound(id).unwrap();
+        assert_eq!(
+            events,
+            vec![EngineEvent::Partial {
+                text: "partial-1".into()
+            }]
+        );
+        sessions.enqueue_audio(id, &[3]).unwrap();
     }
 }

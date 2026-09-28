@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn engine_trait_object_smoke() {
         let mut engine: Box<dyn Engine> = Box::new(NoopEngine);
-        let mut state = StreamState::new(SessionId::from_raw(1));
+        let mut state = StreamState::new(SessionId::from_raw(1), 16);
         assert!(engine.push_audio(&mut state, &[]).unwrap().is_empty());
         assert_eq!(
             engine.finalize(&mut state).unwrap(),
