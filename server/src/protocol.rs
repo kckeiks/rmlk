@@ -9,6 +9,8 @@ const MAX_PAYLOAD_LEN: u32 = 16 << 20; // 16 MiB
 const CLIENT_OPEN: u8 = 1;
 const CLIENT_AUDIO: u8 = 2;
 const SERVER_OPEN_ACK: u8 = 1;
+const SERVER_PARTIAL: u8 = 2;
+const SERVER_FINAL: u8 = 3;
 
 /// Frames sent by the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +26,8 @@ pub enum ClientFrame {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerFrame {
     OpenAck { session_id: u64 },
-    Partial,
-    Final,
+    Partial { text: String },
+    Final { text: String },
     Error,
 }
 
@@ -86,7 +88,9 @@ impl ServerFrame {
             Self::OpenAck { session_id } => {
                 Ok(encode_message(SERVER_OPEN_ACK, &session_id.to_le_bytes()))
             }
-            Self::Partial | Self::Final | Self::Error => Err(ProtocolError::Unsupported),
+            Self::Partial { text } => Ok(encode_message(SERVER_PARTIAL, text.as_bytes())),
+            Self::Final { text } => Ok(encode_message(SERVER_FINAL, text.as_bytes())),
+            Self::Error => Err(ProtocolError::Unsupported),
         }
     }
 
@@ -98,7 +102,13 @@ impl ServerFrame {
                 let session_id = read_u64_le(payload)?;
                 Ok(Self::OpenAck { session_id })
             }
-            2 | 3 | 4 => Err(ProtocolError::Unsupported),
+            SERVER_PARTIAL => Ok(Self::Partial {
+                text: decode_utf8(payload)?,
+            }),
+            SERVER_FINAL => Ok(Self::Final {
+                text: decode_utf8(payload)?,
+            }),
+            4 => Err(ProtocolError::Unsupported),
             other => Err(ProtocolError::UnknownType(other)),
         }
     }
@@ -149,25 +159,13 @@ fn decode_pcm16_le(payload: &[u8]) -> Result<Vec<i16>, ProtocolError> {
     Ok(samples)
 }
 
+fn decode_utf8(payload: &[u8]) -> Result<String, ProtocolError> {
+    String::from_utf8(payload.to_vec()).map_err(|_| ProtocolError::InvalidPayload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ClientFrame, ProtocolError, ServerFrame};
-
-    #[test]
-    fn frame_and_error_types_exist() {
-        let _ = ClientFrame::Open;
-        let _ = ClientFrame::Audio { pcm16: vec![] };
-        let _ = ClientFrame::Cancel;
-        let _ = ClientFrame::Finalize;
-
-        let _ = ServerFrame::OpenAck { session_id: 0 };
-        let _ = ServerFrame::Partial;
-        let _ = ServerFrame::Final;
-        let _ = ServerFrame::Error;
-
-        let err = ProtocolError::Truncated;
-        assert_eq!(err.to_string(), "truncated frame");
-    }
 
     #[test]
     fn open_round_trip() {
@@ -231,6 +229,41 @@ mod tests {
         let bytes = [2, 1, 0, 0, 0, 0xff];
         assert_eq!(
             ClientFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
+    fn partial_round_trip() {
+        let frame = ServerFrame::Partial {
+            text: "hello".into(),
+        };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn final_round_trip() {
+        let frame = ServerFrame::Final {
+            text: "hello world".into(),
+        };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn partial_empty_text_round_trip() {
+        let frame = ServerFrame::Partial { text: String::new() };
+        let bytes = frame.encode().unwrap();
+        assert_eq!(bytes, [2, 0, 0, 0, 0]);
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn partial_rejects_invalid_utf8() {
+        let bytes = [2, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
             ProtocolError::InvalidPayload
         );
     }

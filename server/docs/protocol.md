@@ -78,6 +78,6 @@ Audio before `Open`, or after `Finalize` / `Cancel`, is a protocol error.
 | `Cancel` | `ClientFrame::Cancel` |
 | `Finalize` | `ClientFrame::Finalize` |
 | `OpenAck` | `ServerFrame::OpenAck { session_id }` |
-| `Partial` | `ServerFrame::Partial` |
-| `Final` | `ServerFrame::Final` |
+| `Partial` | `ServerFrame::Partial { text }` — UTF-8 |
+| `Final` | `ServerFrame::Final { text }` — UTF-8 |
 | `Error` | `ServerFrame::Error` |
