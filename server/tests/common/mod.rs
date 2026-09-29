@@ -2,6 +2,8 @@
 //!
 //! Uses the same `protocol` codec as the server — not a second wire format.
 
+pub mod corpus;
+
 use std::net::SocketAddr;
 
 use futures_util::{SinkExt, StreamExt};

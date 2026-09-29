@@ -179,8 +179,26 @@ mod tests {
     use crate::session::StreamState;
     use std::path::{Path, PathBuf};
 
-    /// Env var for a 16 kHz mono fixture WAV used by ignored inference tests.
-    const FIXTURE_WAV_ENV: &str = "RMLK_ASR_FIXTURE_WAV";
+    const CORPUS_DIR_ENV: &str = "RMLK_ASR_CORPUS_DIR";
+    const UTT001_WAV_ENV: &str = "RMLK_ASR_UTT_UTT001_WAV";
+
+    /// Resolve the correctness seed clip WAV (see `server/docs/corpus.md`).
+    fn utt001_wav_path() -> PathBuf {
+        if let Ok(path) = std::env::var(UTT001_WAV_ENV) {
+            return PathBuf::from(path);
+        }
+        if let Ok(dir) = std::env::var(CORPUS_DIR_ENV) {
+            let path = PathBuf::from(&dir).join("utt001.wav");
+            if path.is_file() {
+                return path;
+            }
+            panic!("{CORPUS_DIR_ENV}={dir} does not contain utt001.wav");
+        }
+        panic!(
+            "set {UTT001_WAV_ENV} or {CORPUS_DIR_ENV} to a 16 kHz mono PCM16 WAV \
+             (see server/docs/corpus.md)"
+        );
+    }
 
     #[test]
     fn load_missing_directory_fails_clearly() {
@@ -255,35 +273,33 @@ mod tests {
 
     fn load_wav_pcm16(path: &Path) -> Vec<i16> {
         let mut reader = hound::WavReader::open(path).unwrap_or_else(|err| {
-            panic!("failed to open fixture WAV {}: {err}", path.display())
+            panic!("failed to open WAV {}: {err}", path.display())
         });
         let spec = reader.spec();
-        assert_eq!(spec.channels, 1, "fixture must be mono");
-        assert_eq!(spec.sample_rate, 16_000, "fixture must be 16 kHz");
+        assert_eq!(spec.channels, 1, "WAV must be mono");
+        assert_eq!(spec.sample_rate, 16_000, "WAV must be 16 kHz");
         assert_eq!(spec.sample_format, hound::SampleFormat::Int);
         assert_eq!(spec.bits_per_sample, 16);
         reader
             .samples::<i16>()
             .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_else(|err| panic!("failed to read fixture WAV samples: {err}"))
+            .unwrap_or_else(|err| panic!("failed to read WAV samples: {err}"))
     }
 
     #[test]
-    #[ignore = "requires model + WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_FIXTURE_WAV"]
+    #[ignore = "requires model + utt001 WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_CORPUS_DIR (or RMLK_ASR_UTT_UTT001_WAV)"]
     fn single_chunk_inference_emits_partial_then_final() {
         let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
             panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
         });
-        let wav_path = std::env::var(FIXTURE_WAV_ENV).unwrap_or_else(|_| {
-            panic!("{FIXTURE_WAV_ENV} must point at a 16 kHz mono PCM16 WAV")
-        });
+        let wav_path = utt001_wav_path();
 
         let mut engine = OrtParakeetEngine::load(&model_dir).expect("load model");
-        let pcm = load_wav_pcm16(Path::new(&wav_path));
+        let pcm = load_wav_pcm16(&wav_path);
         assert!(
             !pcm.is_empty(),
-            "fixture WAV is empty: {}",
-            wav_path
+            "WAV is empty: {}",
+            wav_path.display()
         );
 
         // One streaming step: first chunk (or whole clip if shorter).
@@ -323,20 +339,18 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires model + WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_FIXTURE_WAV"]
+    #[ignore = "requires model + utt001 WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_CORPUS_DIR (or RMLK_ASR_UTT_UTT001_WAV)"]
     fn multi_chunk_streaming_preserves_state_across_steps() {
         let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
             panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
         });
-        let wav_path = std::env::var(FIXTURE_WAV_ENV).unwrap_or_else(|_| {
-            panic!("{FIXTURE_WAV_ENV} must point at a 16 kHz mono PCM16 WAV")
-        });
+        let wav_path = utt001_wav_path();
 
         let mut engine = OrtParakeetEngine::load(&model_dir).expect("load model");
-        let pcm = load_wav_pcm16(Path::new(&wav_path));
+        let pcm = load_wav_pcm16(&wav_path);
         assert!(
             pcm.len() > CHUNK_SAMPLES,
-            "fixture must be longer than one chunk ({} samples); got {}",
+            "utt001 must be longer than one chunk ({} samples); got {}",
             CHUNK_SAMPLES,
             pcm.len()
         );
@@ -379,7 +393,7 @@ mod tests {
             !text.trim().is_empty(),
             "expected non-empty transcript after multi-chunk streaming"
         );
-        // Full utterance should carry more than a single 560 ms glance.
+        // Full clip should carry more than a single 560 ms glance.
         assert!(
             text.split_whitespace().count() >= 2,
             "expected ≥2 words after multi-chunk; got {text:?}"
