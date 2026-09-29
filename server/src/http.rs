@@ -5,10 +5,11 @@
 //! allocate/unregister; stream state stays on the connection task.
 
 use std::future::Future;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -17,15 +18,25 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 use crate::engine::{Engine, EngineEvent, MockEngine};
+#[cfg(feature = "ort")]
+use crate::engine::OrtParakeetEngine;
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 use crate::session::{SessionError, SessionRegistry, StreamState};
+
+/// Shared inference backend selected at process start.
+#[derive(Clone)]
+enum AppBackend {
+    Mock(Arc<Mutex<MockEngine>>),
+    #[cfg(feature = "ort")]
+    Ort(Arc<Mutex<OrtParakeetEngine>>),
+}
 
 #[derive(Clone)]
 pub struct AppState {
     /// Live session ids + allocator (shared across connection tasks).
     registry: Arc<Mutex<SessionRegistry>>,
     /// Interim shared engine (not under the registry lock on the data path).
-    engine: Arc<Mutex<MockEngine>>,
+    backend: AppBackend,
     /// When set, each opened stream increments this on drop (tests).
     drop_counter: Option<Arc<AtomicUsize>>,
 }
@@ -34,6 +45,15 @@ impl AppState {
     /// Number of live sessions in the registry.
     pub async fn live_session_count(&self) -> usize {
         self.registry.lock().await.len()
+    }
+
+    /// Human-readable backend name (`mock` / `ort`).
+    pub fn engine_name(&self) -> &'static str {
+        match &self.backend {
+            AppBackend::Mock(_) => "mock",
+            #[cfg(feature = "ort")]
+            AppBackend::Ort(_) => "ort",
+        }
     }
 }
 
@@ -49,7 +69,7 @@ pub fn router(state: AppState) -> Router {
 pub fn new_app_state() -> AppState {
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
-        engine: Arc::new(Mutex::new(MockEngine::new())),
+        backend: AppBackend::Mock(Arc::new(Mutex::new(MockEngine::new()))),
         drop_counter: None,
     }
 }
@@ -58,8 +78,41 @@ pub fn new_app_state() -> AppState {
 pub fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
-        engine: Arc::new(Mutex::new(MockEngine::new())),
+        backend: AppBackend::Mock(Arc::new(Mutex::new(MockEngine::new()))),
         drop_counter: Some(drop_counter),
+    }
+}
+
+/// Build app state from a backend name and optional Nemotron model directory.
+///
+/// `engine` is `mock` (default path) or `ort` (requires `--features ort` and
+/// a model directory). Unknown names error.
+pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<AppState> {
+    match engine {
+        "mock" => Ok(new_app_state()),
+        "ort" => {
+            #[cfg(feature = "ort")]
+            {
+                let dir = model_dir.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "engine `ort` requires --model-dir / RMLK_NEMOTRON_MODEL_DIR"
+                    )
+                })?;
+                let ort = OrtParakeetEngine::load(dir)
+                    .map_err(|err| anyhow::anyhow!("failed to load OrtParakeetEngine: {err}"))?;
+                Ok(AppState {
+                    registry: Arc::new(Mutex::new(SessionRegistry::default())),
+                    backend: AppBackend::Ort(Arc::new(Mutex::new(ort))),
+                    drop_counter: None,
+                })
+            }
+            #[cfg(not(feature = "ort"))]
+            {
+                let _ = model_dir;
+                bail!("engine `ort` requires building with `--features ort`");
+            }
+        }
+        other => bail!("unknown engine `{other}` (expected `mock` or `ort`)"),
     }
 }
 
@@ -77,43 +130,15 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     };
 
     match ClientFrame::decode(&first) {
-        Ok(ClientFrame::Open) => {
-            let (id, mut stream) = state.registry.lock().await.open();
-            if let Some(counter) = &state.drop_counter {
-                stream.track_drops(Arc::clone(counter));
+        Ok(ClientFrame::Open) => match &state.backend {
+            AppBackend::Mock(engine) => {
+                run_opened_session(&mut socket, &state, engine).await;
             }
-            {
-                let mut engine = state.engine.lock().await;
-                if let Err(err) = engine.open_stream(&mut stream) {
-                    let _ = state.registry.lock().await.unregister(id);
-                    send_error_and_close(
-                        &mut socket,
-                        error_code::INTERNAL,
-                        &err.to_string(),
-                    )
-                    .await;
-                    return;
-                }
+            #[cfg(feature = "ort")]
+            AppBackend::Ort(engine) => {
+                run_opened_session(&mut socket, &state, engine).await;
             }
-            if send_frame(
-                &mut socket,
-                &ServerFrame::OpenAck {
-                    session_id: id.as_u64(),
-                },
-            )
-            .await
-            .is_err()
-            {
-                {
-                    let mut engine = state.engine.lock().await;
-                    let _ = engine.cancel(&mut stream);
-                }
-                let _ = state.registry.lock().await.unregister(id);
-                return;
-            }
-            run_session(&mut socket, stream, &state.engine).await;
-            let _ = state.registry.lock().await.unregister(id);
-        }
+        },
         Ok(_) => {
             send_error_and_close(
                 &mut socket,
@@ -133,11 +158,49 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Connection-owned session loop: engine lock only around push/finalize/cancel, never the registry.
-async fn run_session(
+/// Open registry entry, open engine stream, then run the connection-owned loop.
+async fn run_opened_session<E: Engine>(
     socket: &mut WebSocket,
-    mut stream: StreamState<()>,
-    engine: &Arc<Mutex<MockEngine>>,
+    state: &AppState,
+    engine: &Arc<Mutex<E>>,
+) {
+    let (id, mut stream) = state.registry.lock().await.open::<E::CallState>();
+    if let Some(counter) = &state.drop_counter {
+        stream.track_drops(Arc::clone(counter));
+    }
+    {
+        let mut engine = engine.lock().await;
+        if let Err(err) = engine.open_stream(&mut stream) {
+            let _ = state.registry.lock().await.unregister(id);
+            send_error_and_close(socket, error_code::INTERNAL, &err.to_string()).await;
+            return;
+        }
+    }
+    if send_frame(
+        socket,
+        &ServerFrame::OpenAck {
+            session_id: id.as_u64(),
+        },
+    )
+    .await
+    .is_err()
+    {
+        {
+            let mut engine = engine.lock().await;
+            let _ = engine.cancel(&mut stream);
+        }
+        let _ = state.registry.lock().await.unregister(id);
+        return;
+    }
+    run_session(socket, stream, engine).await;
+    let _ = state.registry.lock().await.unregister(id);
+}
+
+/// Connection-owned session loop: engine lock only around push/finalize/cancel, never the registry.
+async fn run_session<E: Engine>(
+    socket: &mut WebSocket,
+    mut stream: StreamState<E::CallState>,
+    engine: &Arc<Mutex<E>>,
 ) {
     while let Some(Ok(msg)) = socket.recv().await {
         match msg {
@@ -285,7 +348,7 @@ async fn send_error_and_close(socket: &mut WebSocket, code: u16, message: &str) 
     let _ = socket.send(Message::Close(None)).await;
 }
 
-/// Serve `router` until `shutdown` completes.
+/// Serve `router` until `shutdown` completes (mock engine).
 pub async fn serve(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
@@ -301,7 +364,8 @@ pub async fn serve_with_state(
 ) -> Result<()> {
     axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown)
-        .await?;
+        .await
+        .context("http serve")?;
     Ok(())
 }
 
@@ -322,7 +386,7 @@ mod tests {
     use tokio::sync::oneshot;
     use tower::ServiceExt;
 
-    use super::{new_app_state, router, serve_with_state};
+    use super::{app_state_from_config, new_app_state, router, serve_with_state};
 
     #[tokio::test]
     async fn health_returns_ok() {
@@ -383,5 +447,44 @@ mod tests {
         }
         assert_eq!(clone.live_session_count().await, 1);
         assert_eq!(state.live_session_count().await, 1);
+    }
+
+    #[test]
+    fn app_state_from_config_defaults_to_mock() {
+        let state = app_state_from_config("mock", None).unwrap();
+        assert_eq!(state.engine_name(), "mock");
+    }
+
+    #[test]
+    fn app_state_from_config_rejects_unknown_engine() {
+        let Err(err) = app_state_from_config("triton", None) else {
+            panic!("expected unknown engine error");
+        };
+        assert!(err.to_string().contains("unknown engine"), "{err}");
+    }
+
+    #[test]
+    fn app_state_from_config_ort_without_feature_or_dir_fails_clearly() {
+        #[cfg(not(feature = "ort"))]
+        {
+            let Err(err) = app_state_from_config("ort", Some(std::path::Path::new("/tmp"))) else {
+                panic!("expected feature error");
+            };
+            assert!(
+                err.to_string().contains("--features ort"),
+                "{err}"
+            );
+        }
+        #[cfg(feature = "ort")]
+        {
+            let Err(err) = app_state_from_config("ort", None) else {
+                panic!("expected model-dir error");
+            };
+            assert!(
+                err.to_string().contains("model-dir")
+                    || err.to_string().contains("RMLK_NEMOTRON_MODEL_DIR"),
+                "{err}"
+            );
+        }
     }
 }

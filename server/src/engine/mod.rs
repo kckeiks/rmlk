@@ -6,7 +6,7 @@
 #[cfg(feature = "ort")]
 mod ort_parakeet;
 #[cfg(feature = "ort")]
-pub use ort_parakeet::OrtParakeetEngine;
+pub use ort_parakeet::{OrtParakeetEngine, MODEL_DIR_ENV};
 
 use thiserror::Error;
 

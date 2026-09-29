@@ -20,9 +20,6 @@ pub const CHUNK_SAMPLES: usize = 8960;
 /// Env var for the ignored real-model load / inference tests.
 pub const MODEL_DIR_ENV: &str = "RMLK_NEMOTRON_MODEL_DIR";
 
-/// Env var for a 16 kHz mono fixture WAV used by ignored inference tests.
-pub const FIXTURE_WAV_ENV: &str = "RMLK_ASR_FIXTURE_WAV";
-
 /// ORT-backed Nemotron streaming engine (shared model handle).
 pub struct OrtParakeetEngine {
     handle: NemotronHandle,
@@ -82,6 +79,7 @@ fn pcm16_to_f32(pcm16: &[i16]) -> Vec<f32> {
 }
 
 /// Split PCM into fixed-size streaming steps, zero-padding the last chunk.
+#[cfg(test)]
 fn pcm_chunks(pcm: &[i16], chunk_samples: usize) -> Vec<Vec<i16>> {
     if pcm.is_empty() || chunk_samples == 0 {
         return Vec::new();
@@ -175,12 +173,14 @@ impl Engine for OrtParakeetEngine {
 #[cfg(test)]
 mod tests {
     use super::{
-        pcm16_to_f32, pcm_chunks, OrtParakeetEngine, CHUNK_SAMPLES, FIXTURE_WAV_ENV,
-        MODEL_DIR_ENV, REQUIRED_FILES,
+        pcm16_to_f32, pcm_chunks, OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV, REQUIRED_FILES,
     };
     use crate::engine::{Engine, EngineEvent};
     use crate::session::StreamState;
     use std::path::{Path, PathBuf};
+
+    /// Env var for a 16 kHz mono fixture WAV used by ignored inference tests.
+    const FIXTURE_WAV_ENV: &str = "RMLK_ASR_FIXTURE_WAV";
 
     #[test]
     fn load_missing_directory_fails_clearly() {
