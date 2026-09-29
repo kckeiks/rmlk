@@ -10,6 +10,7 @@ pub use ort_parakeet::OrtParakeetEngine;
 
 use thiserror::Error;
 
+use crate::protocol::ServerFrame;
 use crate::session::StreamState;
 
 /// Transcript events produced by an engine step.
@@ -17,6 +18,16 @@ use crate::session::StreamState;
 pub enum EngineEvent {
     Partial { text: String },
     Final { text: String },
+}
+
+impl EngineEvent {
+    /// Map to a wire transcript frame (`Partial` / `Final`).
+    pub fn into_server_frame(self) -> ServerFrame {
+        match self {
+            Self::Partial { text } => ServerFrame::Partial { text },
+            Self::Final { text } => ServerFrame::Final { text },
+        }
+    }
 }
 
 /// Inference backend failures.
@@ -114,6 +125,7 @@ impl Engine for MockEngine {
 #[cfg(test)]
 mod tests {
     use super::{Engine, EngineError, EngineEvent, MockEngine};
+    use crate::protocol::ServerFrame;
     use crate::session::{SessionId, StreamState};
 
     struct NoopEngine;
@@ -192,6 +204,37 @@ mod tests {
             self.cancels += 1;
             Ok(())
         }
+    }
+
+    #[test]
+    fn engine_event_maps_to_protocol_partial_and_final() {
+        assert_eq!(
+            EngineEvent::Partial {
+                text: "hello".into()
+            }
+            .into_server_frame(),
+            ServerFrame::Partial {
+                text: "hello".into()
+            }
+        );
+        assert_eq!(
+            EngineEvent::Final {
+                text: "hello world".into()
+            }
+            .into_server_frame(),
+            ServerFrame::Final {
+                text: "hello world".into()
+            }
+        );
+        assert_eq!(
+            EngineEvent::Partial {
+                text: String::new()
+            }
+            .into_server_frame(),
+            ServerFrame::Partial {
+                text: String::new()
+            }
+        );
     }
 
     #[test]

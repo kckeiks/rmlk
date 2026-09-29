@@ -249,11 +249,7 @@ async fn send_engine_events(
     events: Vec<EngineEvent>,
 ) -> Result<(), ()> {
     for event in events {
-        let frame = match event {
-            EngineEvent::Partial { text } => ServerFrame::Partial { text },
-            EngineEvent::Final { text } => ServerFrame::Final { text },
-        };
-        send_frame(socket, &frame).await?;
+        send_frame(socket, &event.into_server_frame()).await?;
     }
     Ok(())
 }
