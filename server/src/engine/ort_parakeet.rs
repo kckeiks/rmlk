@@ -175,30 +175,9 @@ mod tests {
     use super::{
         pcm16_to_f32, pcm_chunks, OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV, REQUIRED_FILES,
     };
-    use crate::engine::{Engine, EngineEvent};
+    use crate::engine::Engine;
     use crate::session::StreamState;
-    use std::path::{Path, PathBuf};
-
-    const CORPUS_DIR_ENV: &str = "RMLK_ASR_CORPUS_DIR";
-    const UTT001_WAV_ENV: &str = "RMLK_ASR_UTT_UTT001_WAV";
-
-    /// Resolve the correctness seed clip WAV (see `server/docs/corpus.md`).
-    fn utt001_wav_path() -> PathBuf {
-        if let Ok(path) = std::env::var(UTT001_WAV_ENV) {
-            return PathBuf::from(path);
-        }
-        if let Ok(dir) = std::env::var(CORPUS_DIR_ENV) {
-            let path = PathBuf::from(&dir).join("utt001.wav");
-            if path.is_file() {
-                return path;
-            }
-            panic!("{CORPUS_DIR_ENV}={dir} does not contain utt001.wav");
-        }
-        panic!(
-            "set {UTT001_WAV_ENV} or {CORPUS_DIR_ENV} to a 16 kHz mono PCM16 WAV \
-             (see server/docs/corpus.md)"
-        );
-    }
+    use std::path::PathBuf;
 
     #[test]
     fn load_missing_directory_fails_clearly() {
@@ -271,62 +250,6 @@ mod tests {
         assert!(!state.has_engine_call());
     }
 
-    fn load_wav_pcm16(path: &Path) -> Vec<i16> {
-        let mut reader = hound::WavReader::open(path).unwrap_or_else(|err| {
-            panic!("failed to open WAV {}: {err}", path.display())
-        });
-        let spec = reader.spec();
-        assert_eq!(spec.channels, 1, "WAV must be mono");
-        assert_eq!(spec.sample_rate, 16_000, "WAV must be 16 kHz");
-        assert_eq!(spec.sample_format, hound::SampleFormat::Int);
-        assert_eq!(spec.bits_per_sample, 16);
-        reader
-            .samples::<i16>()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_else(|err| panic!("failed to read WAV samples: {err}"))
-    }
-
-    #[test]
-    #[ignore = "requires model + utt001 WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_CORPUS_DIR (or RMLK_ASR_UTT_UTT001_WAV)"]
-    fn single_chunk_inference_emits_partial_then_final() {
-        let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
-            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
-        });
-        let wav_path = utt001_wav_path();
-
-        let mut engine = OrtParakeetEngine::load(&model_dir).expect("load model");
-        let pcm = load_wav_pcm16(&wav_path);
-        assert!(
-            !pcm.is_empty(),
-            "WAV is empty: {}",
-            wav_path.display()
-        );
-
-        // One streaming step: first chunk (or whole clip if shorter).
-        let end = pcm.len().min(CHUNK_SAMPLES);
-        let chunk = &pcm[..end];
-
-        let mut state = StreamState::default();
-        engine.open_stream(&mut state).unwrap();
-        let partials = engine.push_audio(&mut state, chunk).expect("push_audio");
-        for event in &partials {
-            assert!(
-                matches!(event, EngineEvent::Partial { .. }),
-                "unexpected event: {event:?}"
-            );
-        }
-
-        let finals = engine.finalize(&mut state).expect("finalize");
-        println!("finals: {finals:?}");
-        assert_eq!(finals.len(), 1);
-        assert!(
-            matches!(finals[0], EngineEvent::Final { .. }),
-            "expected Final, got {:?}",
-            finals[0]
-        );
-        assert!(!state.has_engine_call());
-    }
-
     #[test]
     fn pcm_chunks_pads_last_and_preserves_order() {
         let pcm: Vec<i16> = (0..10).collect();
@@ -336,77 +259,5 @@ mod tests {
         assert_eq!(chunks[1], vec![4, 5, 6, 7]);
         assert_eq!(chunks[2], vec![8, 9, 0, 0]);
         assert!(pcm_chunks(&[], 4).is_empty());
-    }
-
-    #[test]
-    #[ignore = "requires model + utt001 WAV; set RMLK_NEMOTRON_MODEL_DIR and RMLK_ASR_CORPUS_DIR (or RMLK_ASR_UTT_UTT001_WAV)"]
-    fn multi_chunk_streaming_preserves_state_across_steps() {
-        let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
-            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
-        });
-        let wav_path = utt001_wav_path();
-
-        let mut engine = OrtParakeetEngine::load(&model_dir).expect("load model");
-        let pcm = load_wav_pcm16(&wav_path);
-        assert!(
-            pcm.len() > CHUNK_SAMPLES,
-            "utt001 must be longer than one chunk ({} samples); got {}",
-            CHUNK_SAMPLES,
-            pcm.len()
-        );
-
-        let chunks = pcm_chunks(&pcm, CHUNK_SAMPLES);
-        assert!(chunks.len() >= 2);
-
-        let mut state = StreamState::default();
-        engine.open_stream(&mut state).unwrap();
-
-        let mut last_transcript = String::new();
-        for (i, chunk) in chunks.iter().enumerate() {
-            let events = engine.push_audio(&mut state, chunk).unwrap_or_else(|err| {
-                panic!("push_audio failed on chunk {i}: {err}")
-            });
-            for event in &events {
-                match event {
-                    EngineEvent::Partial { text } => {
-                        // Cumulative transcript must not shrink across steps.
-                        assert!(
-                            text.len() >= last_transcript.len()
-                                || text.starts_with(last_transcript.trim()),
-                            "transcript shrank at chunk {i}: before={last_transcript:?} after={text:?}"
-                        );
-                        last_transcript = text.clone();
-                    }
-                    other => panic!("unexpected event on chunk {i}: {other:?}"),
-                }
-            }
-        }
-        assert_eq!(state.chunks_pushed(), chunks.len() as u64);
-
-        let finals = engine.finalize(&mut state).expect("finalize");
-        assert_eq!(finals.len(), 1);
-        let EngineEvent::Final { text } = &finals[0] else {
-            panic!("expected Final, got {:?}", finals[0]);
-        };
-        println!("multi-chunk final ({chunks} chunks): {text}", chunks = chunks.len());
-        assert!(
-            !text.trim().is_empty(),
-            "expected non-empty transcript after multi-chunk streaming"
-        );
-        // Full clip should carry more than a single 560 ms glance.
-        assert!(
-            text.split_whitespace().count() >= 2,
-            "expected ≥2 words after multi-chunk; got {text:?}"
-        );
-        assert!(!state.has_engine_call());
-    }
-
-    #[test]
-    fn required_files_list_is_stable() {
-        // Expected names match parakeet-rs NemotronHandle docs.
-        assert_eq!(
-            REQUIRED_FILES,
-            &["encoder.onnx", "decoder_joint.onnx", "tokenizer.model"]
-        );
     }
 }

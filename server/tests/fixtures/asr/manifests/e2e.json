@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "job": "e2e",
+  "dataset": "openslr/librispeech_asr",
+  "dataset_config": "clean",
+  "dataset_split": "test",
+  "dataset_revision": "71cacbfb7e2354c4226d01e70d77d5fca3d04ba1",
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "pcm": "s16le",
+  "chunk_samples": 8960,
+  "clips": [
+    {
+      "id": "6930-75918-0000",
+      "wav": "6930-75918-0000.wav",
+      "reference": "CONCORD RETURNED TO ITS PLACE AMIDST THE TENTS",
+      "sha256": "746c756a0b42872638c5f4bb5a8e282ca113bcdaf786bc54591d745dbed96f47",
+      "bytes": 112238,
+      "duration_s": 3.5
+    },
+    {
+      "id": "6930-75918-0001",
+      "wav": "6930-75918-0001.wav",
+      "reference": "THE ENGLISH FORWARDED TO THE FRENCH BASKETS OF FLOWERS OF WHICH THEY HAD MADE A PLENTIFUL PROVISION TO GREET THE ARRIVAL OF THE YOUNG PRINCESS THE FRENCH IN RETURN INVITED THE ENGLISH TO A SUPPER WHICH WAS TO BE GIVEN THE NEXT DAY",
+      "sha256": "6d9736c06b09ac23c50a668047f430e157edf980e79629a65d0841cd195927a8",
+      "bytes": 455278,
+      "duration_s": 14.22
+    },
+    {
+      "id": "6930-75918-0002",
+      "wav": "6930-75918-0002.wav",
+      "reference": "CONGRATULATIONS WERE POURED IN UPON THE PRINCESS EVERYWHERE DURING HER JOURNEY",
+      "sha256": "274f9b86e9604ce03ddcf494a679bbf41c681c8c87b086f9a203d6a772ae8aaf",
+      "bytes": 160878,
+      "duration_s": 5.03
+    }
+  ],
+  "notes": "e2e job over openslr/librispeech_asr (clean/test, OpenSLR). References are official LibriSpeech transcripts from *.trans.txt. Regenerate with server/scripts/pack_librispeech.py."
+}

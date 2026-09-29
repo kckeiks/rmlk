@@ -1,6 +1,8 @@
-//! WebSocket session integration tests (shared client helper).
+//! WebSocket session integration tests (mock engine).
+//!
+//! See `server/docs/tests.md`.
 
-mod common;
+mod utils;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +12,7 @@ use rmlk_server::http::{new_app_state, new_app_state_with_drop_counter};
 use rmlk_server::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-use common::TestServer;
+use utils::TestServer;
 
 #[tokio::test]
 async fn rejects_garbage_first_frame() {
