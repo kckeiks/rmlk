@@ -4,9 +4,9 @@
 //! the wire API.
 
 #[cfg(feature = "ort")]
-mod ort_parakeet;
+mod parakeet;
 #[cfg(feature = "ort")]
-pub use ort_parakeet::{OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV};
+pub use parakeet::{OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV};
 
 use thiserror::Error;
 
