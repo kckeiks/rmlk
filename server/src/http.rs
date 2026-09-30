@@ -1,8 +1,8 @@
 //! HTTP routes served by the binary.
 //!
-//! [`AppState`] is cloned into each WebSocket upgrade task. The clone shares
-//! the same `Arc` registry and engine: registry locks are only taken for
-//! allocate/unregister; stream state stays on the connection task.
+//! [`AppState`] is cloned into each WebSocket upgrade task. Connection tasks
+//! own the socket and apply [`crate::worker::ConnEvent`]s; they never touch
+//! the engine. The engine worker owns inference and all stream state.
 
 use std::future::Future;
 use std::path::Path;
@@ -21,21 +21,22 @@ use crate::engine::{Engine, EngineEvent, MockEngine};
 #[cfg(feature = "ort")]
 use crate::engine::OrtParakeetEngine;
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-use crate::session::{SessionError, SessionRegistry, StreamState};
+use crate::session::{SessionError, SessionRegistry};
+use crate::worker::{ConnEvent, EngineWorker, SessionHandle};
 
 /// Shared inference backend selected at process start.
 #[derive(Clone)]
 enum AppBackend {
-    Mock(Arc<Mutex<MockEngine>>),
+    Mock(EngineWorker<MockEngine>),
     #[cfg(feature = "ort")]
-    Ort(Arc<Mutex<OrtParakeetEngine>>),
+    Ort(EngineWorker<OrtParakeetEngine>),
 }
 
 #[derive(Clone)]
 pub struct AppState {
     /// Live session ids + allocator (shared across connection tasks).
     registry: Arc<Mutex<SessionRegistry>>,
-    /// Interim shared engine (not under the registry lock on the data path).
+    /// Engine worker handle (connection tasks send work items only).
     backend: AppBackend,
     /// When set, each opened stream increments this on drop (tests).
     drop_counter: Option<Arc<AtomicUsize>>,
@@ -57,7 +58,7 @@ impl AppState {
     }
 }
 
-/// Application router with shared registry + engine.
+/// Application router with shared registry + engine service.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -67,18 +68,20 @@ pub fn router(state: AppState) -> Router {
 
 /// Default in-process app state (mock engine).
 pub fn new_app_state() -> AppState {
+    let (worker, _join) = EngineWorker::spawn(MockEngine::new());
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
-        backend: AppBackend::Mock(Arc::new(Mutex::new(MockEngine::new()))),
+        backend: AppBackend::Mock(worker),
         drop_counter: None,
     }
 }
 
 /// App state that counts `StreamState` drops (integration tests).
 pub fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
+    let (worker, _join) = EngineWorker::spawn(MockEngine::new());
     AppState {
         registry: Arc::new(Mutex::new(SessionRegistry::default())),
-        backend: AppBackend::Mock(Arc::new(Mutex::new(MockEngine::new()))),
+        backend: AppBackend::Mock(worker),
         drop_counter: Some(drop_counter),
     }
 }
@@ -100,9 +103,10 @@ pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<A
                 })?;
                 let ort = OrtParakeetEngine::load(dir)
                     .map_err(|err| anyhow::anyhow!("failed to load OrtParakeetEngine: {err}"))?;
+                let (worker, _join) = EngineWorker::spawn(ort);
                 Ok(AppState {
                     registry: Arc::new(Mutex::new(SessionRegistry::default())),
-                    backend: AppBackend::Ort(Arc::new(Mutex::new(ort))),
+                    backend: AppBackend::Ort(worker),
                     drop_counter: None,
                 })
             }
@@ -131,12 +135,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => match &state.backend {
-            AppBackend::Mock(engine) => {
-                run_opened_session(&mut socket, &state, engine).await;
+            AppBackend::Mock(worker) => {
+                handle_open(&mut socket, &state, worker).await;
             }
             #[cfg(feature = "ort")]
-            AppBackend::Ort(engine) => {
-                run_opened_session(&mut socket, &state, engine).await;
+            AppBackend::Ort(worker) => {
+                handle_open(&mut socket, &state, worker).await;
             }
         },
         Ok(_) => {
@@ -158,24 +162,31 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Open registry entry, open engine stream, then run the connection-owned loop.
-async fn run_opened_session<E: Engine>(
+/// Handle an Open frame.
+async fn handle_open<E: Engine + 'static>(
     socket: &mut WebSocket,
     state: &AppState,
-    engine: &Arc<Mutex<E>>,
+    worker: &EngineWorker<E>,
 ) {
     let (id, mut stream) = state.registry.lock().await.open::<E::CallState>();
     if let Some(counter) = &state.drop_counter {
         stream.track_drops(Arc::clone(counter));
     }
-    {
-        let mut engine = engine.lock().await;
-        if let Err(err) = engine.open_stream(&mut stream) {
+
+    let mut session = match worker.open(id, stream).await {
+        Ok(session) => session,
+        Err(err) => {
             let _ = state.registry.lock().await.unregister(id);
-            send_error_and_close(socket, error_code::INTERNAL, &err.to_string()).await;
+            send_session_error_and_close(socket, err).await;
             return;
         }
+    };
+    if let Err(err) = wait_opened(&mut session).await {
+        let _ = state.registry.lock().await.unregister(id);
+        send_session_error_and_close(socket, err).await;
+        return;
     }
+
     if send_frame(
         socket,
         &ServerFrame::OpenAck {
@@ -185,99 +196,66 @@ async fn run_opened_session<E: Engine>(
     .await
     .is_err()
     {
-        {
-            let mut engine = engine.lock().await;
-            let _ = engine.cancel(&mut stream);
-        }
+        cancel_and_wait(&mut session).await;
         let _ = state.registry.lock().await.unregister(id);
         return;
     }
-    run_session(socket, stream, engine).await;
+
+    run_session(socket, &mut session).await;
     let _ = state.registry.lock().await.unregister(id);
 }
 
-/// Connection-owned session loop: engine lock only around push/finalize/cancel, never the registry.
-async fn run_session<E: Engine>(
-    socket: &mut WebSocket,
-    mut stream: StreamState<E::CallState>,
-    engine: &Arc<Mutex<E>>,
-) {
+/// Connection loop: send work items, apply worker events to the socket.
+async fn run_session<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>) {
     while let Some(Ok(msg)) = socket.recv().await {
         match msg {
             Message::Close(_) => {
-                let mut engine = engine.lock().await;
-                let _ = engine.cancel(&mut stream);
+                cancel_and_wait(session).await;
                 return;
             }
             Message::Binary(bytes) => match ClientFrame::decode(&bytes) {
-                Ok(ClientFrame::Audio { pcm16 }) => {
-                    let events = {
-                        let mut engine = engine.lock().await;
-                        match stream.push_audio(&mut *engine, &pcm16) {
-                            Ok(events) => events,
-                            Err(SessionError::Busy) => {
-                                let _ = engine.cancel(&mut stream);
-                                drop(engine);
-                                send_error_and_close(
-                                    socket,
-                                    error_code::BUSY,
-                                    error_message::BUSY,
-                                )
-                                .await;
-                                return;
-                            }
-                            Err(_) => {
-                                let _ = engine.cancel(&mut stream);
-                                drop(engine);
-                                send_error_and_close(
-                                    socket,
-                                    error_code::INTERNAL,
-                                    error_message::INTERNAL,
-                                )
-                                .await;
+                Ok(ClientFrame::Audio { pcm16 }) => match session.push_audio(pcm16).await {
+                    Ok(()) => match wait_partials(session).await {
+                        Ok(events) => {
+                            if send_engine_events(socket, events).await.is_err() {
+                                cancel_and_wait(session).await;
                                 return;
                             }
                         }
-                    };
-                    if send_engine_events(socket, events).await.is_err() {
-                        let mut engine = engine.lock().await;
-                        let _ = engine.cancel(&mut stream);
+                        Err(err) => {
+                            send_session_error_and_close(socket, err).await;
+                            return;
+                        }
+                    },
+                    Err(err) => {
+                        cancel_and_wait(session).await;
+                        send_session_error_and_close(socket, err).await;
                         return;
                     }
-                }
+                },
                 Ok(ClientFrame::Finalize) => {
-                    let events = {
-                        let mut engine = engine.lock().await;
-                        match stream.finalize(&mut *engine) {
-                            Ok(events) => events,
-                            Err(_) => {
-                                send_error_and_close(
-                                    socket,
-                                    error_code::INTERNAL,
-                                    error_message::INTERNAL,
-                                )
-                                .await;
-                                return;
-                            }
+                    if let Err(err) = session.finalize().await {
+                        send_session_error_and_close(socket, err).await;
+                        return;
+                    }
+                    match wait_finalized(session).await {
+                        Ok(events) => {
+                            let _ = send_engine_events(socket, events).await;
+                            let _ = socket.send(Message::Close(None)).await;
                         }
-                    };
-                    let _ = send_engine_events(socket, events).await;
-                    let _ = socket.send(Message::Close(None)).await;
+                        Err(err) => {
+                            send_session_error_and_close(socket, err).await;
+                        }
+                    }
                     return;
                 }
                 Ok(ClientFrame::Cancel) => {
-                    {
-                        let mut engine = engine.lock().await;
-                        let _ = stream.cancel(&mut *engine);
-                    }
+                    cancel_and_wait(session).await;
                     let _ = socket.send(Message::Close(None)).await;
                     return;
                 }
                 Ok(ClientFrame::Open) => {
-                    {
-                        let mut engine = engine.lock().await;
-                        let _ = engine.cancel(&mut stream);
-                    }
+                    cancel_and_wait(session).await;
                     send_error_and_close(
                         socket,
                         error_code::UNEXPECTED_FRAME,
@@ -287,10 +265,7 @@ async fn run_session<E: Engine>(
                     return;
                 }
                 Err(_) => {
-                    {
-                        let mut engine = engine.lock().await;
-                        let _ = engine.cancel(&mut stream);
-                    }
+                    cancel_and_wait(session).await;
                     send_error_and_close(
                         socket,
                         error_code::MALFORMED_FRAME,
@@ -303,8 +278,77 @@ async fn run_session<E: Engine>(
             _ => {}
         }
     }
-    let mut engine = engine.lock().await;
-    let _ = engine.cancel(&mut stream);
+    cancel_and_wait(session).await;
+}
+
+fn worker_gone(context: &str) -> SessionError {
+    SessionError::Engine(crate::engine::EngineError::Failed(format!(
+        "engine worker stopped while waiting for {context}"
+    )))
+}
+
+fn unexpected_event(expected: &str, got: ConnEvent) -> SessionError {
+    SessionError::Engine(crate::engine::EngineError::Failed(format!(
+        "expected {expected}, got {got:?}"
+    )))
+}
+
+async fn wait_opened<C>(session: &mut SessionHandle<C>) -> Result<(), SessionError> {
+    match session.recv().await {
+        Some(ConnEvent::Opened) => Ok(()),
+        Some(ConnEvent::Failed(err)) => Err(err),
+        Some(other) => Err(unexpected_event("Opened", other)),
+        None => Err(worker_gone("Opened")),
+    }
+}
+
+async fn wait_partials<C>(session: &mut SessionHandle<C>) -> Result<Vec<EngineEvent>, SessionError> {
+    match session.recv().await {
+        Some(ConnEvent::Partials(events)) => Ok(events),
+        Some(ConnEvent::Failed(err)) => Err(err),
+        Some(other) => Err(unexpected_event("Partials", other)),
+        None => Err(worker_gone("Partials")),
+    }
+}
+
+async fn wait_finalized<C>(
+    session: &mut SessionHandle<C>,
+) -> Result<Vec<EngineEvent>, SessionError> {
+    loop {
+        match session.recv().await {
+            Some(ConnEvent::Partials(_)) => {}
+            Some(ConnEvent::Finalized(events)) => return Ok(events),
+            Some(ConnEvent::Failed(err)) => return Err(err),
+            Some(other) => return Err(unexpected_event("Finalized", other)),
+            None => return Err(worker_gone("Finalized")),
+        }
+    }
+}
+
+/// Send `CancelStream` and drain events until the worker confirms the session is gone.
+async fn cancel_and_wait<C>(session: &mut SessionHandle<C>) {
+    if session.cancel().await.is_err() {
+        return;
+    }
+    loop {
+        match session.recv().await {
+            Some(ConnEvent::Cancelled) | Some(ConnEvent::Finalized(_)) => return,
+            Some(ConnEvent::Failed(_)) => return,
+            Some(ConnEvent::Partials(_)) | Some(ConnEvent::Opened) => {}
+            None => return,
+        }
+    }
+}
+
+async fn send_session_error_and_close(socket: &mut WebSocket, err: SessionError) {
+    match err {
+        SessionError::Busy => {
+            send_error_and_close(socket, error_code::BUSY, error_message::BUSY).await;
+        }
+        SessionError::Unknown(_) | SessionError::Engine(_) => {
+            send_error_and_close(socket, error_code::INTERNAL, error_message::INTERNAL).await;
+        }
+    }
 }
 
 async fn send_engine_events(
@@ -449,8 +493,8 @@ mod tests {
         assert_eq!(state.live_session_count().await, 1);
     }
 
-    #[test]
-    fn app_state_from_config_defaults_to_mock() {
+    #[tokio::test]
+    async fn app_state_from_config_defaults_to_mock() {
         let state = app_state_from_config("mock", None).unwrap();
         assert_eq!(state.engine_name(), "mock");
     }

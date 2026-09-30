@@ -5,3 +5,4 @@ Cargo.lock
 *.txt
 .venv-oracle/
 .cache/
+.local/

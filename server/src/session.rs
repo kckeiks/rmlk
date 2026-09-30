@@ -143,17 +143,6 @@ impl<C> StreamState<C> {
         Ok(events)
     }
 
-    /// Pop one mailbox chunk and run a single engine push, if any.
-    pub fn process_one_inbound<E: Engine<CallState = C>>(
-        &mut self,
-        engine: &mut E,
-    ) -> Result<Option<Vec<EngineEvent>>, SessionError> {
-        let Some(chunk) = self.mailbox.pop_front() else {
-            return Ok(None);
-        };
-        Ok(Some(engine.push_audio(self, &chunk)?))
-    }
-
     /// Enqueue PCM16 audio and process the mailbox; return emitted events.
     pub fn push_audio<E: Engine<CallState = C>>(
         &mut self,
