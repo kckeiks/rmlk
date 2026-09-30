@@ -8,6 +8,8 @@ mod parakeet;
 #[cfg(feature = "ort")]
 pub use parakeet::{OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV};
 
+use std::time::Duration;
+
 use thiserror::Error;
 
 use crate::protocol::ServerFrame;
@@ -69,13 +71,23 @@ pub trait Engine: Send {
 }
 
 /// Deterministic engine for tests: text derived from chunk count only.
+///
+/// An optional step delay makes each `push_audio` take a fixed amount of
+/// wall-clock time so tests can exercise backpressure.
 #[derive(Debug, Default)]
-pub struct MockEngine;
+pub struct MockEngine {
+    step_delay: Duration,
+}
 
 impl MockEngine {
-    /// Create a mock engine.
+    /// Create a mock engine whose steps complete immediately.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Create a mock engine whose every `push_audio` blocks for `step_delay`.
+    pub fn with_step_delay(step_delay: Duration) -> Self {
+        Self { step_delay }
     }
 }
 
@@ -94,6 +106,9 @@ impl Engine for MockEngine {
         state: &mut StreamState<Self::CallState>,
         _pcm16: &[i16],
     ) -> Result<Option<EngineEvent>, EngineError> {
+        if !self.step_delay.is_zero() {
+            std::thread::sleep(self.step_delay);
+        }
         let n = state.record_chunk();
         Ok(Some(EngineEvent::Partial {
             text: format!("partial-{n}"),
@@ -176,14 +191,14 @@ mod tests {
             state: &mut StreamState<Self::CallState>,
             pcm16: &[i16],
         ) -> Result<Option<EngineEvent>, EngineError> {
-            MockEngine.push_audio(state, pcm16)
+            MockEngine::new().push_audio(state, pcm16)
         }
 
         fn finalize(
             &mut self,
             state: &mut StreamState<Self::CallState>,
         ) -> Result<EngineEvent, EngineError> {
-            MockEngine.finalize(state)
+            MockEngine::new().finalize(state)
         }
 
         fn cancel(&mut self, _state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
@@ -226,7 +241,7 @@ mod tests {
     #[test]
     fn engine_trait_object_smoke() {
         let mut engine: Box<dyn Engine<CallState = ()>> = Box::new(NoopEngine);
-        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        let mut state = StreamState::new(SessionId::from_raw(1));
         engine.open_stream(&mut state).unwrap();
         assert!(engine.push_audio(&mut state, &[]).unwrap().is_none());
         assert_eq!(
@@ -240,7 +255,7 @@ mod tests {
     #[test]
     fn open_stream_and_cancel_lifecycle() {
         let mut engine = SpyEngine::default();
-        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        let mut state = StreamState::new(SessionId::from_raw(1));
 
         engine.open_stream(&mut state).unwrap();
         engine.push_audio(&mut state, &[0]).unwrap();

@@ -23,18 +23,47 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 
 use crate::engine::{Engine, EngineError, EngineEvent};
 use crate::session::{SessionError, SessionId, StreamState};
 
-/// Work channel depth until Phase 8 provides `max_sessions`.
+/// Audio items one session may have queued or running at once.
+pub const DEFAULT_IN_FLIGHT_PER_SESSION: usize = 16;
+
+/// Sessions the work channel is sized for until Phase 8 provides
+/// `max_sessions`.
+pub const DEFAULT_CHANNEL_SESSIONS: usize = 64;
+
+/// How long a connection waits for room before its session is reported busy.
 ///
-/// Sized as a generous `sessions × chunks_in_flight` product so that, with
-/// per-session backpressure in place, the channel itself never fills.
-pub const DEFAULT_WORK_CHANNEL_CAPACITY: usize = 64 * 16;
+/// A realtime client produces one chunk every few hundred milliseconds, so
+/// waiting this long means the engine is well behind on this session.
+pub const DEFAULT_PUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Queue depths and timeouts for the worker and its sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkerLimits {
+    /// Depth of the shared work channel.
+    pub channel_capacity: usize,
+    /// Audio items one session may have queued or running at once.
+    pub in_flight_per_session: usize,
+    /// How long `push_audio` waits for room before returning `Busy`.
+    pub push_timeout: Duration,
+}
+
+impl Default for WorkerLimits {
+    fn default() -> Self {
+        Self {
+            channel_capacity: DEFAULT_CHANNEL_SESSIONS * DEFAULT_IN_FLIGHT_PER_SESSION,
+            in_flight_per_session: DEFAULT_IN_FLIGHT_PER_SESSION,
+            push_timeout: DEFAULT_PUSH_TIMEOUT,
+        }
+    }
+}
 
 /// One unit of work for the engine worker.
 pub enum WorkItem<C> {
@@ -46,7 +75,15 @@ pub enum WorkItem<C> {
         cancelled: Arc<AtomicBool>,
     },
     /// Run one [`Engine::push_audio`] on `id`.
-    PushAudio { id: SessionId, pcm16: Vec<i16> },
+    ///
+    /// `permit` is one unit of the session's in-flight allowance. It is
+    /// released when this item is dropped, whether the step ran or was
+    /// skipped.
+    PushAudio {
+        id: SessionId,
+        pcm16: Vec<i16>,
+        permit: OwnedSemaphorePermit,
+    },
     /// Run [`Engine::finalize`] on `id` and drop its state.
     FinalizeStream { id: SessionId },
     /// Run [`Engine::cancel`] on `id` and drop its state.
@@ -83,6 +120,7 @@ pub struct EngineWorker<E: Engine> {
     work_tx: mpsc::Sender<WorkItem<E::CallState>>,
     live: Arc<AtomicUsize>,
     next_id: Arc<AtomicU64>,
+    limits: WorkerLimits,
 }
 
 impl<E: Engine> Clone for EngineWorker<E> {
@@ -91,19 +129,20 @@ impl<E: Engine> Clone for EngineWorker<E> {
             work_tx: self.work_tx.clone(),
             live: Arc::clone(&self.live),
             next_id: Arc::clone(&self.next_id),
+            limits: self.limits,
         }
     }
 }
 
 impl<E: Engine + 'static> EngineWorker<E> {
-    /// Spawn the worker on Tokio's blocking pool with the default channel depth.
+    /// Spawn the worker on Tokio's blocking pool with default limits.
     pub fn spawn(engine: E) -> (Self, JoinHandle<()>) {
-        Self::spawn_with_capacity(engine, DEFAULT_WORK_CHANNEL_CAPACITY)
+        Self::spawn_with_limits(engine, WorkerLimits::default())
     }
 
-    /// Spawn the worker with an explicit work channel depth.
-    pub fn spawn_with_capacity(engine: E, capacity: usize) -> (Self, JoinHandle<()>) {
-        let (work_tx, work_rx) = mpsc::channel(capacity);
+    /// Spawn the worker with explicit limits.
+    pub fn spawn_with_limits(engine: E, limits: WorkerLimits) -> (Self, JoinHandle<()>) {
+        let (work_tx, work_rx) = mpsc::channel(limits.channel_capacity);
         let live = Arc::new(AtomicUsize::new(0));
         let live_worker = Arc::clone(&live);
         let join = tokio::task::spawn_blocking(move || worker_main(engine, work_rx, live_worker));
@@ -112,9 +151,15 @@ impl<E: Engine + 'static> EngineWorker<E> {
                 work_tx,
                 live,
                 next_id: Arc::new(AtomicU64::new(0)),
+                limits,
             },
             join,
         )
+    }
+
+    /// Limits this worker and its sessions run under.
+    pub fn limits(&self) -> WorkerLimits {
+        self.limits
     }
 
     /// Number of sessions the worker currently holds state for.
@@ -150,6 +195,8 @@ impl<E: Engine + 'static> EngineWorker<E> {
             work_tx: self.work_tx.clone(),
             reply_rx,
             cancelled,
+            permits: Arc::new(Semaphore::new(self.limits.in_flight_per_session)),
+            push_timeout: self.limits.push_timeout,
         })
     }
 
@@ -164,6 +211,8 @@ pub struct SessionHandle<C> {
     work_tx: mpsc::Sender<WorkItem<C>>,
     reply_rx: mpsc::UnboundedReceiver<ConnEvent>,
     cancelled: Arc<AtomicBool>,
+    permits: Arc<Semaphore>,
+    push_timeout: Duration,
 }
 
 impl<C> SessionHandle<C> {
@@ -178,8 +227,31 @@ impl<C> SessionHandle<C> {
     }
 
     /// Queue one chunk of PCM16 for the engine.
+    ///
+    /// Waits for one unit of this session's in-flight allowance and for room
+    /// in the work channel. If both are not obtained within the push timeout
+    /// the chunk is dropped and [`SessionError::Busy`] is returned.
     pub async fn push_audio(&self, pcm16: Vec<i16>) -> Result<(), SessionError> {
-        send_item(&self.work_tx, WorkItem::PushAudio { id: self.id, pcm16 }).await
+        let queued = tokio::time::timeout(self.push_timeout, async {
+            let permit = Arc::clone(&self.permits)
+                .acquire_owned()
+                .await
+                .map_err(|_| worker_stopped())?;
+            send_item(
+                &self.work_tx,
+                WorkItem::PushAudio {
+                    id: self.id,
+                    pcm16,
+                    permit,
+                },
+            )
+            .await
+        })
+        .await;
+        match queued {
+            Ok(result) => result,
+            Err(_) => Err(SessionError::Busy),
+        }
     }
 
     /// Ask the worker to finalize after any queued audio.
@@ -199,9 +271,11 @@ async fn send_item<C>(
     tx: &mpsc::Sender<WorkItem<C>>,
     item: WorkItem<C>,
 ) -> Result<(), SessionError> {
-    tx.send(item)
-        .await
-        .map_err(|_| SessionError::Engine(EngineError::Failed("engine worker stopped".into())))
+    tx.send(item).await.map_err(|_| worker_stopped())
+}
+
+fn worker_stopped() -> SessionError {
+    SessionError::Engine(EngineError::Failed("engine worker stopped".into()))
 }
 
 fn worker_main<E: Engine>(
@@ -235,7 +309,11 @@ fn worker_main<E: Engine>(
                     let _ = reply_tx.send(ConnEvent::Failed(SessionError::Engine(err)));
                 }
             },
-            WorkItem::PushAudio { id, pcm16 } => {
+            WorkItem::PushAudio {
+                id,
+                pcm16,
+                permit: _permit,
+            } => {
                 let Some(slot) = slots.get_mut(&id) else {
                     continue;
                 };
@@ -339,7 +417,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use super::{ConnEvent, EngineWorker};
+    use super::{ConnEvent, EngineWorker, WorkerLimits};
     use crate::engine::{Engine, EngineError, EngineEvent, MockEngine};
     use crate::session::{SessionError, SessionId, StreamState};
 
@@ -362,11 +440,11 @@ mod tests {
             pcm16: &[i16],
         ) -> Result<Option<EngineEvent>, EngineError> {
             self.steps.lock().unwrap().push(state.session_id());
-            MockEngine.push_audio(state, pcm16)
+            MockEngine::new().push_audio(state, pcm16)
         }
 
         fn finalize(&mut self, state: &mut StreamState<()>) -> Result<EngineEvent, EngineError> {
-            MockEngine.finalize(state)
+            MockEngine::new().finalize(state)
         }
 
         fn cancel(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
@@ -398,11 +476,11 @@ mod tests {
             pcm16: &[i16],
         ) -> Result<Option<EngineEvent>, EngineError> {
             self.pushes.fetch_add(1, Ordering::SeqCst);
-            MockEngine.push_audio(state, pcm16)
+            MockEngine::new().push_audio(state, pcm16)
         }
 
         fn finalize(&mut self, state: &mut StreamState<()>) -> Result<EngineEvent, EngineError> {
-            MockEngine.finalize(state)
+            MockEngine::new().finalize(state)
         }
 
         fn cancel(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
@@ -436,7 +514,7 @@ mod tests {
     async fn open_push_finalize_round_trip() {
         let (worker, _join) = EngineWorker::spawn(MockEngine::new());
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
 
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
         assert_eq!(worker.live_sessions(), 1);
@@ -467,8 +545,8 @@ mod tests {
 
         let a_id = worker.next_session_id();
         let b_id = worker.next_session_id();
-        let mut a = worker.open(a_id, StreamState::new(a_id, 16)).await.unwrap();
-        let mut b = worker.open(b_id, StreamState::new(b_id, 16)).await.unwrap();
+        let mut a = worker.open(a_id, StreamState::new(a_id)).await.unwrap();
+        let mut b = worker.open(b_id, StreamState::new(b_id)).await.unwrap();
         assert_eq!(a.recv().await, Some(ConnEvent::Opened));
         assert_eq!(b.recv().await, Some(ConnEvent::Opened));
 
@@ -499,7 +577,7 @@ mod tests {
         let pushes = Arc::clone(&engine.pushes);
         let (worker, _join) = EngineWorker::spawn(engine);
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
 
         // Set the flag before any audio is queued so every chunk must be skipped.
@@ -517,10 +595,7 @@ mod tests {
     async fn unknown_id_is_ignored_and_worker_keeps_serving() {
         let (worker, _join) = EngineWorker::spawn(MockEngine::new());
         let ghost = SessionId::from_raw(999);
-        let mut ghost_session = worker
-            .open(ghost, StreamState::new(ghost, 16))
-            .await
-            .unwrap();
+        let mut ghost_session = worker.open(ghost, StreamState::new(ghost)).await.unwrap();
         assert_eq!(ghost_session.recv().await, Some(ConnEvent::Opened));
         ghost_session.cancel().await.unwrap();
         assert_eq!(ghost_session.recv().await, Some(ConnEvent::Cancelled));
@@ -530,7 +605,7 @@ mod tests {
         ghost_session.push_audio(vec![0]).await.unwrap();
 
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
         assert_eq!(worker.live_sessions(), 1);
     }
@@ -543,7 +618,7 @@ mod tests {
         };
         let (worker, _join) = EngineWorker::spawn(engine);
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
 
         match session.recv().await {
             Some(ConnEvent::Failed(SessionError::Engine(_))) => {}
@@ -558,7 +633,7 @@ mod tests {
         let cancels = Arc::clone(&engine.cancels);
         let (worker, join) = EngineWorker::spawn(engine);
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
 
         drop(session);
@@ -577,18 +652,74 @@ mod tests {
         let cancels = Arc::clone(&engine.cancels);
         let (worker, _join) = EngineWorker::spawn(engine);
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
 
         // Simulate a connection that vanished without sending CancelStream.
         let work_tx = session.work_tx.clone();
+        let permit = Arc::clone(&session.permits).acquire_owned().await.unwrap();
         drop(session);
         work_tx
-            .send(super::WorkItem::PushAudio { id, pcm16: vec![0] })
+            .send(super::WorkItem::PushAudio {
+                id,
+                pcm16: vec![0],
+                permit,
+            })
             .await
             .unwrap();
 
         wait_until(|| worker.live_sessions() == 0).await;
         assert_eq!(cancels.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn push_audio_reports_busy_when_in_flight_allowance_is_exhausted() {
+        let step = Duration::from_millis(200);
+        let limits = WorkerLimits {
+            channel_capacity: 64,
+            in_flight_per_session: 2,
+            push_timeout: Duration::from_millis(20),
+        };
+        let (worker, _join) =
+            EngineWorker::spawn_with_limits(MockEngine::with_step_delay(step), limits);
+        let id = worker.next_session_id();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+        assert_eq!(session.recv().await, Some(ConnEvent::Opened));
+
+        // Two chunks fill the allowance: one is running, one is queued.
+        session.push_audio(vec![0]).await.unwrap();
+        session.push_audio(vec![1]).await.unwrap();
+
+        // The third cannot get a permit within the push timeout because the
+        // engine step holding the first permit takes far longer than that.
+        assert_eq!(session.push_audio(vec![2]).await, Err(SessionError::Busy));
+
+        // Once the engine finishes a step its permit is released and the
+        // session accepts audio again.
+        assert!(matches!(session.recv().await, Some(ConnEvent::Partial(_))));
+        session.push_audio(vec![3]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn skipped_audio_after_cancel_still_releases_permits() {
+        let limits = WorkerLimits {
+            channel_capacity: 64,
+            in_flight_per_session: 2,
+            push_timeout: Duration::from_millis(20),
+        };
+        let (worker, _join) = EngineWorker::spawn_with_limits(MockEngine::new(), limits);
+        let id = worker.next_session_id();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+        assert_eq!(session.recv().await, Some(ConnEvent::Opened));
+
+        session.cancelled.store(true, Ordering::Release);
+        session.push_audio(vec![0]).await.unwrap();
+        session.push_audio(vec![1]).await.unwrap();
+        session.cancel().await.unwrap();
+        assert_eq!(session.recv().await, Some(ConnEvent::Cancelled));
+
+        // Both skipped items have been dropped by the worker, so the full
+        // allowance is available again.
+        assert_eq!(session.permits.available_permits(), 2);
     }
 }

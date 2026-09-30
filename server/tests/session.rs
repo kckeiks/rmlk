@@ -8,8 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rmlk_server::http::{new_app_state, new_app_state_with_drop_counter};
+use rmlk_server::engine::MockEngine;
+use rmlk_server::http::{new_app_state, new_app_state_with_drop_counter, new_mock_app_state};
 use rmlk_server::protocol::{error_code, error_message, ClientFrame, ServerFrame};
+use rmlk_server::worker::WorkerLimits;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use utils::TestServer;
@@ -392,6 +394,56 @@ async fn disconnect_on_a_does_not_affect_b() {
         }
     );
     assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn overloaded_session_gets_busy_then_close_and_is_freed() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let limits = WorkerLimits {
+        channel_capacity: 64,
+        in_flight_per_session: 2,
+        push_timeout: Duration::from_millis(20),
+    };
+    let engine = MockEngine::with_step_delay(Duration::from_millis(200));
+    let server =
+        TestServer::spawn(new_mock_app_state(engine, limits, Some(Arc::clone(&drops)))).await;
+    let mut client = server.connect().await;
+
+    client.open_session().await;
+    assert_eq!(server.state.live_session_count(), 1);
+
+    // Send more chunks than the session may have in flight, faster than the
+    // engine can consume them.
+    for i in 0..4 {
+        client
+            .send_frame(&ClientFrame::Audio { pcm16: vec![i] })
+            .await;
+    }
+
+    // Partials that were produced before the overload may arrive first; the
+    // session must then end with a Busy error and a Close.
+    loop {
+        match client.recv_frame().await {
+            ServerFrame::Partial { .. } => {}
+            ServerFrame::Error { code, message } => {
+                assert_eq!(code, error_code::BUSY);
+                assert_eq!(message, error_message::BUSY);
+                break;
+            }
+            other => panic!("expected Partial or Busy error, got {other:?}"),
+        }
+    }
+    assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count() != 0 || drops.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("busy session should be cancelled and freed");
 
     server.shutdown().await;
 }

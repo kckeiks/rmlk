@@ -22,8 +22,8 @@ use tokio::net::TcpListener;
 use crate::engine::OrtParakeetEngine;
 use crate::engine::{Engine, MockEngine};
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-use crate::session::{SessionError, StreamState, DEFAULT_MAILBOX_CAPACITY};
-use crate::worker::{ConnEvent, EngineWorker, SessionHandle};
+use crate::session::{SessionError, StreamState};
+use crate::worker::{ConnEvent, EngineWorker, SessionHandle, WorkerLimits};
 
 /// Backend name for the deterministic mock engine.
 pub const ENGINE_MOCK: &str = "mock";
@@ -74,21 +74,30 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Default in-process app state (mock engine).
+/// Default in-process app state (mock engine, default limits).
 pub fn new_app_state() -> AppState {
-    let (worker, _join) = EngineWorker::spawn(MockEngine::new());
-    AppState {
-        backend: AppBackend::Mock(worker),
-        drop_counter: None,
-    }
+    new_mock_app_state(MockEngine::new(), WorkerLimits::default(), None)
 }
 
 /// App state that counts `StreamState` drops (integration tests).
 pub fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppState {
-    let (worker, _join) = EngineWorker::spawn(MockEngine::new());
+    new_mock_app_state(
+        MockEngine::new(),
+        WorkerLimits::default(),
+        Some(drop_counter),
+    )
+}
+
+/// App state over a specific mock engine and worker limits (tests).
+pub fn new_mock_app_state(
+    engine: MockEngine,
+    limits: WorkerLimits,
+    drop_counter: Option<Arc<AtomicUsize>>,
+) -> AppState {
+    let (worker, _join) = EngineWorker::spawn_with_limits(engine, limits);
     AppState {
         backend: AppBackend::Mock(worker),
-        drop_counter: Some(drop_counter),
+        drop_counter,
     }
 }
 
@@ -187,7 +196,7 @@ async fn run_connection<E: Engine + 'static>(
     worker: &EngineWorker<E>,
 ) {
     let id = worker.next_session_id();
-    let mut stream = StreamState::new(id, DEFAULT_MAILBOX_CAPACITY);
+    let mut stream = StreamState::new(id);
     if let Some(counter) = &state.drop_counter {
         stream.track_drops(Arc::clone(counter));
     }
@@ -289,12 +298,17 @@ async fn session_loop<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>)
             },
             msg = socket.recv(), if !closing => match msg {
                 Some(Ok(Message::Binary(bytes))) => match ClientFrame::decode(&bytes) {
-                    Ok(ClientFrame::Audio { pcm16 }) => {
-                        if session.push_audio(pcm16).await.is_err() {
+                    Ok(ClientFrame::Audio { pcm16 }) => match session.push_audio(pcm16).await {
+                        Ok(()) => {}
+                        Err(SessionError::Busy) => {
+                            send_error_and_close(socket, error_code::BUSY, error_message::BUSY).await;
+                            return Exit::NeedsCancel;
+                        }
+                        Err(SessionError::Engine(_)) => {
                             send_error_and_close(socket, error_code::INTERNAL, error_message::INTERNAL).await;
                             return Exit::Settled;
                         }
-                    }
+                    },
                     Ok(ClientFrame::Finalize) => {
                         if session.finalize().await.is_err() {
                             send_error_and_close(socket, error_code::INTERNAL, error_message::INTERNAL).await;
@@ -481,7 +495,7 @@ mod tests {
         };
 
         let id = worker.next_session_id();
-        let mut session = worker.open(id, StreamState::new(id, 16)).await.unwrap();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
         assert_eq!(session.recv().await, Some(ConnEvent::Opened));
 
         assert_eq!(clone.live_session_count(), 1);

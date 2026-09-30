@@ -1,6 +1,5 @@
 //! Per-call streaming session state.
 
-use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -8,9 +7,6 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::engine::{Engine, EngineError, EngineEvent};
-
-/// Default inbound audio queue depth per session.
-pub const DEFAULT_MAILBOX_CAPACITY: usize = 16;
 
 /// Opaque handle for a live streaming call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -37,8 +33,6 @@ pub struct StreamState<C = ()> {
     session_id: SessionId,
     chunks_pushed: u64,
     drop_counter: Option<Arc<AtomicUsize>>,
-    mailbox_capacity: usize,
-    mailbox: VecDeque<Vec<i16>>,
     engine_call: Option<C>,
 }
 
@@ -47,22 +41,18 @@ impl<C> fmt::Debug for StreamState<C> {
         f.debug_struct("StreamState")
             .field("session_id", &self.session_id)
             .field("chunks_pushed", &self.chunks_pushed)
-            .field("mailbox_len", &self.mailbox.len())
-            .field("mailbox_capacity", &self.mailbox_capacity)
             .field("has_engine_call", &self.engine_call.is_some())
             .finish()
     }
 }
 
 impl<C> StreamState<C> {
-    /// Create state for `session_id` with an empty inbound mailbox.
-    pub fn new(session_id: SessionId, mailbox_capacity: usize) -> Self {
+    /// Create fresh state for `session_id`.
+    pub fn new(session_id: SessionId) -> Self {
         Self {
             session_id,
             chunks_pushed: 0,
             drop_counter: None,
-            mailbox_capacity,
-            mailbox: VecDeque::new(),
             engine_call: None,
         }
     }
@@ -75,11 +65,6 @@ impl<C> StreamState<C> {
     /// Number of audio chunks pushed so far.
     pub fn chunks_pushed(&self) -> u64 {
         self.chunks_pushed
-    }
-
-    /// Number of audio chunks waiting in the inbound mailbox.
-    pub fn mailbox_len(&self) -> usize {
-        self.mailbox.len()
     }
 
     /// Record one pushed audio chunk; returns the new count.
@@ -123,37 +108,6 @@ impl<C> StreamState<C> {
         self.engine_call = None;
     }
 
-    /// Enqueue PCM16 samples. Errors with [`SessionError::Busy`] when full.
-    pub fn enqueue_audio(&mut self, pcm16: &[i16]) -> Result<(), SessionError> {
-        if self.mailbox.len() >= self.mailbox_capacity {
-            return Err(SessionError::Busy);
-        }
-        self.mailbox.push_back(pcm16.to_vec());
-        Ok(())
-    }
-
-    /// Drain the inbound mailbox through `engine`; return emitted events.
-    pub fn process_inbound<E: Engine<CallState = C>>(
-        &mut self,
-        engine: &mut E,
-    ) -> Result<Vec<EngineEvent>, SessionError> {
-        let mut events = Vec::new();
-        while let Some(chunk) = self.mailbox.pop_front() {
-            events.extend(engine.push_audio(self, &chunk)?);
-        }
-        Ok(events)
-    }
-
-    /// Enqueue PCM16 audio and process the mailbox; return emitted events.
-    pub fn push_audio<E: Engine<CallState = C>>(
-        &mut self,
-        engine: &mut E,
-        pcm16: &[i16],
-    ) -> Result<Vec<EngineEvent>, SessionError> {
-        self.enqueue_audio(pcm16)?;
-        self.process_inbound(engine)
-    }
-
     /// Finalize through `engine` and return the final transcript event.
     pub fn finalize<E: Engine<CallState = C>>(
         mut self,
@@ -178,14 +132,14 @@ impl<C> Drop for StreamState<C> {
 
 impl<C> Default for StreamState<C> {
     fn default() -> Self {
-        Self::new(SessionId::default(), DEFAULT_MAILBOX_CAPACITY)
+        Self::new(SessionId::default())
     }
 }
 
 /// Session and engine failures.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SessionError {
-    #[error("session mailbox full")]
+    #[error("session has too much audio waiting for the engine")]
     Busy,
     #[error(transparent)]
     Engine(#[from] EngineError),
@@ -196,16 +150,15 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use super::{SessionError, SessionId, StreamState};
-    use crate::engine::{EngineEvent, MockEngine};
+    use super::{SessionId, StreamState};
+    use crate::engine::{Engine, EngineEvent, MockEngine};
 
     #[test]
     fn new_state_starts_empty() {
         let id = SessionId::from_raw(7);
-        let state = StreamState::<()>::new(id, 16);
+        let state = StreamState::<()>::new(id);
         assert_eq!(state.session_id(), id);
         assert_eq!(state.chunks_pushed(), 0);
-        assert_eq!(state.mailbox_len(), 0);
         assert!(!state.has_engine_call());
     }
 
@@ -258,27 +211,12 @@ mod tests {
     }
 
     #[test]
-    fn push_audio_emits_partial_and_counts_chunk() {
-        let mut engine = MockEngine::new();
-        let mut state = StreamState::new(SessionId::from_raw(1), 16);
-
-        let events = state.push_audio(&mut engine, &[0, 1, 2]).unwrap();
-        assert_eq!(
-            events,
-            vec![EngineEvent::Partial {
-                text: "partial-1".into()
-            }]
-        );
-        assert_eq!(state.chunks_pushed(), 1);
-    }
-
-    #[test]
     fn finalize_consumes_state_and_reports_chunk_count() {
         let drops = Arc::new(AtomicUsize::new(0));
         let mut engine = MockEngine::new();
-        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        let mut state = StreamState::new(SessionId::from_raw(1));
         state.track_drops(Arc::clone(&drops));
-        state.push_audio(&mut engine, &[0]).unwrap();
+        engine.push_audio(&mut state, &[0]).unwrap();
 
         let event = state.finalize(&mut engine).unwrap();
         assert_eq!(
@@ -294,9 +232,9 @@ mod tests {
     fn cancel_consumes_and_drops_state() {
         let drops = Arc::new(AtomicUsize::new(0));
         let mut engine = MockEngine::new();
-        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        let mut state = StreamState::new(SessionId::from_raw(1));
         state.track_drops(Arc::clone(&drops));
-        state.push_audio(&mut engine, &[0]).unwrap();
+        engine.push_audio(&mut state, &[0]).unwrap();
         assert_eq!(drops.load(Ordering::SeqCst), 0);
 
         state.cancel(&mut engine).unwrap();
@@ -307,8 +245,8 @@ mod tests {
     fn dropping_state_runs_drop_hooks() {
         let drops = Arc::new(AtomicUsize::new(0));
         {
-            let mut a = StreamState::<()>::new(SessionId::from_raw(1), 16);
-            let mut b = StreamState::<()>::new(SessionId::from_raw(2), 16);
+            let mut a = StreamState::<()>::new(SessionId::from_raw(1));
+            let mut b = StreamState::<()>::new(SessionId::from_raw(2));
             a.track_drops(Arc::clone(&drops));
             b.track_drops(Arc::clone(&drops));
             assert_eq!(drops.load(Ordering::SeqCst), 0);
@@ -317,47 +255,28 @@ mod tests {
     }
 
     #[test]
-    fn enqueue_busy_when_mailbox_full() {
-        let mut state = StreamState::new(SessionId::from_raw(0), 1);
-        let mut engine = MockEngine::new();
-
-        state.enqueue_audio(&[1]).unwrap();
-        assert_eq!(state.mailbox_len(), 1);
-        assert_eq!(state.enqueue_audio(&[2]).unwrap_err(), SessionError::Busy);
-
-        let events = state.process_inbound(&mut engine).unwrap();
-        assert_eq!(
-            events,
-            vec![EngineEvent::Partial {
-                text: "partial-1".into()
-            }]
-        );
-        state.enqueue_audio(&[3]).unwrap();
-    }
-
-    #[test]
     fn two_sessions_interleaved_no_crosstalk() {
         let mut engine = MockEngine::new();
-        let mut a = StreamState::new(SessionId::from_raw(1), 16);
-        let mut b = StreamState::new(SessionId::from_raw(2), 16);
+        let mut a = StreamState::new(SessionId::from_raw(1));
+        let mut b = StreamState::new(SessionId::from_raw(2));
 
         assert_eq!(
-            a.push_audio(&mut engine, &[0]).unwrap(),
-            vec![EngineEvent::Partial {
+            engine.push_audio(&mut a, &[0]).unwrap(),
+            Some(EngineEvent::Partial {
                 text: "partial-1".into()
-            }]
+            })
         );
         assert_eq!(
-            b.push_audio(&mut engine, &[0]).unwrap(),
-            vec![EngineEvent::Partial {
+            engine.push_audio(&mut b, &[0]).unwrap(),
+            Some(EngineEvent::Partial {
                 text: "partial-1".into()
-            }]
+            })
         );
         assert_eq!(
-            a.push_audio(&mut engine, &[0]).unwrap(),
-            vec![EngineEvent::Partial {
+            engine.push_audio(&mut a, &[0]).unwrap(),
+            Some(EngineEvent::Partial {
                 text: "partial-2".into()
-            }]
+            })
         );
 
         assert_eq!(a.chunks_pushed(), 2);
