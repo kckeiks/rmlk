@@ -2,7 +2,7 @@
 //!
 //! Always-on tests cover [`utils::normalize_transcript`] edge cases.
 //! Ignored ORT tests stream each `e2e.json` clip over WS and require Final
-//! text to match the LibriSpeech reference after normalize.
+//! text to match the manifest `reference` after normalize.
 //!
 //! ```text
 //! # pack WAVs + rewrite e2e manifest (once):
@@ -60,7 +60,7 @@ mod ort_ws {
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
     #[tokio::test]
-    #[ignore = "requires model + packed LibriSpeech WAV; set RMLK_NEMOTRON_MODEL_DIR (see tests.md)"]
+    #[ignore = "requires model + packed WAVs; set RMLK_NEMOTRON_MODEL_DIR (see tests.md)"]
     async fn e2e_clips_match_reference_over_ws() {
         let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
             panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")

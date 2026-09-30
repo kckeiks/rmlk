@@ -2,7 +2,7 @@
 """Pack LibriSpeech WAVs for rmlk-server ASR tests.
 
 Downloads the matching OpenSLR tarball (cached under `.cache/rmlk/asr/openslr/`),
-converts FLACs to 16 kHz mono PCM16 WAV under `.cache/rmlk/asr/librispeech/`,
+converts FLACs to 16 kHz mono PCM16 WAV under `.cache/rmlk/testdata/`,
 and optionally rewrites a committed job manifest (references + checksums).
 
 Flags mirror Hugging Face `openslr/librispeech_asr`:
@@ -23,7 +23,7 @@ Usage (from repo root):
   # small e2e suite (once)
   python3 server/scripts/pack_librispeech.py --config clean --split test \\
     --id 6930-75918-0000,6930-75918-0001,6930-75918-0002 \\
-    --manifest server/tests/fixtures/asr/manifests/e2e.json
+    --manifest server/tests/manifests/e2e.json
 """
 
 from __future__ import annotations
@@ -63,9 +63,7 @@ OPENSLR_BASE_URL = "https://www.openslr.org/resources/12"
 SCHEMA_VERSION = 2
 CHUNK_SAMPLES = 8960
 SAMPLE_RATE = 16_000
-DEFAULT_MANIFEST = (
-    "server/tests/fixtures/asr/manifests/e2e.json"
-)
+DEFAULT_MANIFEST = "server/tests/manifests/e2e.json"
 
 
 def repo_root() -> Path:
@@ -246,8 +244,9 @@ def pack(
     manifest_path: Path | None,
 ) -> None:
     root = repo_root()
+    # WAVs go in the agnostic testdata cache; OpenSLR tarballs stay under asr/.
     cache_root = root / ".cache" / "rmlk" / "asr"
-    wav_dir = cache_root / "librispeech"
+    wav_dir = root / ".cache" / "rmlk" / "testdata"
     wav_dir.mkdir(parents=True, exist_ok=True)
 
     filename, prefix = archive_for(config, split)
@@ -333,7 +332,7 @@ def main() -> None:
         "--manifest",
         default=None,
         help=(
-            "Job manifest to rewrite (e.g. server/tests/fixtures/asr/manifests/e2e.json). "
+            "Job manifest to rewrite (e.g. server/tests/manifests/e2e.json). "
             f"Default when --id is set: {DEFAULT_MANIFEST}"
         ),
     )
