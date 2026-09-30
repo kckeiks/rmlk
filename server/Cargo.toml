@@ -21,6 +21,7 @@ cuda = ["ort", "parakeet-rs/cuda"]
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4.5", features = ["derive", "env"] }
+env_logger = "0.11"
 futures-util = { version = "=0.3.31" }
 hound = { version = "3.5", optional = true }
 log = { workspace = true }

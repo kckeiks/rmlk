@@ -673,6 +673,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn engine_panic_surfaces_on_join_handle_and_ends_sessions() {
+        struct PanickingEngine;
+
+        impl Engine for PanickingEngine {
+            type CallState = ();
+
+            fn open_stream(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
+                Ok(())
+            }
+
+            fn push_audio(
+                &mut self,
+                _s: &mut StreamState<()>,
+                _pcm16: &[i16],
+            ) -> Result<Option<EngineEvent>, EngineError> {
+                panic!("engine step exploded");
+            }
+
+            fn finalize(&mut self, _s: &mut StreamState<()>) -> Result<EngineEvent, EngineError> {
+                unreachable!()
+            }
+
+            fn cancel(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
+                Ok(())
+            }
+        }
+
+        let (worker, join) = EngineWorker::spawn(PanickingEngine);
+        let id = worker.next_session_id();
+        let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+        assert_eq!(session.recv().await, Some(ConnEvent::Opened));
+
+        session.push_audio(vec![0]).await.unwrap();
+
+        let joined = tokio::time::timeout(Duration::from_secs(2), join)
+            .await
+            .expect("worker task must end after the engine panics");
+        let err = joined.expect_err("join must report the panic");
+        assert!(err.is_panic());
+        assert_eq!(
+            crate::panic_message(err.into_panic().as_ref()),
+            "engine step exploded"
+        );
+
+        // The reply channel closed with the worker, so the connection sees
+        // the worker as gone.
+        assert_eq!(session.recv().await, None);
+    }
+
+    #[tokio::test]
     async fn push_audio_reports_busy_when_in_flight_allowance_is_exhausted() {
         let step = Duration::from_millis(200);
         let limits = WorkerLimits {

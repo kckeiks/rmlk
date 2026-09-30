@@ -17,12 +17,13 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use futures_util::FutureExt;
 use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 
 #[cfg(feature = "ort")]
 use crate::engine::OrtParakeetEngine;
 use crate::engine::{Engine, MockEngine};
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-use crate::session::{SessionError, StreamState};
+use crate::session::{SessionError, SessionId, StreamState};
 use crate::worker::{ConnEvent, EngineWorker, SessionHandle, WorkerLimits};
 
 /// Backend name for the deterministic mock engine.
@@ -94,20 +95,42 @@ pub fn new_mock_app_state(
     limits: WorkerLimits,
     drop_counter: Option<Arc<AtomicUsize>>,
 ) -> AppState {
-    let (worker, _join) = EngineWorker::spawn_with_limits(engine, limits);
-    AppState {
-        backend: AppBackend::Mock(worker),
-        drop_counter,
-    }
+    mock_app_state_with_worker(engine, limits, drop_counter).0
+}
+
+fn mock_app_state_with_worker(
+    engine: MockEngine,
+    limits: WorkerLimits,
+    drop_counter: Option<Arc<AtomicUsize>>,
+) -> (AppState, JoinHandle<()>) {
+    let (worker, join) = EngineWorker::spawn_with_limits(engine, limits);
+    (
+        AppState {
+            backend: AppBackend::Mock(worker),
+            drop_counter,
+        },
+        join,
+    )
 }
 
 /// Build app state from a backend name and optional Nemotron model directory.
 ///
 /// `engine` is [`ENGINE_MOCK`] (default path) or [`ENGINE_ORT`] (requires
 /// `--features ort` and a model directory). Unknown names error.
-pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<AppState> {
+///
+/// Also returns the engine worker's join handle. It resolves only when the
+/// worker stops, so a process that is still serving should treat that as
+/// fatal.
+pub fn app_state_from_config(
+    engine: &str,
+    model_dir: Option<&Path>,
+) -> Result<(AppState, JoinHandle<()>)> {
     match engine {
-        ENGINE_MOCK => Ok(new_app_state()),
+        ENGINE_MOCK => Ok(mock_app_state_with_worker(
+            MockEngine::new(),
+            WorkerLimits::default(),
+            None,
+        )),
         ENGINE_ORT => {
             #[cfg(feature = "ort")]
             {
@@ -118,11 +141,14 @@ pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<A
                 })?;
                 let ort = OrtParakeetEngine::load(dir)
                     .map_err(|err| anyhow::anyhow!("failed to load OrtParakeetEngine: {err}"))?;
-                let (worker, _join) = EngineWorker::spawn(ort);
-                Ok(AppState {
-                    backend: AppBackend::Ort(worker),
-                    drop_counter: None,
-                })
+                let (worker, join) = EngineWorker::spawn(ort);
+                Ok((
+                    AppState {
+                        backend: AppBackend::Ort(worker),
+                        drop_counter: None,
+                    },
+                    join,
+                ))
             }
             #[cfg(not(feature = "ort"))]
             {
@@ -177,6 +203,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 }
 
 /// How the session ended, as seen from the worker's side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Exit {
     /// The worker has already dropped the session, or has stopped entirely.
     Settled,
@@ -209,17 +236,9 @@ async fn run_connection<E: Engine + 'static>(
         }
     };
 
-    let exit = match AssertUnwindSafe(drive_session(&mut socket, &mut session))
-        .catch_unwind()
-        .await
-    {
-        Ok(exit) => exit,
-        Err(payload) => {
-            log::error!(
-                "connection task for session {} panicked: {}",
-                id.as_u64(),
-                panic_message(payload.as_ref())
-            );
+    let exit = match catch_session_panic(id, drive_session(&mut socket, &mut session)).await {
+        Some(exit) => exit,
+        None => {
             send_error_and_close(&mut socket, error_code::INTERNAL, error_message::INTERNAL).await;
             Exit::NeedsCancel
         }
@@ -229,6 +248,25 @@ async fn run_connection<E: Engine + 'static>(
         // Waits for channel space with no timeout. If this never completes the
         // worker has stopped draining work, which is a process-level failure.
         let _ = session.cancel().await;
+    }
+}
+
+/// Run the session future, isolating a panic to this connection.
+///
+/// Returns `None` when the future panicked; the panic has already been
+/// logged at error level and the caller must treat the session as needing a
+/// cancel.
+async fn catch_session_panic(id: SessionId, session: impl Future<Output = Exit>) -> Option<Exit> {
+    match AssertUnwindSafe(session).catch_unwind().await {
+        Ok(exit) => Some(exit),
+        Err(payload) => {
+            log::error!(
+                "connection task for session {} panicked: {}",
+                id.as_u64(),
+                crate::panic_message(payload.as_ref())
+            );
+            None
+        }
     }
 }
 
@@ -339,17 +377,6 @@ async fn session_loop<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>)
     }
 }
 
-/// Best-effort text of a panic payload for logging.
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        s
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.as_str()
-    } else {
-        "non-string panic payload"
-    }
-}
-
 async fn send_session_error_and_close(socket: &mut WebSocket, err: SessionError) {
     match err {
         SessionError::Busy => {
@@ -430,9 +457,11 @@ mod tests {
     use tokio::sync::oneshot;
     use tower::ServiceExt;
 
+    use std::time::Duration;
+
     use super::{
-        app_state_from_config, new_app_state, router, serve_with_state, AppBackend, ConnEvent,
-        StreamState, ENGINE_MOCK, ENGINE_ORT,
+        app_state_from_config, catch_session_panic, new_app_state, router, serve_with_state,
+        AppBackend, ConnEvent, Exit, SessionId, StreamState, ENGINE_MOCK, ENGINE_ORT,
     };
 
     #[tokio::test]
@@ -504,8 +533,38 @@ mod tests {
 
     #[tokio::test]
     async fn app_state_from_config_defaults_to_mock() {
-        let state = app_state_from_config(ENGINE_MOCK, None).unwrap();
+        let (state, _worker) = app_state_from_config(ENGINE_MOCK, None).unwrap();
         assert_eq!(state.engine_name(), ENGINE_MOCK);
+    }
+
+    #[tokio::test]
+    async fn worker_join_resolves_only_after_last_state_drops() {
+        let (state, mut worker) = app_state_from_config(ENGINE_MOCK, None).unwrap();
+
+        let still_running = tokio::time::timeout(Duration::from_millis(50), &mut worker).await;
+        assert!(
+            still_running.is_err(),
+            "worker must keep running while app state is alive"
+        );
+
+        drop(state);
+        tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .expect("worker exits once the last app state drops")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_panic_is_caught_and_reported_as_needing_cancel() {
+        let id = SessionId::from_raw(7);
+        assert_eq!(
+            catch_session_panic(id, async { Exit::Settled }).await,
+            Some(Exit::Settled)
+        );
+        assert_eq!(
+            catch_session_panic(id, async { panic!("boom") }).await,
+            None
+        );
     }
 
     #[test]

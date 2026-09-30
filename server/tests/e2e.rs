@@ -64,7 +64,7 @@ mod ort_ws {
         let model_dir = std::env::var(MODEL_DIR_ENV)
             .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
         let manifest = load_manifest();
-        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+        let (state, _worker) = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
             .expect("load ort app state");
         assert_eq!(state.engine_name(), ENGINE_ORT);
 
@@ -121,7 +121,7 @@ mod ort_ws {
             .clips
             .first()
             .expect("e2e manifest must list at least one clip");
-        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+        let (state, _worker) = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
             .expect("load ort app state");
         assert_eq!(state.engine_name(), ENGINE_ORT);
 
@@ -196,7 +196,7 @@ mod ort_ws {
             .clips
             .first()
             .expect("e2e manifest must list at least one clip");
-        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+        let (state, _worker) = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
             .expect("load ort app state");
         assert_eq!(state.engine_name(), ENGINE_ORT);
 

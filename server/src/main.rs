@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use rmlk_server::http::{ENGINE_MOCK, ENGINE_ORT};
 use tokio::net::TcpListener;
@@ -40,10 +40,17 @@ struct Args {
     model_dir: Option<PathBuf>,
 }
 
+/// Panic policy: a connection panic is isolated to that connection and logged
+/// by the HTTP layer. A panic on the engine worker takes every session with
+/// it, so the process logs it and exits non-zero rather than serving with no
+/// engine behind it.
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    rmlk_server::install_panic_hook();
+
     let args = Args::parse();
-    let state =
+    let (state, worker) =
         rmlk_server::http::app_state_from_config(args.engine.as_str(), args.model_dir.as_deref())?;
     let listener = TcpListener::bind(args.bind).await?;
     println!(
@@ -52,7 +59,23 @@ async fn main() -> Result<()> {
         listener.local_addr()?,
         state.engine_name()
     );
-    rmlk_server::http::serve_with_state(listener, rmlk_server::http::shutdown_on_ctrl_c(), state)
-        .await?;
-    Ok(())
+
+    tokio::select! {
+        served = rmlk_server::http::serve_with_state(
+            listener,
+            rmlk_server::http::shutdown_on_ctrl_c(),
+            state,
+        ) => served,
+        joined = worker => match joined {
+            Ok(()) => bail!("engine worker stopped while the server was still running"),
+            Err(err) if err.is_panic() => {
+                let payload = err.into_panic();
+                bail!(
+                    "engine worker panicked: {}",
+                    rmlk_server::panic_message(payload.as_ref())
+                )
+            }
+            Err(err) => bail!("engine worker task failed: {err}"),
+        },
+    }
 }
