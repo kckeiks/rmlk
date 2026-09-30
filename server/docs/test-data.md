@@ -16,6 +16,7 @@ suite uses (checksums + official references). WAVs stay out of git.
 | Path | Role |
 |------|------|
 | `tests/manifests/e2e.json` | E2e transcript gate (~3–5 clips) |
+| `tests/manifests/capacity.json` | Latency / capacity load clips (Dirigo-identical synthetics) |
 | `tests/manifests/stress.json` | Later load/latency (not published) |
 | `.cache/rmlk/testdata/{id}.wav` | Packed 16 kHz mono PCM16 WAVs |
 | `.cache/rmlk/asr/openslr/*.tar.gz` | Upstream tarball cache (LibriSpeech pack script) |
@@ -54,3 +55,16 @@ python3 server/scripts/pack_librispeech.py --config clean --split test \
 
 See `server/scripts/pack_librispeech.py --help`. Do not change WAV bytes under an
 existing checksum without updating the manifest.
+
+## Capacity load (Dirigo-compatible)
+
+Same synthetic loops as Dirigo’s `capacity_load` pack (`loop_tone_a`,
+`loop_tone_b`, `loop_speechish`). Generate into the testdata cache:
+
+```bash
+# needs numpy
+python3 server/scripts/gen_capacity_load.py --write-manifest
+```
+
+Checksums are recorded in `tests/manifests/capacity.json`. These clips are for
+latency / capacity pacing, not transcript gating.

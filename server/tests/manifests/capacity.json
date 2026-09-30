@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "job": "capacity",
+  "dataset": "dirigo/capacity_load",
+  "dataset_config": "synthetic",
+  "dataset_split": "capacity",
+  "dataset_revision": "dirigo-generate_capacity_load",
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "pcm": "s16le",
+  "chunk_samples": 8960,
+  "clips": [
+    {
+      "id": "loop_tone_a",
+      "wav": "loop_tone_a.wav",
+      "reference": "",
+      "sha256": "72d3e3b50883b56c4d7ed54128b3ac959ae1c74bf08a2c3fbfc45f23dd7bb284",
+      "bytes": 128044,
+      "duration_s": 4.0
+    },
+    {
+      "id": "loop_tone_b",
+      "wav": "loop_tone_b.wav",
+      "reference": "",
+      "sha256": "7fddb014092753179e5cf5e1b7fc536af6804f3ced7c0b156fa52f7e4db8bdba",
+      "bytes": 128044,
+      "duration_s": 4.0
+    },
+    {
+      "id": "loop_speechish",
+      "wav": "loop_speechish.wav",
+      "reference": "",
+      "sha256": "23d87159bbfe6194a846b0cb75968474cdca19b77a89b5ddc8abeaee5d36ee24",
+      "bytes": 192044,
+      "duration_s": 6.0
+    }
+  ],
+  "notes": "Same synthetic loops as Dirigo benchmarks/datasets/capacity_load (generate_capacity_load in download.py). Not an accuracy corpus. Regenerate with server/scripts/gen_capacity_load.py."
+}
