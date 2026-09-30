@@ -6,8 +6,19 @@
 //! ordering is preserved and control items stay ordered relative to audio.
 //! Replies go back on one unbounded channel per session as [`ConnEvent`]s.
 //!
-//! The worker runs exactly one engine call per work item, so the channel
-//! order is the scheduling policy. No mutex sits on the engine or the queue.
+//! # Scheduling and fairness
+//!
+//! The worker runs exactly one engine call per work item and takes items in
+//! the order they entered the channel, so the channel order is the scheduling
+//! policy. No mutex sits on the engine or the queue.
+//!
+//! Because the channel is FIFO, a session's item waits only behind items that
+//! were already queued when it arrived. Per-session backpressure limits how
+//! many items one session can have in the channel at once, call it `cap`. If
+//! `R` sessions have work queued, an item therefore waits behind at most
+//! `cap * (R - 1)` items from other sessions before the engine reaches it. A
+//! session that sends audio faster than the engine can consume it fills only
+//! its own allowance and cannot starve the others.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -325,12 +336,43 @@ fn fail<E: Engine>(
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use super::{ConnEvent, EngineWorker};
     use crate::engine::{Engine, EngineError, EngineEvent, MockEngine};
     use crate::session::{SessionError, SessionId, StreamState};
+
+    /// Mock that records which session each audio step belonged to.
+    #[derive(Clone, Default)]
+    struct RecordingEngine {
+        steps: Arc<Mutex<Vec<SessionId>>>,
+    }
+
+    impl Engine for RecordingEngine {
+        type CallState = ();
+
+        fn open_stream(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        fn push_audio(
+            &mut self,
+            state: &mut StreamState<()>,
+            pcm16: &[i16],
+        ) -> Result<Option<EngineEvent>, EngineError> {
+            self.steps.lock().unwrap().push(state.session_id());
+            MockEngine.push_audio(state, pcm16)
+        }
+
+        fn finalize(&mut self, state: &mut StreamState<()>) -> Result<EngineEvent, EngineError> {
+            MockEngine.finalize(state)
+        }
+
+        fn cancel(&mut self, _s: &mut StreamState<()>) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
 
     /// Mock that counts engine calls so tests can observe the worker.
     #[derive(Clone, Default)]
@@ -369,6 +411,17 @@ mod tests {
         }
     }
 
+    /// Skip partials and return on `Finalized`; anything else fails the test.
+    async fn recv_finalized<C>(session: &mut super::SessionHandle<C>) {
+        loop {
+            match session.recv().await {
+                Some(ConnEvent::Partial(_)) => {}
+                Some(ConnEvent::Finalized(_)) => return,
+                other => panic!("expected Finalized, got {other:?}"),
+            }
+        }
+    }
+
     async fn wait_until(mut cond: impl FnMut() -> bool) {
         tokio::time::timeout(Duration::from_secs(2), async {
             while !cond() {
@@ -404,6 +457,40 @@ mod tests {
             }))
         );
         assert_eq!(worker.live_sessions(), 0);
+    }
+
+    #[tokio::test]
+    async fn queued_chunks_from_two_sessions_interleave_in_arrival_order() {
+        let engine = RecordingEngine::default();
+        let steps = Arc::clone(&engine.steps);
+        let (worker, _join) = EngineWorker::spawn(engine);
+
+        let a_id = worker.next_session_id();
+        let b_id = worker.next_session_id();
+        let mut a = worker.open(a_id, StreamState::new(a_id, 16)).await.unwrap();
+        let mut b = worker.open(b_id, StreamState::new(b_id, 16)).await.unwrap();
+        assert_eq!(a.recv().await, Some(ConnEvent::Opened));
+        assert_eq!(b.recv().await, Some(ConnEvent::Opened));
+
+        // Alternate chunks, then let A queue a burst before B's last chunk.
+        for _ in 0..3 {
+            a.push_audio(vec![0]).await.unwrap();
+            b.push_audio(vec![0]).await.unwrap();
+        }
+        for _ in 0..4 {
+            a.push_audio(vec![0]).await.unwrap();
+        }
+        b.push_audio(vec![0]).await.unwrap();
+
+        a.finalize().await.unwrap();
+        b.finalize().await.unwrap();
+        recv_finalized(&mut a).await;
+        recv_finalized(&mut b).await;
+
+        let expected = [
+            a_id, b_id, a_id, b_id, a_id, b_id, a_id, a_id, a_id, a_id, b_id,
+        ];
+        assert_eq!(steps.lock().unwrap().as_slice(), &expected);
     }
 
     #[tokio::test]
