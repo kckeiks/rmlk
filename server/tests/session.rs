@@ -4,6 +4,7 @@
 
 mod utils;
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,7 +12,7 @@ use std::time::Duration;
 use rmlk_server::engine::MockEngine;
 use rmlk_server::http::{new_app_state, new_app_state_with_drop_counter, new_mock_app_state};
 use rmlk_server::protocol::{error_code, error_message, ClientFrame, ServerFrame};
-use rmlk_server::worker::WorkerLimits;
+use rmlk_server::worker::{WorkerLimits, DEFAULT_CHANNEL_SESSIONS};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use utils::TestServer;
@@ -394,6 +395,73 @@ async fn disconnect_on_a_does_not_affect_b() {
         }
     );
     assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn many_concurrent_clients_all_receive_their_own_final() {
+    // As many sessions as the work channel is sized for.
+    const CLIENTS: usize = DEFAULT_CHANNEL_SESSIONS;
+    const CHUNKS: usize = 5;
+
+    // A short engine step keeps all sessions in flight at once so their
+    // chunks interleave on the shared worker instead of completing in turn.
+    let drops = Arc::new(AtomicUsize::new(0));
+    let engine = MockEngine::with_step_delay(Duration::from_millis(2));
+    let state = new_mock_app_state(engine, WorkerLimits::default(), Some(Arc::clone(&drops)));
+    let server = TestServer::spawn(state).await;
+
+    // Every client streams the same number of chunks and must see exactly
+    // its own partial sequence and final, regardless of how the others are
+    // interleaved on the shared worker.
+    let mut clients = tokio::task::JoinSet::new();
+    for _ in 0..CLIENTS {
+        let mut client = server.connect().await;
+        clients.spawn(async move {
+            let id = client.open_session().await;
+            for i in 0..CHUNKS {
+                client
+                    .send_frame(&ClientFrame::Audio {
+                        pcm16: vec![i as i16],
+                    })
+                    .await;
+                assert_eq!(
+                    client.recv_frame().await,
+                    ServerFrame::Partial {
+                        text: format!("partial-{}", i + 1)
+                    }
+                );
+            }
+            client.send_frame(&ClientFrame::Finalize).await;
+            assert_eq!(
+                client.recv_frame().await,
+                ServerFrame::Final {
+                    text: format!("final-{CHUNKS}")
+                }
+            );
+            assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
+            id
+        });
+    }
+
+    let mut ids = HashSet::with_capacity(CLIENTS);
+    while let Some(joined) = clients.join_next().await {
+        ids.insert(joined.expect("client task must not panic"));
+    }
+    assert_eq!(
+        ids.len(),
+        CLIENTS,
+        "every client must get a distinct session id"
+    );
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count() != 0 || drops.load(Ordering::SeqCst) != CLIENTS {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("every session should be freed after its final");
 
     server.shutdown().await;
 }
