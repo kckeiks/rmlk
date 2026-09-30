@@ -4,6 +4,15 @@
 //! finalize, and so on), it enqueues that session's id. A worker pops the next
 //! id and runs one step on that session's stream state (one mailbox chunk per
 //! pop). HTTP wiring lands in a later checklist item.
+//!
+//! # Fairness
+//!
+//! Policy: FIFO ready queue; one engine push per [`run_one_step`] pop; if that
+//! session still has mailbox audio, re-enqueue it at the back.
+//!
+//! Starvation bound: while `R` sessions have pending work, a ready session waits
+//! at most `R - 1` other sessions' steps before its next turn. A busy stream
+//! cannot monopolize the worker by draining its whole mailbox in one go.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -222,5 +231,83 @@ mod tests {
         assert!(sched.is_empty());
         assert_eq!(streams.get(&id).unwrap().mailbox_len(), 0);
         assert_eq!(streams.get(&id).unwrap().chunks_pushed(), 2);
+    }
+
+    /// While R sessions stay ready, gaps between one session's consecutive steps
+    /// are at most R - 1 other steps (FIFO + re-enqueue at back).
+    #[test]
+    fn ready_session_not_starved_beyond_other_ready_count() {
+        const N: usize = 4;
+        const CHUNKS_PER_SESSION: usize = 8;
+
+        let mut engine = MockEngine::new();
+        let mut sched = Scheduler::new();
+        let mut streams = HashMap::new();
+
+        for i in 0..N {
+            let id = SessionId::from_raw(i as u64);
+            let mut stream = StreamState::new(id, CHUNKS_PER_SESSION);
+            engine.open_stream(&mut stream).unwrap();
+            for _ in 0..CHUNKS_PER_SESSION {
+                stream.enqueue_audio(&[0]).unwrap();
+            }
+            streams.insert(id, stream);
+            assert!(sched.enqueue(id));
+        }
+
+        let outcomes = run_until_idle(&mut sched, &mut streams, &mut engine).unwrap();
+        assert_eq!(outcomes.len(), N * CHUNKS_PER_SESSION);
+
+        for i in 0..N {
+            let id = SessionId::from_raw(i as u64);
+            let indices: Vec<usize> = outcomes
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, step)| (step.session_id == id).then_some(idx))
+                .collect();
+            assert_eq!(indices.len(), CHUNKS_PER_SESSION);
+            for window in indices.windows(2) {
+                let gap = window[1] - window[0] - 1;
+                assert!(
+                    gap <= N - 1,
+                    "session {id:?}: {gap} other steps between consecutive turns (bound {})",
+                    N - 1
+                );
+            }
+        }
+    }
+
+    /// A light session stuck behind a heavy one still runs within one other step.
+    #[test]
+    fn light_session_not_blocked_by_heavy_mailbox() {
+        let mut engine = MockEngine::new();
+        let mut sched = Scheduler::new();
+        let mut streams = HashMap::new();
+
+        let heavy = SessionId::from_raw(1);
+        let light = SessionId::from_raw(2);
+        let mut heavy_stream = StreamState::new(heavy, 32);
+        let mut light_stream = StreamState::new(light, 4);
+        engine.open_stream(&mut heavy_stream).unwrap();
+        engine.open_stream(&mut light_stream).unwrap();
+        for _ in 0..16 {
+            heavy_stream.enqueue_audio(&[0]).unwrap();
+        }
+        light_stream.enqueue_audio(&[0]).unwrap();
+        streams.insert(heavy, heavy_stream);
+        streams.insert(light, light_stream);
+
+        assert!(sched.enqueue(heavy));
+        assert!(sched.enqueue(light));
+
+        let outcomes = run_until_idle(&mut sched, &mut streams, &mut engine).unwrap();
+        let light_at = outcomes
+            .iter()
+            .position(|step| step.session_id == light)
+            .expect("light session should run");
+        assert!(
+            light_at <= 1,
+            "light session waited {light_at} steps; bound is 1 when one other session is ahead"
+        );
     }
 }
