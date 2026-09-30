@@ -8,11 +8,7 @@ use super::{Engine, EngineError, EngineEvent};
 use crate::session::StreamState;
 
 /// Files required beside the ONNX graph for [`OrtParakeetEngine::load`].
-const REQUIRED_FILES: &[&str] = &[
-    "encoder.onnx",
-    "decoder_joint.onnx",
-    "tokenizer.model",
-];
+const REQUIRED_FILES: &[&str] = &["encoder.onnx", "decoder_joint.onnx", "tokenizer.model"];
 
 /// Nemotron streaming step size: 560 ms mono @ 16 kHz.
 pub const CHUNK_SAMPLES: usize = 8960;
@@ -95,12 +91,10 @@ fn pcm_chunks(pcm: &[i16], chunk_samples: usize) -> Vec<Vec<i16>> {
         .collect()
 }
 
-fn call_mut(
-    state: &mut StreamState<Nemotron>,
-) -> Result<&mut Nemotron, EngineError> {
-    state.engine_call_mut().ok_or_else(|| {
-        EngineError::Failed("stream not open; call open_stream first".into())
-    })
+fn call_mut(state: &mut StreamState<Nemotron>) -> Result<&mut Nemotron, EngineError> {
+    state
+        .engine_call_mut()
+        .ok_or_else(|| EngineError::Failed("stream not open; call open_stream first".into()))
 }
 
 /// Silent chunks fed at finalize to drain the streaming decoder
@@ -110,10 +104,7 @@ const FLUSH_SILENCE_CHUNKS: usize = 3;
 impl Engine for OrtParakeetEngine {
     type CallState = Nemotron;
 
-    fn open_stream(
-        &mut self,
-        state: &mut StreamState<Self::CallState>,
-    ) -> Result<(), EngineError> {
+    fn open_stream(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
         // Per-call caches / decoder state / transcript live inside `Nemotron`.
         state.set_engine_call(Nemotron::from_shared(&self.handle));
         Ok(())
@@ -123,7 +114,7 @@ impl Engine for OrtParakeetEngine {
         &mut self,
         state: &mut StreamState<Self::CallState>,
         pcm16: &[i16],
-    ) -> Result<Vec<EngineEvent>, EngineError> {
+    ) -> Result<Option<EngineEvent>, EngineError> {
         let audio = pcm16_to_f32(pcm16);
         let text = {
             let call = call_mut(state)?;
@@ -134,16 +125,16 @@ impl Engine for OrtParakeetEngine {
         };
         state.record_chunk();
         if text.is_empty() {
-            Ok(Vec::new())
+            Ok(None)
         } else {
-            Ok(vec![EngineEvent::Partial { text }])
+            Ok(Some(EngineEvent::Partial { text }))
         }
     }
 
     fn finalize(
         &mut self,
         state: &mut StreamState<Self::CallState>,
-    ) -> Result<Vec<EngineEvent>, EngineError> {
+    ) -> Result<EngineEvent, EngineError> {
         if state.has_engine_call() {
             let silence = vec![0.0f32; CHUNK_SAMPLES];
             let call = call_mut(state)?;
@@ -158,13 +149,10 @@ impl Engine for OrtParakeetEngine {
             .map(|call| call.get_transcript())
             .unwrap_or_default();
         state.clear_engine_call();
-        Ok(vec![EngineEvent::Final { text }])
+        Ok(EngineEvent::Final { text })
     }
 
-    fn cancel(
-        &mut self,
-        state: &mut StreamState<Self::CallState>,
-    ) -> Result<(), EngineError> {
+    fn cancel(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
         state.clear_engine_call();
         Ok(())
     }
@@ -206,10 +194,7 @@ mod tests {
             msg.contains("missing required model file"),
             "unexpected error: {msg}"
         );
-        assert!(
-            msg.contains(REQUIRED_FILES[0]),
-            "unexpected error: {msg}"
-        );
+        assert!(msg.contains(REQUIRED_FILES[0]), "unexpected error: {msg}");
     }
 
     #[test]
@@ -228,9 +213,8 @@ mod tests {
     #[test]
     #[ignore = "requires Nemotron ONNX dir; set RMLK_NEMOTRON_MODEL_DIR"]
     fn load_real_model_dir() {
-        let path = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
-            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
-        });
+        let path = std::env::var(MODEL_DIR_ENV)
+            .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
         let path = PathBuf::from(path);
         assert!(
             path.is_dir(),

@@ -6,8 +6,8 @@
 
 use std::future::Future;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -17,12 +17,17 @@ use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::engine::{Engine, EngineEvent, MockEngine};
 #[cfg(feature = "ort")]
 use crate::engine::OrtParakeetEngine;
+use crate::engine::{Engine, EngineEvent, MockEngine};
 use crate::protocol::{error_code, error_message, ClientFrame, ServerFrame};
 use crate::session::{SessionError, SessionRegistry};
 use crate::worker::{ConnEvent, EngineWorker, SessionHandle};
+
+/// Backend name for the deterministic mock engine.
+pub const ENGINE_MOCK: &str = "mock";
+/// Backend name for the Nemotron engine running on ONNX Runtime.
+pub const ENGINE_ORT: &str = "ort";
 
 /// Shared inference backend selected at process start.
 #[derive(Clone)]
@@ -48,12 +53,12 @@ impl AppState {
         self.registry.lock().await.len()
     }
 
-    /// Human-readable backend name (`mock` / `ort`).
+    /// Human-readable backend name ([`ENGINE_MOCK`] or [`ENGINE_ORT`]).
     pub fn engine_name(&self) -> &'static str {
         match &self.backend {
-            AppBackend::Mock(_) => "mock",
+            AppBackend::Mock(_) => ENGINE_MOCK,
             #[cfg(feature = "ort")]
-            AppBackend::Ort(_) => "ort",
+            AppBackend::Ort(_) => ENGINE_ORT,
         }
     }
 }
@@ -88,17 +93,17 @@ pub fn new_app_state_with_drop_counter(drop_counter: Arc<AtomicUsize>) -> AppSta
 
 /// Build app state from a backend name and optional Nemotron model directory.
 ///
-/// `engine` is `mock` (default path) or `ort` (requires `--features ort` and
-/// a model directory). Unknown names error.
+/// `engine` is [`ENGINE_MOCK`] (default path) or [`ENGINE_ORT`] (requires
+/// `--features ort` and a model directory). Unknown names error.
 pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<AppState> {
     match engine {
-        "mock" => Ok(new_app_state()),
-        "ort" => {
+        ENGINE_MOCK => Ok(new_app_state()),
+        ENGINE_ORT => {
             #[cfg(feature = "ort")]
             {
                 let dir = model_dir.ok_or_else(|| {
                     anyhow::anyhow!(
-                        "engine `ort` requires --model-dir / RMLK_NEMOTRON_MODEL_DIR"
+                        "engine `{ENGINE_ORT}` requires --model-dir / RMLK_NEMOTRON_MODEL_DIR"
                     )
                 })?;
                 let ort = OrtParakeetEngine::load(dir)
@@ -113,10 +118,10 @@ pub fn app_state_from_config(engine: &str, model_dir: Option<&Path>) -> Result<A
             #[cfg(not(feature = "ort"))]
             {
                 let _ = model_dir;
-                bail!("engine `ort` requires building with `--features ort`");
+                bail!("engine `{ENGINE_ORT}` requires building with `--features ort`");
             }
         }
-        other => bail!("unknown engine `{other}` (expected `mock` or `ort`)"),
+        other => bail!("unknown engine `{other}` (expected `{ENGINE_MOCK}` or `{ENGINE_ORT}`)"),
     }
 }
 
@@ -215,13 +220,17 @@ async fn run_session<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>) 
             }
             Message::Binary(bytes) => match ClientFrame::decode(&bytes) {
                 Ok(ClientFrame::Audio { pcm16 }) => match session.push_audio(pcm16).await {
-                    Ok(()) => match wait_partials(session).await {
-                        Ok(events) => {
-                            if send_engine_events(socket, events).await.is_err() {
+                    Ok(()) => match wait_partial(session).await {
+                        Ok(Some(event)) => {
+                            if send_frame(socket, &event.into_server_frame())
+                                .await
+                                .is_err()
+                            {
                                 cancel_and_wait(session).await;
                                 return;
                             }
                         }
+                        Ok(None) => {}
                         Err(err) => {
                             send_session_error_and_close(socket, err).await;
                             return;
@@ -239,8 +248,8 @@ async fn run_session<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>) 
                         return;
                     }
                     match wait_finalized(session).await {
-                        Ok(events) => {
-                            let _ = send_engine_events(socket, events).await;
+                        Ok(event) => {
+                            let _ = send_frame(socket, &event.into_server_frame()).await;
                             let _ = socket.send(Message::Close(None)).await;
                         }
                         Err(err) => {
@@ -302,22 +311,22 @@ async fn wait_opened<C>(session: &mut SessionHandle<C>) -> Result<(), SessionErr
     }
 }
 
-async fn wait_partials<C>(session: &mut SessionHandle<C>) -> Result<Vec<EngineEvent>, SessionError> {
+async fn wait_partial<C>(
+    session: &mut SessionHandle<C>,
+) -> Result<Option<EngineEvent>, SessionError> {
     match session.recv().await {
-        Some(ConnEvent::Partials(events)) => Ok(events),
+        Some(ConnEvent::Partial(event)) => Ok(event),
         Some(ConnEvent::Failed(err)) => Err(err),
-        Some(other) => Err(unexpected_event("Partials", other)),
-        None => Err(worker_gone("Partials")),
+        Some(other) => Err(unexpected_event("Partial", other)),
+        None => Err(worker_gone("Partial")),
     }
 }
 
-async fn wait_finalized<C>(
-    session: &mut SessionHandle<C>,
-) -> Result<Vec<EngineEvent>, SessionError> {
+async fn wait_finalized<C>(session: &mut SessionHandle<C>) -> Result<EngineEvent, SessionError> {
     loop {
         match session.recv().await {
-            Some(ConnEvent::Partials(_)) => {}
-            Some(ConnEvent::Finalized(events)) => return Ok(events),
+            Some(ConnEvent::Partial(_)) => {}
+            Some(ConnEvent::Finalized(event)) => return Ok(event),
             Some(ConnEvent::Failed(err)) => return Err(err),
             Some(other) => return Err(unexpected_event("Finalized", other)),
             None => return Err(worker_gone("Finalized")),
@@ -334,7 +343,7 @@ async fn cancel_and_wait<C>(session: &mut SessionHandle<C>) {
         match session.recv().await {
             Some(ConnEvent::Cancelled) | Some(ConnEvent::Finalized(_)) => return,
             Some(ConnEvent::Failed(_)) => return,
-            Some(ConnEvent::Partials(_)) | Some(ConnEvent::Opened) => {}
+            Some(ConnEvent::Partial(_)) | Some(ConnEvent::Opened) => {}
             None => return,
         }
     }
@@ -349,16 +358,6 @@ async fn send_session_error_and_close(socket: &mut WebSocket, err: SessionError)
             send_error_and_close(socket, error_code::INTERNAL, error_message::INTERNAL).await;
         }
     }
-}
-
-async fn send_engine_events(
-    socket: &mut WebSocket,
-    events: Vec<EngineEvent>,
-) -> Result<(), ()> {
-    for event in events {
-        send_frame(socket, &event.into_server_frame()).await?;
-    }
-    Ok(())
 }
 
 async fn recv_binary_frame(socket: &mut WebSocket) -> Option<axum::body::Bytes> {
@@ -430,7 +429,9 @@ mod tests {
     use tokio::sync::oneshot;
     use tower::ServiceExt;
 
-    use super::{app_state_from_config, new_app_state, router, serve_with_state};
+    use super::{
+        app_state_from_config, new_app_state, router, serve_with_state, ENGINE_MOCK, ENGINE_ORT,
+    };
 
     #[tokio::test]
     async fn health_returns_ok() {
@@ -495,8 +496,8 @@ mod tests {
 
     #[tokio::test]
     async fn app_state_from_config_defaults_to_mock() {
-        let state = app_state_from_config("mock", None).unwrap();
-        assert_eq!(state.engine_name(), "mock");
+        let state = app_state_from_config(ENGINE_MOCK, None).unwrap();
+        assert_eq!(state.engine_name(), ENGINE_MOCK);
     }
 
     #[test]
@@ -511,17 +512,15 @@ mod tests {
     fn app_state_from_config_ort_without_feature_or_dir_fails_clearly() {
         #[cfg(not(feature = "ort"))]
         {
-            let Err(err) = app_state_from_config("ort", Some(std::path::Path::new("/tmp"))) else {
+            let Err(err) = app_state_from_config(ENGINE_ORT, Some(std::path::Path::new("/tmp")))
+            else {
                 panic!("expected feature error");
             };
-            assert!(
-                err.to_string().contains("--features ort"),
-                "{err}"
-            );
+            assert!(err.to_string().contains("--features ort"), "{err}");
         }
         #[cfg(feature = "ort")]
         {
-            let Err(err) = app_state_from_config("ort", None) else {
+            let Err(err) = app_state_from_config(ENGINE_ORT, None) else {
                 panic!("expected model-dir error");
             };
             assert!(

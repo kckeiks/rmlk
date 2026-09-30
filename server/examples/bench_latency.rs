@@ -45,7 +45,10 @@ enum Pace {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "bench_latency", about = "N=1 WS chunk e2e latency against rmlk-server")]
+#[command(
+    name = "bench_latency",
+    about = "N=1 WS chunk e2e latency against rmlk-server"
+)]
 struct Args {
     /// WebSocket URL (`ws://host:port/ws`).
     #[arg(long, default_value = "ws://127.0.0.1:8080/ws")]
@@ -198,7 +201,9 @@ async fn run_utterance(args: &Args, chunks: &[Vec<i16>]) -> Result<UtteranceStat
             Pace::Realtime => {
                 let next_slot = pace_origin + chunk_dur * (idx as u32 + 2);
                 let until_next = next_slot.saturating_duration_since(Instant::now());
-                until_next.min(partial_timeout).max(Duration::from_millis(1))
+                until_next
+                    .min(partial_timeout)
+                    .max(Duration::from_millis(1))
             }
             Pace::Asap => partial_timeout,
         };
@@ -298,17 +303,14 @@ fn testdata_dir() -> PathBuf {
 }
 
 fn load_wav_pcm16(path: &Path) -> Result<Vec<i16>> {
-    let mut reader = hound::WavReader::open(path)
-        .with_context(|| format!("open WAV {}", path.display()))?;
+    let mut reader =
+        hound::WavReader::open(path).with_context(|| format!("open WAV {}", path.display()))?;
     let spec = reader.spec();
     if spec.channels != 1 {
         bail!("WAV must be mono (got {} channels)", spec.channels);
     }
     if spec.sample_rate != SAMPLE_RATE_HZ {
-        bail!(
-            "WAV must be {SAMPLE_RATE_HZ} Hz (got {})",
-            spec.sample_rate
-        );
+        bail!("WAV must be {SAMPLE_RATE_HZ} Hz (got {})", spec.sample_rate);
     }
     if spec.sample_format != hound::SampleFormat::Int || spec.bits_per_sample != 16 {
         bail!("WAV must be PCM16");

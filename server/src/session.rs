@@ -2,8 +2,8 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -153,19 +153,16 @@ impl<C> StreamState<C> {
         self.process_inbound(engine)
     }
 
-    /// Flush remaining audio through `engine` and return emitted events.
+    /// Finalize through `engine` and return the final transcript event.
     pub fn finalize<E: Engine<CallState = C>>(
         mut self,
         engine: &mut E,
-    ) -> Result<Vec<EngineEvent>, SessionError> {
+    ) -> Result<EngineEvent, SessionError> {
         Ok(engine.finalize(&mut self)?)
     }
 
     /// Cancel through `engine` without a final transcript, then drop state.
-    pub fn cancel<E: Engine<CallState = C>>(
-        mut self,
-        engine: &mut E,
-    ) -> Result<(), SessionError> {
+    pub fn cancel<E: Engine<CallState = C>>(mut self, engine: &mut E) -> Result<(), SessionError> {
         Ok(engine.cancel(&mut self)?)
     }
 }
@@ -313,8 +310,8 @@ impl<E: Engine> Sessions<E> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use super::{SessionError, SessionId, SessionRegistry, Sessions, StreamState};
     use crate::engine::{EngineEvent, MockEngine};
@@ -423,12 +420,12 @@ mod tests {
         let (id, mut state) = sessions.open();
         state.push_audio(sessions.engine_mut(), &[0]).unwrap();
 
-        let events = state.finalize(sessions.engine_mut()).unwrap();
+        let event = state.finalize(sessions.engine_mut()).unwrap();
         assert_eq!(
-            events,
-            vec![EngineEvent::Final {
+            event,
+            EngineEvent::Final {
                 text: "final-1".into()
-            }]
+            }
         );
         sessions.unregister(id).unwrap();
         assert!(sessions.is_empty());
@@ -533,16 +530,16 @@ mod tests {
 
         assert_eq!(
             b.finalize(sessions.engine_mut()).unwrap(),
-            vec![EngineEvent::Final {
+            EngineEvent::Final {
                 text: "final-1".into()
-            }]
+            }
         );
         sessions.unregister(b_id).unwrap();
         assert_eq!(
             a.finalize(sessions.engine_mut()).unwrap(),
-            vec![EngineEvent::Final {
+            EngineEvent::Final {
                 text: "final-2".into()
-            }]
+            }
         );
         sessions.unregister(a_id).unwrap();
         assert!(sessions.is_empty());

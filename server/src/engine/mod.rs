@@ -39,38 +39,33 @@ pub enum EngineError {
 
 /// Streaming inference backend: audio chunks in, transcript events out.
 ///
-/// Lifecycle per call: [`open_stream`] → zero or more [`push_audio`] →
-/// [`finalize`] or [`cancel`].
+/// Lifecycle per call: `open_stream`, then zero or more `push_audio` calls,
+/// then either `finalize` or `cancel`.
 ///
-/// [`CallState`] is monomorphized into [`StreamState`] — no type erasure.
+/// [`CallState`] is monomorphized into [`StreamState`]; there is no type
+/// erasure.
 pub trait Engine: Send {
     /// Per-call caches / tokens / transcript owned by the connection task.
     type CallState: Send;
 
     /// Prepare per-call inference state when a session opens.
-    fn open_stream(
-        &mut self,
-        state: &mut StreamState<Self::CallState>,
-    ) -> Result<(), EngineError>;
+    fn open_stream(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError>;
 
-    /// Feed mono PCM16 samples. May emit zero or more partials.
+    /// Feed mono PCM16 samples. Emits at most one partial transcript.
     fn push_audio(
         &mut self,
         state: &mut StreamState<Self::CallState>,
         pcm16: &[i16],
-    ) -> Result<Vec<EngineEvent>, EngineError>;
+    ) -> Result<Option<EngineEvent>, EngineError>;
 
-    /// End of audio for this stream. Emits a final transcript event.
+    /// End of audio for this stream. Emits the final transcript event.
     fn finalize(
         &mut self,
         state: &mut StreamState<Self::CallState>,
-    ) -> Result<Vec<EngineEvent>, EngineError>;
+    ) -> Result<EngineEvent, EngineError>;
 
     /// Drop per-call inference state without emitting a final transcript.
-    fn cancel(
-        &mut self,
-        state: &mut StreamState<Self::CallState>,
-    ) -> Result<(), EngineError>;
+    fn cancel(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError>;
 }
 
 /// Deterministic engine for tests: text derived from chunk count only.
@@ -98,26 +93,23 @@ impl Engine for MockEngine {
         &mut self,
         state: &mut StreamState<Self::CallState>,
         _pcm16: &[i16],
-    ) -> Result<Vec<EngineEvent>, EngineError> {
+    ) -> Result<Option<EngineEvent>, EngineError> {
         let n = state.record_chunk();
-        Ok(vec![EngineEvent::Partial {
+        Ok(Some(EngineEvent::Partial {
             text: format!("partial-{n}"),
-        }])
+        }))
     }
 
     fn finalize(
         &mut self,
         state: &mut StreamState<Self::CallState>,
-    ) -> Result<Vec<EngineEvent>, EngineError> {
-        Ok(vec![EngineEvent::Final {
+    ) -> Result<EngineEvent, EngineError> {
+        Ok(EngineEvent::Final {
             text: format!("final-{}", state.chunks_pushed()),
-        }])
+        })
     }
 
-    fn cancel(
-        &mut self,
-        _state: &mut StreamState<Self::CallState>,
-    ) -> Result<(), EngineError> {
+    fn cancel(&mut self, _state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
         Ok(())
     }
 }
@@ -144,23 +136,20 @@ mod tests {
             &mut self,
             _state: &mut StreamState<Self::CallState>,
             _pcm16: &[i16],
-        ) -> Result<Vec<EngineEvent>, EngineError> {
-            Ok(Vec::new())
+        ) -> Result<Option<EngineEvent>, EngineError> {
+            Ok(None)
         }
 
         fn finalize(
             &mut self,
             _state: &mut StreamState<Self::CallState>,
-        ) -> Result<Vec<EngineEvent>, EngineError> {
-            Ok(vec![EngineEvent::Final {
+        ) -> Result<EngineEvent, EngineError> {
+            Ok(EngineEvent::Final {
                 text: String::new(),
-            }])
+            })
         }
 
-        fn cancel(
-            &mut self,
-            _state: &mut StreamState<Self::CallState>,
-        ) -> Result<(), EngineError> {
+        fn cancel(&mut self, _state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
             Ok(())
         }
     }
@@ -186,21 +175,18 @@ mod tests {
             &mut self,
             state: &mut StreamState<Self::CallState>,
             pcm16: &[i16],
-        ) -> Result<Vec<EngineEvent>, EngineError> {
+        ) -> Result<Option<EngineEvent>, EngineError> {
             MockEngine.push_audio(state, pcm16)
         }
 
         fn finalize(
             &mut self,
             state: &mut StreamState<Self::CallState>,
-        ) -> Result<Vec<EngineEvent>, EngineError> {
+        ) -> Result<EngineEvent, EngineError> {
             MockEngine.finalize(state)
         }
 
-        fn cancel(
-            &mut self,
-            _state: &mut StreamState<Self::CallState>,
-        ) -> Result<(), EngineError> {
+        fn cancel(&mut self, _state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
             self.cancels += 1;
             Ok(())
         }
@@ -242,12 +228,12 @@ mod tests {
         let mut engine: Box<dyn Engine<CallState = ()>> = Box::new(NoopEngine);
         let mut state = StreamState::new(SessionId::from_raw(1), 16);
         engine.open_stream(&mut state).unwrap();
-        assert!(engine.push_audio(&mut state, &[]).unwrap().is_empty());
+        assert!(engine.push_audio(&mut state, &[]).unwrap().is_none());
         assert_eq!(
             engine.finalize(&mut state).unwrap(),
-            vec![EngineEvent::Final {
+            EngineEvent::Final {
                 text: String::new()
-            }]
+            }
         );
     }
 
@@ -271,15 +257,15 @@ mod tests {
 
         assert_eq!(
             engine.push_audio(&mut state, &[0; 8]).unwrap(),
-            vec![EngineEvent::Partial {
+            Some(EngineEvent::Partial {
                 text: "partial-1".into()
-            }]
+            })
         );
         assert_eq!(
             engine.push_audio(&mut state, &[0]).unwrap(),
-            vec![EngineEvent::Partial {
+            Some(EngineEvent::Partial {
                 text: "partial-2".into()
-            }]
+            })
         );
         assert_eq!(state.chunks_pushed(), 2);
     }
@@ -293,9 +279,9 @@ mod tests {
         engine.push_audio(&mut state, &[]).unwrap();
         assert_eq!(
             engine.finalize(&mut state).unwrap(),
-            vec![EngineEvent::Final {
+            EngineEvent::Final {
                 text: "final-2".into()
-            }]
+            }
         );
     }
 
@@ -305,9 +291,9 @@ mod tests {
         let mut state = StreamState::default();
         assert_eq!(
             engine.finalize(&mut state).unwrap(),
-            vec![EngineEvent::Final {
+            EngineEvent::Final {
                 text: "final-0".into()
-            }]
+            }
         );
     }
 }

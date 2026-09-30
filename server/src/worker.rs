@@ -50,10 +50,10 @@ pub enum WorkItem<C> {
 pub enum ConnEvent {
     /// [`Engine::open_stream`] succeeded; the session is live.
     Opened,
-    /// One audio step produced these transcript events (may be empty).
-    Partials(Vec<EngineEvent>),
-    /// Stream finalized; includes the final transcript event(s).
-    Finalized(Vec<EngineEvent>),
+    /// One audio step ran; carries the partial transcript if one was produced.
+    Partial(Option<EngineEvent>),
+    /// Stream finalized; carries the final transcript event.
+    Finalized(EngineEvent),
     /// Stream cancelled without a final transcript.
     Cancelled,
     /// Engine or session failure; the session has been dropped.
@@ -184,7 +184,10 @@ impl<C> SessionHandle<C> {
     }
 }
 
-async fn send_item<C>(tx: &mpsc::Sender<WorkItem<C>>, item: WorkItem<C>) -> Result<(), SessionError> {
+async fn send_item<C>(
+    tx: &mpsc::Sender<WorkItem<C>>,
+    item: WorkItem<C>,
+) -> Result<(), SessionError> {
     tx.send(item)
         .await
         .map_err(|_| SessionError::Engine(EngineError::Failed("engine worker stopped".into())))
@@ -222,29 +225,47 @@ fn worker_main<E: Engine>(
                 }
             },
             WorkItem::PushAudio { id, pcm16 } => {
-                let Some(slot) = slots.get_mut(&id) else { continue };
+                let Some(slot) = slots.get_mut(&id) else {
+                    continue;
+                };
                 if slot.cancelled.load(Ordering::Acquire) {
                     continue;
                 }
                 match engine.push_audio(&mut slot.stream, &pcm16) {
-                    Ok(events) => {
-                        deliver(&mut engine, &mut slots, &live, id, ConnEvent::Partials(events));
+                    Ok(event) => {
+                        deliver(
+                            &mut engine,
+                            &mut slots,
+                            &live,
+                            id,
+                            ConnEvent::Partial(event),
+                        );
                     }
                     Err(err) => {
-                        fail(&mut engine, &mut slots, &live, id, SessionError::Engine(err));
+                        fail(
+                            &mut engine,
+                            &mut slots,
+                            &live,
+                            id,
+                            SessionError::Engine(err),
+                        );
                     }
                 }
             }
             WorkItem::FinalizeStream { id } => {
-                let Some(slot) = remove(&mut slots, &live, id) else { continue };
+                let Some(slot) = remove(&mut slots, &live, id) else {
+                    continue;
+                };
                 let event = match slot.stream.finalize(&mut engine) {
-                    Ok(events) => ConnEvent::Finalized(events),
+                    Ok(event) => ConnEvent::Finalized(event),
                     Err(err) => ConnEvent::Failed(err),
                 };
                 let _ = slot.reply_tx.send(event);
             }
             WorkItem::CancelStream { id } => {
-                let Some(slot) = remove(&mut slots, &live, id) else { continue };
+                let Some(slot) = remove(&mut slots, &live, id) else {
+                    continue;
+                };
                 let _ = slot.stream.cancel(&mut engine);
                 let _ = slot.reply_tx.send(ConnEvent::Cancelled);
             }
@@ -293,7 +314,9 @@ fn fail<E: Engine>(
     id: SessionId,
     err: SessionError,
 ) {
-    let Some(slot) = remove(slots, live, id) else { return };
+    let Some(slot) = remove(slots, live, id) else {
+        return;
+    };
     let reply_tx = slot.reply_tx.clone();
     let _ = slot.stream.cancel(engine);
     let _ = reply_tx.send(ConnEvent::Failed(err));
@@ -331,12 +354,12 @@ mod tests {
             &mut self,
             state: &mut StreamState<()>,
             pcm16: &[i16],
-        ) -> Result<Vec<EngineEvent>, EngineError> {
+        ) -> Result<Option<EngineEvent>, EngineError> {
             self.pushes.fetch_add(1, Ordering::SeqCst);
             MockEngine.push_audio(state, pcm16)
         }
 
-        fn finalize(&mut self, state: &mut StreamState<()>) -> Result<Vec<EngineEvent>, EngineError> {
+        fn finalize(&mut self, state: &mut StreamState<()>) -> Result<EngineEvent, EngineError> {
             MockEngine.finalize(state)
         }
 
@@ -368,17 +391,17 @@ mod tests {
         session.push_audio(vec![0]).await.unwrap();
         assert_eq!(
             session.recv().await,
-            Some(ConnEvent::Partials(vec![EngineEvent::Partial {
+            Some(ConnEvent::Partial(Some(EngineEvent::Partial {
                 text: "partial-1".into()
-            }]))
+            })))
         );
 
         session.finalize().await.unwrap();
         assert_eq!(
             session.recv().await,
-            Some(ConnEvent::Finalized(vec![EngineEvent::Final {
+            Some(ConnEvent::Finalized(EngineEvent::Final {
                 text: "final-1".into()
-            }]))
+            }))
         );
         assert_eq!(worker.live_sessions(), 0);
     }
@@ -407,7 +430,10 @@ mod tests {
     async fn unknown_id_is_ignored_and_worker_keeps_serving() {
         let (worker, _join) = EngineWorker::spawn(MockEngine::new());
         let ghost = SessionId::from_raw(999);
-        let mut ghost_session = worker.open(ghost, StreamState::new(ghost, 16)).await.unwrap();
+        let mut ghost_session = worker
+            .open(ghost, StreamState::new(ghost, 16))
+            .await
+            .unwrap();
         assert_eq!(ghost_session.recv().await, Some(ConnEvent::Opened));
         ghost_session.cancel().await.unwrap();
         assert_eq!(ghost_session.recv().await, Some(ConnEvent::Cancelled));

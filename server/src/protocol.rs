@@ -36,7 +36,9 @@ pub mod error_message {
 pub enum ClientFrame {
     Open,
     /// Mono PCM16 little-endian samples at 16 kHz (no WAV header).
-    Audio { pcm16: Vec<i16> },
+    Audio {
+        pcm16: Vec<i16>,
+    },
     Cancel,
     Finalize,
 }
@@ -178,7 +180,9 @@ fn decode_message(bytes: &[u8]) -> Result<(u8, &[u8]), ProtocolError> {
 }
 
 fn read_u64_le(payload: &[u8]) -> Result<u64, ProtocolError> {
-    let bytes: [u8; 8] = payload.try_into().map_err(|_| ProtocolError::InvalidPayload)?;
+    let bytes: [u8; 8] = payload
+        .try_into()
+        .map_err(|_| ProtocolError::InvalidPayload)?;
     Ok(u64::from_le_bytes(bytes))
 }
 
@@ -305,7 +309,9 @@ mod tests {
 
     #[test]
     fn partial_empty_text_round_trip() {
-        let frame = ServerFrame::Partial { text: String::new() };
+        let frame = ServerFrame::Partial {
+            text: String::new(),
+        };
         let bytes = frame.encode().unwrap();
         assert_eq!(bytes, [2, 0, 0, 0, 0]);
         assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);

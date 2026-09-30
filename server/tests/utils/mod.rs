@@ -11,10 +11,10 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use rmlk_server::http::{serve_with_state, AppState};
 use rmlk_server::protocol::{ClientFrame, ServerFrame};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -97,7 +97,12 @@ impl WsClient {
 
     /// Receive and decode the next binary server frame.
     pub async fn recv_frame(&mut self) -> ServerFrame {
-        let msg = self.ws.next().await.expect("ws stream").expect("ws message");
+        let msg = self
+            .ws
+            .next()
+            .await
+            .expect("ws stream")
+            .expect("ws message");
         let WsMessage::Binary(bytes) = msg else {
             panic!("expected binary server frame, got {msg:?}");
         };
@@ -106,7 +111,11 @@ impl WsClient {
 
     /// Receive the next WebSocket message (e.g. Close).
     pub async fn recv_raw(&mut self) -> WsMessage {
-        self.ws.next().await.expect("ws stream").expect("ws message")
+        self.ws
+            .next()
+            .await
+            .expect("ws stream")
+            .expect("ws message")
     }
 
     /// `Open` then expect `OpenAck`.
@@ -224,12 +233,10 @@ fn job_manifest_path(job: &str) -> PathBuf {
 /// Load the committed manifest for `job` (`e2e`, `stress`, …).
 pub fn load_manifest_for(job: &str) -> Manifest {
     let path = job_manifest_path(job);
-    let text = fs::read_to_string(&path).unwrap_or_else(|err| {
-        panic!("failed to read manifest {}: {err}", path.display())
-    });
-    let manifest: Manifest = serde_json::from_str(&text).unwrap_or_else(|err| {
-        panic!("failed to parse manifest {}: {err}", path.display())
-    });
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read manifest {}: {err}", path.display()));
+    let manifest: Manifest = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse manifest {}: {err}", path.display()));
     assert_eq!(
         manifest.job, job,
         "manifest job field {:?} must match filename stem {job:?}",
@@ -344,8 +351,26 @@ pub fn normalize_transcript(text: &str) -> String {
 fn is_punct(ch: char) -> bool {
     matches!(
         ch,
-        '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{'
-            | '}' | '-' | '—' | '–' | '/' | '\\' | '*'
+        '.' | ','
+            | ';'
+            | ':'
+            | '!'
+            | '?'
+            | '"'
+            | '\''
+            | '`'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '-'
+            | '—'
+            | '–'
+            | '/'
+            | '\\'
+            | '*'
     )
 }
 
@@ -371,9 +396,8 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Read a packed 16 kHz mono PCM16 WAV into samples.
 pub fn load_wav_pcm16(path: &Path) -> Vec<i16> {
-    let mut reader = hound::WavReader::open(path).unwrap_or_else(|err| {
-        panic!("failed to open WAV {}: {err}", path.display())
-    });
+    let mut reader = hound::WavReader::open(path)
+        .unwrap_or_else(|err| panic!("failed to open WAV {}: {err}", path.display()));
     let spec = reader.spec();
     assert_eq!(spec.channels, 1, "WAV must be mono");
     assert_eq!(spec.sample_rate, 16_000, "WAV must be 16 kHz");

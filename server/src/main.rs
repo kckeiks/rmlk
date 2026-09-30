@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
+use rmlk_server::http::{ENGINE_MOCK, ENGINE_ORT};
 use tokio::net::TcpListener;
 
 #[derive(Debug, Clone, Default, ValueEnum)]
@@ -17,8 +18,8 @@ enum EngineChoice {
 impl EngineChoice {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Mock => "mock",
-            Self::Ort => "ort",
+            Self::Mock => ENGINE_MOCK,
+            Self::Ort => ENGINE_ORT,
         }
     }
 }
@@ -42,10 +43,8 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let state = rmlk_server::http::app_state_from_config(
-        args.engine.as_str(),
-        args.model_dir.as_deref(),
-    )?;
+    let state =
+        rmlk_server::http::app_state_from_config(args.engine.as_str(), args.model_dir.as_deref())?;
     let listener = TcpListener::bind(args.bind).await?;
     println!(
         "infer-server {} listening on {} (engine={})",
@@ -53,11 +52,7 @@ async fn main() -> Result<()> {
         listener.local_addr()?,
         state.engine_name()
     );
-    rmlk_server::http::serve_with_state(
-        listener,
-        rmlk_server::http::shutdown_on_ctrl_c(),
-        state,
-    )
-    .await?;
+    rmlk_server::http::serve_with_state(listener, rmlk_server::http::shutdown_on_ctrl_c(), state)
+        .await?;
     Ok(())
 }

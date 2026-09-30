@@ -54,7 +54,7 @@ mod ort_ws {
     use std::path::Path;
 
     use rmlk_server::engine::{CHUNK_SAMPLES, MODEL_DIR_ENV};
-    use rmlk_server::http::app_state_from_config;
+    use rmlk_server::http::{app_state_from_config, ENGINE_ORT};
     use rmlk_server::protocol::{ClientFrame, ServerFrame};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -64,9 +64,9 @@ mod ort_ws {
         let model_dir = std::env::var(MODEL_DIR_ENV)
             .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
         let manifest = load_manifest();
-        let state =
-            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
-        assert_eq!(state.engine_name(), "ort");
+        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+            .expect("load ort app state");
+        assert_eq!(state.engine_name(), ENGINE_ORT);
 
         let server = TestServer::spawn(state).await;
 
@@ -121,9 +121,9 @@ mod ort_ws {
             .clips
             .first()
             .expect("e2e manifest must list at least one clip");
-        let state =
-            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
-        assert_eq!(state.engine_name(), "ort");
+        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+            .expect("load ort app state");
+        assert_eq!(state.engine_name(), ENGINE_ORT);
 
         let server = TestServer::spawn(state).await;
         let wav_path = resolve_wav(&manifest, clip);
@@ -196,23 +196,22 @@ mod ort_ws {
             .clips
             .first()
             .expect("e2e manifest must list at least one clip");
-        let state =
-            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
-        assert_eq!(state.engine_name(), "ort");
+        let state = app_state_from_config(ENGINE_ORT, Some(Path::new(&model_dir)))
+            .expect("load ort app state");
+        assert_eq!(state.engine_name(), ENGINE_ORT);
 
         let server = TestServer::spawn(state).await;
         let wav_path = resolve_wav(&manifest, clip);
         let pcm = load_wav_pcm16(&wav_path);
         let chunks = pcm_chunks(&pcm, CHUNK_SAMPLES);
-        assert!(
-            !chunks.is_empty(),
-            "{}: need at least one chunk",
-            clip.id
-        );
+        assert!(!chunks.is_empty(), "{}: need at least one chunk", clip.id);
 
         let mut client = server.connect().await;
         let session_id = client.open_session().await;
-        println!("{} session_id={session_id} finalize then late audio", clip.id);
+        println!(
+            "{} session_id={session_id} finalize then late audio",
+            clip.id
+        );
         assert_eq!(server.state.live_session_count().await, 1);
 
         for chunk in &chunks {
