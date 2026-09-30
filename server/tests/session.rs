@@ -395,3 +395,55 @@ async fn disconnect_on_a_does_not_affect_b() {
 
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn rapid_open_close_churn_no_map_leak() {
+    const ITERATIONS: usize = 64;
+    let drops = Arc::new(AtomicUsize::new(0));
+    let state = new_app_state_with_drop_counter(Arc::clone(&drops));
+    let server = TestServer::spawn(state).await;
+
+    for i in 0..ITERATIONS {
+        let mut client = server.connect().await;
+        client.open_session().await;
+        assert_eq!(server.state.live_session_count().await, 1);
+
+        // Rotate end paths so churn hits disconnect, cancel, and finalize cleanup.
+        match i % 3 {
+            0 => client.close().await,
+            1 => {
+                client.send_frame(&ClientFrame::Cancel).await;
+                assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
+            }
+            _ => {
+                client.send_frame(&ClientFrame::Finalize).await;
+                assert!(matches!(
+                    client.recv_frame().await,
+                    ServerFrame::Final { .. }
+                ));
+                assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
+            }
+        }
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while server.state.live_session_count().await != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("session leak after open/close iteration {i}"));
+    }
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while drops.load(Ordering::SeqCst) != ITERATIONS {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("every stream state should drop after churn");
+
+    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(drops.load(Ordering::SeqCst), ITERATIONS);
+
+    server.shutdown().await;
+}
