@@ -1,8 +1,7 @@
-//! ASR e2e: normalize helpers + ignored real-engine WebSocket gate.
+//! ASR e2e: normalize helpers + ignored real-engine WebSocket gates.
 //!
 //! Always-on tests cover [`utils::normalize_transcript`] edge cases.
-//! Ignored ORT tests stream each `e2e.json` clip over WS and require Final
-//! text to match the manifest `reference` after normalize.
+//! Ignored ORT tests stream `e2e.json` clips over WS.
 //!
 //! ```text
 //! # pack WAVs + rewrite e2e manifest (once):
@@ -62,12 +61,11 @@ mod ort_ws {
     #[tokio::test]
     #[ignore = "requires model + packed WAVs; set RMLK_NEMOTRON_MODEL_DIR (see tests.md)"]
     async fn e2e_clips_match_reference_over_ws() {
-        let model_dir = std::env::var(MODEL_DIR_ENV).unwrap_or_else(|_| {
-            panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory")
-        });
+        let model_dir = std::env::var(MODEL_DIR_ENV)
+            .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
         let manifest = load_manifest();
-        let state = app_state_from_config("ort", Some(Path::new(&model_dir)))
-            .expect("load ort app state");
+        let state =
+            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
         assert_eq!(state.engine_name(), "ort");
 
         let server = TestServer::spawn(state).await;
@@ -108,6 +106,81 @@ mod ort_ws {
 
             assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
         }
+
+        server.shutdown().await;
+    }
+
+    /// Cancel after streaming only part of a clip: Close, no Final, registry empty.
+    #[tokio::test]
+    #[ignore = "requires model + packed WAVs; set RMLK_NEMOTRON_MODEL_DIR (see tests.md)"]
+    async fn cancel_mid_utterance_over_ws() {
+        let model_dir = std::env::var(MODEL_DIR_ENV)
+            .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
+        let manifest = load_manifest();
+        let clip = manifest
+            .clips
+            .first()
+            .expect("e2e manifest must list at least one clip");
+        let state =
+            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
+        assert_eq!(state.engine_name(), "ort");
+
+        let server = TestServer::spawn(state).await;
+        let wav_path = resolve_wav(&manifest, clip);
+        let pcm = load_wav_pcm16(&wav_path);
+        let chunks = pcm_chunks(&pcm, CHUNK_SAMPLES);
+        assert!(
+            chunks.len() >= 2,
+            "{}: need at least 2 chunks to cancel mid-utterance, got {}",
+            clip.id,
+            chunks.len()
+        );
+        let mid = chunks.len() / 2;
+
+        let mut client = server.connect().await;
+        let session_id = client.open_session().await;
+        println!(
+            "{} session_id={session_id} cancel after {mid}/{} chunks",
+            clip.id,
+            chunks.len()
+        );
+        assert_eq!(server.state.live_session_count().await, 1);
+
+        for chunk in &chunks[..mid] {
+            client
+                .send_frame(&ClientFrame::Audio {
+                    pcm16: chunk.clone(),
+                })
+                .await;
+        }
+        client.send_frame(&ClientFrame::Cancel).await;
+
+        // Drain any Partial frames still buffered from the last Audio, then Close.
+        // A Final must never appear after Cancel.
+        loop {
+            match client.recv_raw().await {
+                WsMessage::Binary(bytes) => match ServerFrame::decode(&bytes) {
+                    Ok(ServerFrame::Partial { text }) => {
+                        println!("{} partial (pre-cancel drain): {text}", clip.id);
+                    }
+                    Ok(ServerFrame::Final { text }) => {
+                        panic!("{}: unexpected Final after Cancel: {text}", clip.id);
+                    }
+                    Ok(other) => panic!("{}: unexpected server frame: {other:?}", clip.id),
+                    Err(err) => panic!("{}: decode error: {err}", clip.id),
+                },
+                WsMessage::Close(_) => break,
+                other => panic!("{}: unexpected ws message: {other:?}", clip.id),
+            }
+        }
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while server.state.live_session_count().await != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("session should unregister after mid-utterance cancel");
 
         server.shutdown().await;
     }
