@@ -1,6 +1,6 @@
-//! Per-call streaming session state and thin live-session registry.
+//! Per-call streaming session state.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::engine::{Engine, EngineError, EngineEvent};
 
 /// Default inbound audio queue depth per session.
-const DEFAULT_MAILBOX_CAPACITY: usize = 16;
+pub const DEFAULT_MAILBOX_CAPACITY: usize = 16;
 
 /// Opaque handle for a live streaming call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -28,10 +28,11 @@ impl SessionId {
     }
 }
 
-/// Per-call streaming state (owned by the connection task on the data path).
+/// Per-call streaming state. The connection task creates it and hands it to
+/// the engine worker, which owns it for the life of the session.
 ///
-/// `C` is the engine’s [`Engine::CallState`] (caches / tokens / transcript).
-/// Protocol code must not depend on `C`’s fields — only the engine does.
+/// `C` is the engine's [`Engine::CallState`] (caches, tokens, transcript).
+/// Protocol code must not depend on the fields of `C`; only the engine does.
 pub struct StreamState<C = ()> {
     session_id: SessionId,
     chunks_pushed: u64,
@@ -181,131 +182,13 @@ impl<C> Default for StreamState<C> {
     }
 }
 
-/// Session lookup and engine failures.
+/// Session and engine failures.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SessionError {
-    #[error("unknown session {0:?}")]
-    Unknown(SessionId),
     #[error("session mailbox full")]
     Busy,
     #[error(transparent)]
     Engine(#[from] EngineError),
-}
-
-/// Thin registry of live session ids (no stream state on the data path).
-#[derive(Debug)]
-pub struct SessionRegistry {
-    next_id: u64,
-    live: HashSet<SessionId>,
-    mailbox_capacity: usize,
-}
-
-impl SessionRegistry {
-    /// Create an empty registry.
-    pub fn new(mailbox_capacity: usize) -> Self {
-        Self {
-            next_id: 0,
-            live: HashSet::new(),
-            mailbox_capacity,
-        }
-    }
-
-    /// Allocate an id, register it as live, and return owned stream state.
-    pub fn open<C>(&mut self) -> (SessionId, StreamState<C>) {
-        let id = SessionId::from_raw(self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
-        self.live.insert(id);
-        (id, StreamState::new(id, self.mailbox_capacity))
-    }
-
-    /// Remove a live id from the registry (caller drops owned [`StreamState`]).
-    pub fn unregister(&mut self, id: SessionId) -> Result<(), SessionError> {
-        if self.live.remove(&id) {
-            Ok(())
-        } else {
-            Err(SessionError::Unknown(id))
-        }
-    }
-
-    /// Whether `id` is currently registered.
-    pub fn contains(&self, id: SessionId) -> bool {
-        self.live.contains(&id)
-    }
-
-    /// Number of live sessions.
-    pub fn len(&self) -> usize {
-        self.live.len()
-    }
-
-    /// Whether there are no live sessions.
-    pub fn is_empty(&self) -> bool {
-        self.live.is_empty()
-    }
-}
-
-impl Default for SessionRegistry {
-    fn default() -> Self {
-        Self::new(DEFAULT_MAILBOX_CAPACITY)
-    }
-}
-
-/// Registry plus a shared engine handle for tests and the HTTP layer.
-#[derive(Debug)]
-pub struct Sessions<E> {
-    registry: SessionRegistry,
-    engine: E,
-}
-
-impl<E> Sessions<E> {
-    /// Create a session registry backed by `engine`.
-    pub fn new(engine: E) -> Self {
-        Self::with_mailbox_capacity(engine, DEFAULT_MAILBOX_CAPACITY)
-    }
-
-    /// Create a registry with a per-session inbound mailbox capacity.
-    pub fn with_mailbox_capacity(engine: E, mailbox_capacity: usize) -> Self {
-        Self {
-            registry: SessionRegistry::new(mailbox_capacity),
-            engine,
-        }
-    }
-
-    /// Number of live sessions.
-    pub fn len(&self) -> usize {
-        self.registry.len()
-    }
-
-    /// Whether there are no live sessions.
-    pub fn is_empty(&self) -> bool {
-        self.registry.is_empty()
-    }
-
-    /// Whether `id` is registered.
-    pub fn contains(&self, id: SessionId) -> bool {
-        self.registry.contains(id)
-    }
-
-    /// Borrow the engine.
-    pub fn engine(&self) -> &E {
-        &self.engine
-    }
-
-    /// Borrow the engine mutably.
-    pub fn engine_mut(&mut self) -> &mut E {
-        &mut self.engine
-    }
-
-    /// Unregister a live id (caller drops owned stream state).
-    pub fn unregister(&mut self, id: SessionId) -> Result<(), SessionError> {
-        self.registry.unregister(id)
-    }
-}
-
-impl<E: Engine> Sessions<E> {
-    /// Open a session: register id and return owned stream state.
-    pub fn open(&mut self) -> (SessionId, StreamState<E::CallState>) {
-        self.registry.open()
-    }
 }
 
 #[cfg(test)]
@@ -313,19 +196,16 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use super::{SessionError, SessionId, SessionRegistry, Sessions, StreamState};
+    use super::{SessionError, SessionId, StreamState};
     use crate::engine::{EngineEvent, MockEngine};
 
     #[test]
-    fn open_registers_and_returns_owned_state() {
-        let mut registry = SessionRegistry::new(16);
-        assert!(registry.is_empty());
-
-        let (id, state) = registry.open::<()>();
-        assert_eq!(registry.len(), 1);
-        assert!(registry.contains(id));
+    fn new_state_starts_empty() {
+        let id = SessionId::from_raw(7);
+        let state = StreamState::<()>::new(id, 16);
         assert_eq!(state.session_id(), id);
         assert_eq!(state.chunks_pushed(), 0);
+        assert_eq!(state.mailbox_len(), 0);
         assert!(!state.has_engine_call());
     }
 
@@ -378,31 +258,10 @@ mod tests {
     }
 
     #[test]
-    fn open_allocates_distinct_ids() {
-        let mut registry = SessionRegistry::new(16);
-        let (a, _) = registry.open::<()>();
-        let (b, _) = registry.open::<()>();
-        assert_ne!(a, b);
-        assert_eq!(registry.len(), 2);
-    }
-
-    #[test]
-    fn unregister_unknown_errors() {
-        let mut registry = SessionRegistry::new(16);
-        let id = SessionId::from_raw(42);
-        assert_eq!(
-            registry.unregister(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
-    }
-
-    #[test]
-    fn push_uses_owned_state_not_registry() {
-        let mut registry = SessionRegistry::new(16);
+    fn push_audio_emits_partial_and_counts_chunk() {
         let mut engine = MockEngine::new();
-        let (id, mut state) = registry.open();
+        let mut state = StreamState::new(SessionId::from_raw(1), 16);
 
-        // Data path: only owned state + engine (registry not borrowed).
         let events = state.push_audio(&mut engine, &[0, 1, 2]).unwrap();
         assert_eq!(
             events,
@@ -411,71 +270,48 @@ mod tests {
             }]
         );
         assert_eq!(state.chunks_pushed(), 1);
-        assert!(registry.contains(id));
     }
 
     #[test]
-    fn finalize_owned_then_unregister() {
-        let mut sessions = Sessions::new(MockEngine::new());
-        let (id, mut state) = sessions.open();
-        state.push_audio(sessions.engine_mut(), &[0]).unwrap();
+    fn finalize_consumes_state_and_reports_chunk_count() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut engine = MockEngine::new();
+        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        state.track_drops(Arc::clone(&drops));
+        state.push_audio(&mut engine, &[0]).unwrap();
 
-        let event = state.finalize(sessions.engine_mut()).unwrap();
+        let event = state.finalize(&mut engine).unwrap();
         assert_eq!(
             event,
             EngineEvent::Final {
                 text: "final-1".into()
             }
         );
-        sessions.unregister(id).unwrap();
-        assert!(sessions.is_empty());
-        assert_eq!(
-            sessions.unregister(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
-    }
-
-    #[test]
-    fn cancel_unregisters_and_drops_state() {
-        let drops = Arc::new(AtomicUsize::new(0));
-        let mut sessions = Sessions::new(MockEngine::new());
-        let (id, mut state) = sessions.open();
-        state.track_drops(Arc::clone(&drops));
-        state.push_audio(sessions.engine_mut(), &[0]).unwrap();
-
-        state.cancel(sessions.engine_mut()).unwrap();
-        sessions.unregister(id).unwrap();
-        assert!(sessions.is_empty());
         assert_eq!(drops.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            sessions.unregister(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
     }
 
     #[test]
-    fn duplicate_unregister_after_finalize_errors() {
-        let mut sessions = Sessions::new(MockEngine::new());
-        let (id, state) = sessions.open();
-        let _ = state.finalize(sessions.engine_mut()).unwrap();
-        sessions.unregister(id).unwrap();
-        assert_eq!(
-            sessions.unregister(id).unwrap_err(),
-            SessionError::Unknown(id)
-        );
+    fn cancel_consumes_and_drops_state() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut engine = MockEngine::new();
+        let mut state = StreamState::new(SessionId::from_raw(1), 16);
+        state.track_drops(Arc::clone(&drops));
+        state.push_audio(&mut engine, &[0]).unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+
+        state.cancel(&mut engine).unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn dropping_owned_state_runs_drop_hooks() {
+    fn dropping_state_runs_drop_hooks() {
         let drops = Arc::new(AtomicUsize::new(0));
         {
-            let mut registry = SessionRegistry::new(16);
-            let (_, mut a) = registry.open::<()>();
-            let (_, mut b) = registry.open::<()>();
+            let mut a = StreamState::<()>::new(SessionId::from_raw(1), 16);
+            let mut b = StreamState::<()>::new(SessionId::from_raw(2), 16);
             a.track_drops(Arc::clone(&drops));
             b.track_drops(Arc::clone(&drops));
             assert_eq!(drops.load(Ordering::SeqCst), 0);
-            let _ = registry;
         }
         assert_eq!(drops.load(Ordering::SeqCst), 2);
     }
@@ -501,25 +337,24 @@ mod tests {
 
     #[test]
     fn two_sessions_interleaved_no_crosstalk() {
-        let mut sessions = Sessions::new(MockEngine::new());
-        let (a_id, mut a) = sessions.open();
-        let (b_id, mut b) = sessions.open();
-        assert_ne!(a_id, b_id);
+        let mut engine = MockEngine::new();
+        let mut a = StreamState::new(SessionId::from_raw(1), 16);
+        let mut b = StreamState::new(SessionId::from_raw(2), 16);
 
         assert_eq!(
-            a.push_audio(sessions.engine_mut(), &[0]).unwrap(),
+            a.push_audio(&mut engine, &[0]).unwrap(),
             vec![EngineEvent::Partial {
                 text: "partial-1".into()
             }]
         );
         assert_eq!(
-            b.push_audio(sessions.engine_mut(), &[0]).unwrap(),
+            b.push_audio(&mut engine, &[0]).unwrap(),
             vec![EngineEvent::Partial {
                 text: "partial-1".into()
             }]
         );
         assert_eq!(
-            a.push_audio(sessions.engine_mut(), &[0]).unwrap(),
+            a.push_audio(&mut engine, &[0]).unwrap(),
             vec![EngineEvent::Partial {
                 text: "partial-2".into()
             }]
@@ -529,19 +364,16 @@ mod tests {
         assert_eq!(b.chunks_pushed(), 1);
 
         assert_eq!(
-            b.finalize(sessions.engine_mut()).unwrap(),
+            b.finalize(&mut engine).unwrap(),
             EngineEvent::Final {
                 text: "final-1".into()
             }
         );
-        sessions.unregister(b_id).unwrap();
         assert_eq!(
-            a.finalize(sessions.engine_mut()).unwrap(),
+            a.finalize(&mut engine).unwrap(),
             EngineEvent::Final {
                 text: "final-2".into()
             }
         );
-        sessions.unregister(a_id).unwrap();
-        assert!(sessions.is_empty());
     }
 }

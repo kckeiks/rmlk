@@ -42,8 +42,8 @@ pub enum EngineError {
 /// Lifecycle per call: `open_stream`, then zero or more `push_audio` calls,
 /// then either `finalize` or `cancel`.
 ///
-/// [`CallState`] is monomorphized into [`StreamState`]; there is no type
-/// erasure.
+/// [`Engine::CallState`] is monomorphized into [`StreamState`]; there is no
+/// type erasure.
 pub trait Engine: Send {
     /// Per-call caches / tokens / transcript owned by the connection task.
     type CallState: Send;

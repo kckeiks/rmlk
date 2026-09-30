@@ -118,7 +118,7 @@ async fn finalize_then_audio_does_not_emit_another_partial() {
     let mut client = server.connect().await;
 
     client.open_session().await;
-    assert_eq!(server.state.live_session_count().await, 1);
+    assert_eq!(server.state.live_session_count(), 1);
 
     client
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
@@ -148,14 +148,14 @@ async fn finalize_then_audio_does_not_emit_another_partial() {
     assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 0 || drops.load(Ordering::SeqCst) != 1 {
+        while server.state.live_session_count() != 0 || drops.load(Ordering::SeqCst) != 1 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .expect("session should be freed after finalize (late audio ignored)");
 
-    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(server.state.live_session_count(), 0);
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 
     server.shutdown().await;
@@ -169,7 +169,7 @@ async fn disconnect_frees_session() {
     let mut client = server.connect().await;
 
     client.open_session().await;
-    assert_eq!(server.state.live_session_count().await, 1);
+    assert_eq!(server.state.live_session_count(), 1);
 
     client
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
@@ -179,14 +179,14 @@ async fn disconnect_frees_session() {
     client.close().await;
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 0 || drops.load(Ordering::SeqCst) != 1 {
+        while server.state.live_session_count() != 0 || drops.load(Ordering::SeqCst) != 1 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .expect("session should be freed after client disconnect");
 
-    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(server.state.live_session_count(), 0);
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 
     server.shutdown().await;
@@ -201,7 +201,7 @@ async fn two_clients_distinct_ids_and_finals() {
     let id_a = a.open_session().await;
     let id_b = b.open_session().await;
     assert_ne!(id_a, id_b);
-    assert_eq!(server.state.live_session_count().await, 2);
+    assert_eq!(server.state.live_session_count(), 2);
 
     a.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     assert_eq!(
@@ -245,7 +245,7 @@ async fn two_clients_distinct_ids_and_finals() {
     assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 0 {
+        while server.state.live_session_count() != 0 {
             tokio::task::yield_now().await;
         }
     })
@@ -263,7 +263,7 @@ async fn cancel_mid_utterance_closes_without_final() {
     let mut client = server.connect().await;
 
     client.open_session().await;
-    assert_eq!(server.state.live_session_count().await, 1);
+    assert_eq!(server.state.live_session_count(), 1);
 
     // Stream enough audio that we are clearly mid-utterance, then cancel.
     client
@@ -292,14 +292,14 @@ async fn cancel_mid_utterance_closes_without_final() {
     assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 0 || drops.load(Ordering::SeqCst) != 1 {
+        while server.state.live_session_count() != 0 || drops.load(Ordering::SeqCst) != 1 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .expect("session should be freed after mid-utterance cancel");
 
-    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(server.state.live_session_count(), 0);
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 
     server.shutdown().await;
@@ -313,7 +313,7 @@ async fn cancel_on_a_does_not_affect_b() {
 
     a.open_session().await;
     b.open_session().await;
-    assert_eq!(server.state.live_session_count().await, 2);
+    assert_eq!(server.state.live_session_count(), 2);
 
     a.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     let _ = a.recv_frame().await;
@@ -321,7 +321,7 @@ async fn cancel_on_a_does_not_affect_b() {
     assert!(matches!(a.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 1 {
+        while server.state.live_session_count() != 1 {
             tokio::task::yield_now().await;
         }
     })
@@ -353,7 +353,7 @@ async fn cancel_on_a_does_not_affect_b() {
     assert!(matches!(b.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 0 {
+        while server.state.live_session_count() != 0 {
             tokio::task::yield_now().await;
         }
     })
@@ -377,7 +377,7 @@ async fn disconnect_on_a_does_not_affect_b() {
     a.close().await;
 
     tokio::time::timeout(Duration::from_secs(2), async {
-        while server.state.live_session_count().await != 1 {
+        while server.state.live_session_count() != 1 {
             tokio::task::yield_now().await;
         }
     })
@@ -406,7 +406,7 @@ async fn rapid_open_close_churn_no_map_leak() {
     for i in 0..ITERATIONS {
         let mut client = server.connect().await;
         client.open_session().await;
-        assert_eq!(server.state.live_session_count().await, 1);
+        assert_eq!(server.state.live_session_count(), 1);
 
         // Rotate end paths so churn hits disconnect, cancel, and finalize cleanup.
         match i % 3 {
@@ -426,7 +426,7 @@ async fn rapid_open_close_churn_no_map_leak() {
         }
 
         tokio::time::timeout(Duration::from_secs(2), async {
-            while server.state.live_session_count().await != 0 {
+            while server.state.live_session_count() != 0 {
                 tokio::task::yield_now().await;
             }
         })
@@ -442,7 +442,7 @@ async fn rapid_open_close_churn_no_map_leak() {
     .await
     .expect("every stream state should drop after churn");
 
-    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(server.state.live_session_count(), 0);
     assert_eq!(drops.load(Ordering::SeqCst), ITERATIONS);
 
     server.shutdown().await;

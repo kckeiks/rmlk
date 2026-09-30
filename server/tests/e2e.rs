@@ -144,7 +144,7 @@ mod ort_ws {
             clip.id,
             chunks.len()
         );
-        assert_eq!(server.state.live_session_count().await, 1);
+        assert_eq!(server.state.live_session_count(), 1);
 
         for chunk in &chunks[..mid] {
             client
@@ -175,7 +175,7 @@ mod ort_ws {
         }
 
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while server.state.live_session_count().await != 0 {
+            while server.state.live_session_count() != 0 {
                 tokio::task::yield_now().await;
             }
         })
@@ -212,7 +212,7 @@ mod ort_ws {
             "{} session_id={session_id} finalize then late audio",
             clip.id
         );
-        assert_eq!(server.state.live_session_count().await, 1);
+        assert_eq!(server.state.live_session_count(), 1);
 
         for chunk in &chunks {
             client
@@ -258,7 +258,7 @@ mod ort_ws {
         assert!(saw_final, "{}: expected Final before Close", clip.id);
 
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while server.state.live_session_count().await != 0 {
+            while server.state.live_session_count() != 0 {
                 tokio::task::yield_now().await;
             }
         })
