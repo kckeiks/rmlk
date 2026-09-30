@@ -184,4 +184,88 @@ mod ort_ws {
 
         server.shutdown().await;
     }
+
+    /// Finalize then pipeline extra Audio: one Final, Close, no second utterance.
+    #[tokio::test]
+    #[ignore = "requires model + packed WAVs; set RMLK_NEMOTRON_MODEL_DIR (see tests.md)"]
+    async fn finalize_then_audio_rejected_over_ws() {
+        let model_dir = std::env::var(MODEL_DIR_ENV)
+            .unwrap_or_else(|_| panic!("{MODEL_DIR_ENV} must point at a Nemotron ONNX directory"));
+        let manifest = load_manifest();
+        let clip = manifest
+            .clips
+            .first()
+            .expect("e2e manifest must list at least one clip");
+        let state =
+            app_state_from_config("ort", Some(Path::new(&model_dir))).expect("load ort app state");
+        assert_eq!(state.engine_name(), "ort");
+
+        let server = TestServer::spawn(state).await;
+        let wav_path = resolve_wav(&manifest, clip);
+        let pcm = load_wav_pcm16(&wav_path);
+        let chunks = pcm_chunks(&pcm, CHUNK_SAMPLES);
+        assert!(
+            !chunks.is_empty(),
+            "{}: need at least one chunk",
+            clip.id
+        );
+
+        let mut client = server.connect().await;
+        let session_id = client.open_session().await;
+        println!("{} session_id={session_id} finalize then late audio", clip.id);
+        assert_eq!(server.state.live_session_count().await, 1);
+
+        for chunk in &chunks {
+            client
+                .send_frame(&ClientFrame::Audio {
+                    pcm16: chunk.clone(),
+                })
+                .await;
+        }
+
+        // Pipeline Finalize with an extra Audio chunk. Trailing audio must not
+        // start another utterance (no second Final / post-Final Partial).
+        client.send_frame(&ClientFrame::Finalize).await;
+        client
+            .send_frame(&ClientFrame::Audio {
+                pcm16: vec![0; CHUNK_SAMPLES],
+            })
+            .await;
+
+        let mut saw_final = false;
+        loop {
+            match client.recv_raw().await {
+                WsMessage::Binary(bytes) => match ServerFrame::decode(&bytes) {
+                    Ok(ServerFrame::Partial { text }) => {
+                        assert!(
+                            !saw_final,
+                            "{}: Partial after Final (late audio was applied): {text}",
+                            clip.id
+                        );
+                        println!("{} partial: {text}", clip.id);
+                    }
+                    Ok(ServerFrame::Final { text }) => {
+                        assert!(!saw_final, "{}: unexpected second Final: {text}", clip.id);
+                        println!("{} final: {text}", clip.id);
+                        saw_final = true;
+                    }
+                    Ok(other) => panic!("{}: unexpected server frame: {other:?}", clip.id),
+                    Err(err) => panic!("{}: decode error: {err}", clip.id),
+                },
+                WsMessage::Close(_) => break,
+                other => panic!("{}: unexpected ws message: {other:?}", clip.id),
+            }
+        }
+        assert!(saw_final, "{}: expected Final before Close", clip.id);
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while server.state.live_session_count().await != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("session should unregister after finalize (late audio ignored)");
+
+        server.shutdown().await;
+    }
 }

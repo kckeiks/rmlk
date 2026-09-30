@@ -111,6 +111,57 @@ async fn finalize_returns_final_and_closes() {
 }
 
 #[tokio::test]
+async fn finalize_then_audio_does_not_emit_another_partial() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let state = new_app_state_with_drop_counter(Arc::clone(&drops));
+    let server = TestServer::spawn(state).await;
+    let mut client = server.connect().await;
+
+    client.open_session().await;
+    assert_eq!(server.state.live_session_count().await, 1);
+
+    client
+        .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
+        .await;
+    assert_eq!(
+        client.recv_frame().await,
+        ServerFrame::Partial {
+            text: "partial-1".into()
+        }
+    );
+
+    // Pipeline Finalize then a late Audio frame. The server finishes on Finalize
+    // (Final + Close) and must not feed the trailing Audio into the engine.
+    // Protocol calls post-Finalize Audio an error; with server-initiated Close
+    // after Final, the clean outcome is Final then Close and no partial-2.
+    client.send_frame(&ClientFrame::Finalize).await;
+    client
+        .send_frame(&ClientFrame::Audio { pcm16: vec![1] })
+        .await;
+
+    assert_eq!(
+        client.recv_frame().await,
+        ServerFrame::Final {
+            text: "final-1".into()
+        }
+    );
+    assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.state.live_session_count().await != 0 || drops.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("session should be freed after finalize (late audio ignored)");
+
+    assert_eq!(server.state.live_session_count().await, 0);
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn disconnect_frees_session() {
     let drops = Arc::new(AtomicUsize::new(0));
     let state = new_app_state_with_drop_counter(Arc::clone(&drops));
