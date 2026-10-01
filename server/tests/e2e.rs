@@ -91,6 +91,9 @@ mod ort_ws {
                         pcm16: chunk.clone(),
                     })
                     .await;
+                for text in client.recv_until_audio_processed().await {
+                    println!("{} partial: {text}", clip.id);
+                }
             }
             client.send_frame(&ClientFrame::Finalize).await;
 
@@ -152,17 +155,20 @@ mod ort_ws {
                     pcm16: chunk.clone(),
                 })
                 .await;
+            for text in client.recv_until_audio_processed().await {
+                println!("{} partial: {text}", clip.id);
+            }
         }
         client.send_frame(&ClientFrame::Cancel).await;
 
-        // Drain any Partial frames still buffered from the last Audio, then Close.
-        // A Final must never appear after Cancel.
+        // After Cancel the server closes. A Final must never appear.
         loop {
             match client.recv_raw().await {
                 WsMessage::Binary(bytes) => match ServerFrame::decode(&bytes) {
                     Ok(ServerFrame::Partial { text }) => {
-                        println!("{} partial (pre-cancel drain): {text}", clip.id);
+                        println!("{} partial (pre-close drain): {text}", clip.id);
                     }
+                    Ok(ServerFrame::AudioProcessed) => {}
                     Ok(ServerFrame::Final { text }) => {
                         panic!("{}: unexpected Final after Cancel: {text}", clip.id);
                     }
@@ -220,6 +226,9 @@ mod ort_ws {
                     pcm16: chunk.clone(),
                 })
                 .await;
+            for text in client.recv_until_audio_processed().await {
+                println!("{} partial: {text}", clip.id);
+            }
         }
 
         // Pipeline Finalize with an extra Audio chunk. Trailing audio must not
@@ -242,6 +251,13 @@ mod ort_ws {
                             clip.id
                         );
                         println!("{} partial: {text}", clip.id);
+                    }
+                    Ok(ServerFrame::AudioProcessed) => {
+                        assert!(
+                            !saw_final,
+                            "{}: AudioProcessed after Final (late audio was applied)",
+                            clip.id
+                        );
                     }
                     Ok(ServerFrame::Final { text }) => {
                         assert!(!saw_final, "{}: unexpected second Final: {text}", clip.id);

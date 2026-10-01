@@ -77,10 +77,8 @@ async fn audio_returns_partial() {
         })
         .await;
     assert_eq!(
-        client.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        client.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
 
     client.close().await;
@@ -96,10 +94,7 @@ async fn finalize_returns_final_and_closes() {
     client
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
         .await;
-    assert!(matches!(
-        client.recv_frame().await,
-        ServerFrame::Partial { .. }
-    ));
+    assert!(!client.recv_until_audio_processed().await.is_empty());
 
     client.send_frame(&ClientFrame::Finalize).await;
     assert_eq!(
@@ -127,10 +122,8 @@ async fn finalize_then_audio_does_not_emit_another_partial() {
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
         .await;
     assert_eq!(
-        client.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        client.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
 
     // Pipeline Finalize then a late Audio frame. The server finishes on Finalize
@@ -177,7 +170,7 @@ async fn disconnect_frees_session() {
     client
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
         .await;
-    let _ = client.recv_frame().await;
+    let _ = client.recv_until_audio_processed().await;
 
     client.close().await;
 
@@ -208,25 +201,19 @@ async fn two_clients_distinct_ids_and_finals() {
 
     a.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     assert_eq!(
-        a.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        a.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
 
     b.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     assert_eq!(
-        b.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        b.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
     b.send_frame(&ClientFrame::Audio { pcm16: vec![1] }).await;
     assert_eq!(
-        b.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-2".into()
-        }
+        b.recv_until_audio_processed().await,
+        vec!["partial-2".to_string()]
     );
 
     a.send_frame(&ClientFrame::Finalize).await;
@@ -273,25 +260,20 @@ async fn cancel_mid_utterance_closes_without_final() {
         .send_frame(&ClientFrame::Audio { pcm16: vec![0] })
         .await;
     assert_eq!(
-        client.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        client.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
     client
         .send_frame(&ClientFrame::Audio { pcm16: vec![1] })
         .await;
     assert_eq!(
-        client.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-2".into()
-        }
+        client.recv_until_audio_processed().await,
+        vec!["partial-2".to_string()]
     );
 
     client.send_frame(&ClientFrame::Cancel).await;
-    // Cancel never emits Final; the server then closes. In production, unread
-    // Partials from earlier Audio can still be buffered ahead of that Close.
-    // This test drains those Partials above so the next message is Close.
+    // Cancel never emits Final; the server then closes. Partials and AudioProcesseds
+    // from earlier Audio were drained above so the next message is Close.
     assert!(matches!(client.recv_raw().await, WsMessage::Close(_)));
 
     tokio::time::timeout(Duration::from_secs(2), async {
@@ -319,7 +301,7 @@ async fn cancel_on_a_does_not_affect_b() {
     assert_eq!(server.state.live_session_count(), 2);
 
     a.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
-    let _ = a.recv_frame().await;
+    let _ = a.recv_until_audio_processed().await;
     a.send_frame(&ClientFrame::Cancel).await;
     assert!(matches!(a.recv_raw().await, WsMessage::Close(_)));
 
@@ -334,17 +316,13 @@ async fn cancel_on_a_does_not_affect_b() {
     // B's chunk count is independent (still at 0 pushes so far).
     b.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     assert_eq!(
-        b.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-1".into()
-        }
+        b.recv_until_audio_processed().await,
+        vec!["partial-1".to_string()]
     );
     b.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
     assert_eq!(
-        b.recv_frame().await,
-        ServerFrame::Partial {
-            text: "partial-2".into()
-        }
+        b.recv_until_audio_processed().await,
+        vec!["partial-2".to_string()]
     );
     b.send_frame(&ClientFrame::Finalize).await;
     assert_eq!(
@@ -376,7 +354,7 @@ async fn disconnect_on_a_does_not_affect_b() {
     b.open_session().await;
 
     a.send_frame(&ClientFrame::Audio { pcm16: vec![0] }).await;
-    let _ = a.recv_frame().await;
+    let _ = a.recv_until_audio_processed().await;
     a.close().await;
 
     tokio::time::timeout(Duration::from_secs(2), async {
@@ -427,10 +405,8 @@ async fn many_concurrent_clients_all_receive_their_own_final() {
                     })
                     .await;
                 assert_eq!(
-                    client.recv_frame().await,
-                    ServerFrame::Partial {
-                        text: format!("partial-{}", i + 1)
-                    }
+                    client.recv_until_audio_processed().await,
+                    vec![format!("partial-{}", i + 1)]
                 );
             }
             client.send_frame(&ClientFrame::Finalize).await;

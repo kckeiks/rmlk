@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use parakeet_rs::{Nemotron, NemotronHandle};
+use parakeet_rs::{ExecutionConfig, ExecutionProvider, Nemotron, NemotronHandle};
 
 use super::{Engine, EngineError, EngineEvent};
 use crate::session::StreamState;
@@ -20,6 +20,31 @@ pub const MODEL_DIR_ENV: &str = "RMLK_NEMOTRON_MODEL_DIR";
 pub struct OrtParakeetEngine {
     handle: NemotronHandle,
     model_dir: PathBuf,
+    /// Label for logs and capacity comparisons (`cpu` or `cuda`).
+    execution_provider: &'static str,
+}
+
+/// ONNX Runtime execution provider selected at compile time for the ort engine.
+///
+/// Builds with `--features cuda` request the CUDA EP. Builds with only `ort`
+/// use CPU.
+pub fn ort_execution_provider_label() -> &'static str {
+    if crate::FEATURE_CUDA {
+        "cuda"
+    } else {
+        "cpu"
+    }
+}
+
+fn nemotron_execution_config() -> ExecutionConfig {
+    #[cfg(feature = "cuda")]
+    {
+        ExecutionConfig::new().with_execution_provider(ExecutionProvider::Cuda)
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        ExecutionConfig::new().with_execution_provider(ExecutionProvider::Cpu)
+    }
 }
 
 impl OrtParakeetEngine {
@@ -46,9 +71,15 @@ impl OrtParakeetEngine {
             }
         }
 
-        let handle = NemotronHandle::load(model_dir, None).map_err(|err| {
+        let execution_provider = ort_execution_provider_label();
+        log::info!(
+            "loading Nemotron from {} (onnx runtime execution provider: {execution_provider})",
+            model_dir.display()
+        );
+        let exec = nemotron_execution_config();
+        let handle = NemotronHandle::load(model_dir, Some(exec)).map_err(|err| {
             EngineError::Failed(format!(
-                "failed to load Nemotron model from {}: {err}",
+                "failed to load Nemotron model from {} (execution provider {execution_provider}): {err}",
                 model_dir.display()
             ))
         })?;
@@ -56,7 +87,13 @@ impl OrtParakeetEngine {
         Ok(Self {
             handle,
             model_dir: model_dir.to_path_buf(),
+            execution_provider,
         })
+    }
+
+    /// ONNX Runtime execution provider this engine was loaded with.
+    pub fn execution_provider(&self) -> &'static str {
+        self.execution_provider
     }
 
     /// Directory this engine was loaded from.

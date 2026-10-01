@@ -67,6 +67,7 @@ Maximum `payload_len`: 16 MiB. Larger values are a protocol error.
 | `2` | `Partial` | UTF-8 transcript text (may be incomplete). |
 | `3` | `Final` | UTF-8 transcript text for the completed session (or utterance). |
 | `4` | `Error` | 2 bytes little-endian `u16` error code, then UTF-8 message. |
+| `5` | `AudioProcessed` | Empty. The engine has finished the step for one `Audio` frame. |
 
 Unknown `type` values are a protocol error.
 
@@ -75,7 +76,7 @@ Unknown `type` values are a protocol error.
 1. Client connects and sends `Open`.
 2. Server replies with `OpenAck`.
 3. Client sends zero or more `Audio` frames.
-4. Server may send `Partial` frames at any time after `OpenAck`.
+4. For each `Audio`, the server sends at most one `Partial` and then always one `AudioProcessed` once the engine has finished that step. Under load the `AudioProcessed` lags the `Audio` by the time the chunk waited for the engine.
 5. Client sends `Finalize`, or `Cancel`, or closes the WebSocket.
 6. On `Finalize`, server sends `Final` (and may have sent `Partial`s first), then the session ends.
 7. On `Cancel` or socket close, the server drops session state; no further frames are required.
@@ -103,3 +104,4 @@ Audio before `Open`, or after `Finalize` / `Cancel`, is a protocol error.
 | `Partial` | `ServerFrame::Partial { text }` — UTF-8 |
 | `Final` | `ServerFrame::Final { text }` — UTF-8 |
 | `Error` | `ServerFrame::Error { code, message }` — `u16` LE + UTF-8 |
+| `AudioProcessed` | `ServerFrame::AudioProcessed` — empty payload |

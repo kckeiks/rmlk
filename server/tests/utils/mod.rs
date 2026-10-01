@@ -109,6 +109,18 @@ impl WsClient {
         ServerFrame::decode(&bytes).expect("decode server frame")
     }
 
+    /// Drain any `Partial` frames until `AudioProcessed`; returns their texts in order.
+    pub async fn recv_until_audio_processed(&mut self) -> Vec<String> {
+        let mut partials = Vec::new();
+        loop {
+            match self.recv_frame().await {
+                ServerFrame::Partial { text } => partials.push(text),
+                ServerFrame::AudioProcessed => return partials,
+                other => panic!("expected Partial or AudioProcessed, got {other:?}"),
+            }
+        }
+    }
+
     /// Receive the next WebSocket message (e.g. Close).
     pub async fn recv_raw(&mut self) -> WsMessage {
         self.ws

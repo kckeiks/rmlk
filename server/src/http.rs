@@ -14,6 +14,7 @@ use anyhow::{bail, Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
+use axum::serve::ListenerExt;
 use axum::{routing::get, Router};
 use futures_util::FutureExt;
 use tokio::net::TcpListener;
@@ -141,6 +142,11 @@ pub fn app_state_from_config(
                 })?;
                 let ort = OrtParakeetEngine::load(dir)
                     .map_err(|err| anyhow::anyhow!("failed to load OrtParakeetEngine: {err}"))?;
+                println!(
+                    "nemotron loaded from {} (onnx runtime execution provider: {})",
+                    dir.display(),
+                    ort.execution_provider()
+                );
                 let (worker, join) = EngineWorker::spawn(ort);
                 Ok((
                     AppState {
@@ -310,12 +316,17 @@ async fn session_loop<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>)
     loop {
         tokio::select! {
             event = session.recv() => match event {
-                Some(ConnEvent::Partial(Some(event))) => {
-                    if send_frame(socket, &event.into_server_frame()).await.is_err() {
+                Some(ConnEvent::Partial(partial)) => {
+                    if let Some(event) = partial {
+                        if send_frame(socket, &event.into_server_frame()).await.is_err() {
+                            return Exit::NeedsCancel;
+                        }
+                    }
+                    if send_frame(socket, &ServerFrame::AudioProcessed).await.is_err() {
                         return Exit::NeedsCancel;
                     }
                 }
-                Some(ConnEvent::Partial(None)) | Some(ConnEvent::Opened) => {}
+                Some(ConnEvent::Opened) => {}
                 Some(ConnEvent::Finalized(event)) => {
                     let _ = send_frame(socket, &event.into_server_frame()).await;
                     let _ = socket.send(Message::Close(None)).await;
@@ -428,11 +439,21 @@ pub async fn serve(
 }
 
 /// Serve with an explicit shared [`AppState`] (tests / custom wiring).
+///
+/// Accepted sockets run with `TCP_NODELAY`. The server writes small frames
+/// back to back (a `Partial` followed by `AudioProcessed`), and with Nagle on
+/// the second one waits for the client's delayed ACK, which adds around 40 ms
+/// to every step.
 pub async fn serve_with_state(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
     state: AppState,
 ) -> Result<()> {
+    let listener = listener.tap_io(|tcp| {
+        if let Err(err) = tcp.set_nodelay(true) {
+            log::warn!("failed to set TCP_NODELAY on accepted connection: {err}");
+        }
+    });
     axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown)
         .await

@@ -14,6 +14,7 @@ const SERVER_OPEN_ACK: u8 = 1;
 const SERVER_PARTIAL: u8 = 2;
 const SERVER_FINAL: u8 = 3;
 const SERVER_ERROR: u8 = 4;
+const SERVER_AUDIO_PROCESSED: u8 = 5;
 
 /// Wire `Error` codes (`server/docs/protocol.md`).
 pub mod error_code {
@@ -46,10 +47,23 @@ pub enum ClientFrame {
 /// Frames sent by the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerFrame {
-    OpenAck { session_id: u64 },
-    Partial { text: String },
-    Final { text: String },
-    Error { code: u16, message: String },
+    OpenAck {
+        session_id: u64,
+    },
+    Partial {
+        text: String,
+    },
+    Final {
+        text: String,
+    },
+    Error {
+        code: u16,
+        message: String,
+    },
+    /// The engine has finished the step for one `Audio` frame. Sent after any
+    /// `Partial` that step produced, and sent even when it produced none, so a
+    /// client can measure per-chunk latency and pace itself. Empty payload.
+    AudioProcessed,
 }
 
 /// Codec and framing failures.
@@ -121,6 +135,7 @@ impl ServerFrame {
                 payload.extend_from_slice(message.as_bytes());
                 encode_message(SERVER_ERROR, &payload)
             }
+            Self::AudioProcessed => encode_message(SERVER_AUDIO_PROCESSED, &[]),
         }
     }
 
@@ -141,6 +156,10 @@ impl ServerFrame {
             SERVER_ERROR => {
                 let (code, message) = decode_error_payload(payload)?;
                 Ok(Self::Error { code, message })
+            }
+            SERVER_AUDIO_PROCESSED => {
+                require_empty_payload(payload)?;
+                Ok(Self::AudioProcessed)
             }
             other => Err(ProtocolError::UnknownType(other)),
         }
@@ -318,6 +337,23 @@ mod tests {
     }
 
     #[test]
+    fn audio_processed_round_trip() {
+        let frame = ServerFrame::AudioProcessed;
+        let bytes = frame.encode().unwrap();
+        assert_eq!(bytes, [5, 0, 0, 0, 0]);
+        assert_eq!(ServerFrame::decode(&bytes).unwrap(), frame);
+    }
+
+    #[test]
+    fn audio_processed_rejects_non_empty_payload() {
+        let bytes = [5, 1, 0, 0, 0, 0xff];
+        assert_eq!(
+            ServerFrame::decode(&bytes).unwrap_err(),
+            ProtocolError::InvalidPayload
+        );
+    }
+
+    #[test]
     fn partial_rejects_invalid_utf8() {
         let bytes = [2, 1, 0, 0, 0, 0xff];
         assert_eq!(
@@ -462,10 +498,10 @@ mod tests {
 
     #[test]
     fn unknown_server_tag_type() {
-        let bytes = [5, 0, 0, 0, 0];
+        let bytes = [6, 0, 0, 0, 0];
         assert_eq!(
             ServerFrame::decode(&bytes).unwrap_err(),
-            ProtocolError::UnknownType(5)
+            ProtocolError::UnknownType(6)
         );
     }
 
@@ -500,6 +536,7 @@ mod tests {
             arb_utf8(256).prop_map(|text| ServerFrame::Final { text }),
             (any::<u16>(), arb_utf8(256))
                 .prop_map(|(code, message)| ServerFrame::Error { code, message }),
+            Just(ServerFrame::AudioProcessed),
         ]
     }
 
