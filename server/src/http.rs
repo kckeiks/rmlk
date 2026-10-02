@@ -31,11 +31,15 @@ use crate::worker::{ConnEvent, EngineWorker, SessionHandle, WorkerLimits};
 pub const ENGINE_MOCK: &str = "mock";
 /// Backend name for the Nemotron engine running on ONNX Runtime.
 pub const ENGINE_ORT: &str = "ort";
+/// Backend name for the in-process native NeMo SDK.
+pub const ENGINE_NEMO: &str = "nemo";
 
 /// Shared inference backend selected at process start.
 #[derive(Clone)]
 enum AppBackend {
     Mock(EngineWorker<MockEngine>),
+    #[cfg(feature = "nemo")]
+    Nemo(EngineWorker<crate::engine::NemoEngine>),
     #[cfg(feature = "ort")]
     Ort(EngineWorker<OrtParakeetEngine>),
 }
@@ -53,15 +57,19 @@ impl AppState {
     pub fn live_session_count(&self) -> usize {
         match &self.backend {
             AppBackend::Mock(worker) => worker.live_sessions(),
+            #[cfg(feature = "nemo")]
+            AppBackend::Nemo(worker) => worker.live_sessions(),
             #[cfg(feature = "ort")]
             AppBackend::Ort(worker) => worker.live_sessions(),
         }
     }
 
-    /// Human-readable backend name ([`ENGINE_MOCK`] or [`ENGINE_ORT`]).
+    /// Human-readable backend name (`mock`, `ort`, or `nemo`).
     pub fn engine_name(&self) -> &'static str {
         match &self.backend {
             AppBackend::Mock(_) => ENGINE_MOCK,
+            #[cfg(feature = "nemo")]
+            AppBackend::Nemo(_) => ENGINE_NEMO,
             #[cfg(feature = "ort")]
             AppBackend::Ort(_) => ENGINE_ORT,
         }
@@ -162,8 +170,41 @@ pub fn app_state_from_config(
                 bail!("engine `{ENGINE_ORT}` requires building with `--features ort`");
             }
         }
+        ENGINE_NEMO => {
+            #[cfg(feature = "nemo")]
+            bail!(
+                "engine `nemo` requires app_state_from_nemo_config with a library and GGUF model"
+            );
+            #[cfg(not(feature = "nemo"))]
+            bail!("engine `nemo` requires building with `--features nemo`");
+        }
         other => bail!("unknown engine `{other}` (expected `{ENGINE_MOCK}` or `{ENGINE_ORT}`)"),
     }
+}
+
+/// Build a native NeMo backend with one shared model and bounded worker slots.
+///
+/// # Safety
+/// The selected SDK must satisfy [`crate::engine::NemoEngine::load`]'s contract.
+#[cfg(feature = "nemo")]
+pub unsafe fn app_state_from_nemo_config(
+    config: &crate::engine::NemoConfig,
+) -> Result<(AppState, JoinHandle<()>)> {
+    // SAFETY: caller guarantees the selected native SDK's contract.
+    let engine = unsafe { crate::engine::NemoEngine::load(config) }?;
+    let engines = (0..config.max_sessions).map(|_| engine.clone()).collect();
+    let limits = WorkerLimits {
+        channel_capacity: WorkerLimits::default().in_flight_per_session + 2,
+        ..WorkerLimits::default()
+    };
+    let (worker, join) = EngineWorker::spawn_pool(engines, limits);
+    Ok((
+        AppState {
+            backend: AppBackend::Nemo(worker),
+            drop_counter: None,
+        },
+        join,
+    ))
 }
 
 async fn health() -> &'static str {
@@ -182,6 +223,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     match ClientFrame::decode(&first) {
         Ok(ClientFrame::Open) => match &state.backend {
             AppBackend::Mock(worker) => {
+                run_connection(socket, &state, worker).await;
+            }
+            #[cfg(feature = "nemo")]
+            AppBackend::Nemo(worker) => {
                 run_connection(socket, &state, worker).await;
             }
             #[cfg(feature = "ort")]
@@ -278,7 +323,7 @@ async fn catch_session_panic(id: SessionId, session: impl Future<Output = Exit>)
 
 /// Wait for the worker to confirm the stream, acknowledge to the client, then
 /// run the session loop.
-async fn drive_session<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>) -> Exit {
+async fn drive_session(socket: &mut WebSocket, session: &mut SessionHandle) -> Exit {
     match session.recv().await {
         Some(ConnEvent::Opened) => {}
         Some(ConnEvent::Failed(err)) => {
@@ -311,7 +356,7 @@ async fn drive_session<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>
 /// server frames as they arrive; neither side waits for the other. Once
 /// `Finalize` or `Cancel` has been forwarded to the worker the socket is no
 /// longer read, and the loop only waits for the worker's terminal event.
-async fn session_loop<C>(socket: &mut WebSocket, session: &mut SessionHandle<C>) -> Exit {
+async fn session_loop(socket: &mut WebSocket, session: &mut SessionHandle) -> Exit {
     let mut closing = false;
     loop {
         tokio::select! {

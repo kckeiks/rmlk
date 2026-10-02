@@ -32,4 +32,3 @@ serde = { version = "1.0.203", features = ["derive"] }
 
 # JSON serialization support.
 serde_json = "1.0"
-

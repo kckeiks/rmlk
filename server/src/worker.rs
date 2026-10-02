@@ -1,8 +1,8 @@
-//! Engine worker: one blocking task owns the [`Engine`] and every live
+//! Engine worker: each blocking task owns its [`Engine`] and its live
 //! [`StreamState`]. Connection tasks talk to it only through channels.
 //!
-//! Work flows through a single bounded FIFO channel of [`WorkItem`]s. Because
-//! one channel carries both control and audio for every session, per-session
+//! Work flows through a bounded FIFO channel per worker lane. Because
+//! one channel carries both control and audio for each assigned session, per-session
 //! ordering is preserved and control items stay ordered relative to audio.
 //! Replies go back on one unbounded channel per session as [`ConnEvent`]s.
 //!
@@ -20,7 +20,9 @@
 //! session that sends audio faster than the engine can consume it fills only
 //! its own allowance and cannot starve the others.
 
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,11 +68,12 @@ impl Default for WorkerLimits {
 }
 
 /// One unit of work for the engine worker.
-pub enum WorkItem<C> {
+pub enum WorkItem {
     /// Register `stream` under `id` and run [`Engine::open_stream`].
     OpenStream {
         id: SessionId,
-        stream: StreamState<C>,
+        stream: StreamState<()>,
+        admission: Option<OwnedSemaphorePermit>,
         reply_tx: mpsc::UnboundedSender<ConnEvent>,
         cancelled: Arc<AtomicBool>,
     },
@@ -112,12 +115,19 @@ struct Slot<C> {
     stream: StreamState<C>,
     reply_tx: mpsc::UnboundedSender<ConnEvent>,
     cancelled: Arc<AtomicBool>,
+    _admission: Option<OwnedSemaphorePermit>,
+}
+
+struct Lane {
+    tx: mpsc::Sender<WorkItem>,
+    admission: Option<Arc<Semaphore>>,
 }
 
 /// Handle to the engine worker. Cheap to clone; dropping the last clone lets
 /// the worker drain and exit.
 pub struct EngineWorker<E: Engine> {
-    work_tx: mpsc::Sender<WorkItem<E::CallState>>,
+    lanes: Arc<Vec<Lane>>,
+    _engine: PhantomData<fn() -> E>,
     live: Arc<AtomicUsize>,
     next_id: Arc<AtomicU64>,
     limits: WorkerLimits,
@@ -126,7 +136,8 @@ pub struct EngineWorker<E: Engine> {
 impl<E: Engine> Clone for EngineWorker<E> {
     fn clone(&self) -> Self {
         Self {
-            work_tx: self.work_tx.clone(),
+            lanes: Arc::clone(&self.lanes),
+            _engine: PhantomData,
             live: Arc::clone(&self.live),
             next_id: Arc::clone(&self.next_id),
             limits: self.limits,
@@ -142,13 +153,46 @@ impl<E: Engine + 'static> EngineWorker<E> {
 
     /// Spawn the worker with explicit limits.
     pub fn spawn_with_limits(engine: E, limits: WorkerLimits) -> (Self, JoinHandle<()>) {
-        let (work_tx, work_rx) = mpsc::channel(limits.channel_capacity);
+        Self::spawn_lanes(vec![engine], limits, false)
+    }
+
+    /// One dedicated worker per admitted session. Engines must share their
+    /// model when native batching is desired. Each lane admits one session,
+    /// pins its state to one blocking thread, and preserves its FIFO order.
+    /// Admission is fail-fast; excess sessions receive Busy before native open.
+    pub fn spawn_pool(engines: Vec<E>, limits: WorkerLimits) -> (Self, JoinHandle<()>) {
+        assert!(!engines.is_empty(), "worker pool must not be empty");
+        Self::spawn_lanes(engines, limits, true)
+    }
+
+    fn spawn_lanes(engines: Vec<E>, limits: WorkerLimits, bounded: bool) -> (Self, JoinHandle<()>) {
         let live = Arc::new(AtomicUsize::new(0));
-        let live_worker = Arc::clone(&live);
-        let join = tokio::task::spawn_blocking(move || worker_main(engine, work_rx, live_worker));
+        let mut joins = FuturesUnordered::new();
+        let mut lanes = Vec::with_capacity(engines.len());
+        for engine in engines {
+            let (tx, rx) = mpsc::channel(limits.channel_capacity);
+            let live_worker = Arc::clone(&live);
+            joins.push(tokio::task::spawn_blocking(move || {
+                worker_main(engine, rx, live_worker)
+            }));
+            lanes.push(Lane {
+                tx,
+                admission: bounded.then(|| Arc::new(Semaphore::new(1))),
+            });
+        }
+        let join = tokio::spawn(async move {
+            while let Some(result) = joins.next().await {
+                match result {
+                    Ok(()) => {}
+                    Err(err) if err.is_panic() => std::panic::resume_unwind(err.into_panic()),
+                    Err(err) => panic!("engine worker task failed: {err}"),
+                }
+            }
+        });
         (
             Self {
-                work_tx,
+                lanes: Arc::new(lanes),
+                _engine: PhantomData,
                 live,
                 next_id: Arc::new(AtomicU64::new(0)),
                 limits,
@@ -179,43 +223,73 @@ impl<E: Engine + 'static> EngineWorker<E> {
     pub async fn open(
         &self,
         id: SessionId,
-        stream: StreamState<E::CallState>,
-    ) -> Result<SessionHandle<E::CallState>, SessionError> {
+        stream: StreamState<()>,
+    ) -> Result<SessionHandle, SessionError> {
         let (reply_tx, reply_rx) = mpsc::unbounded_channel();
         let cancelled = Arc::new(AtomicBool::new(false));
-        self.send(WorkItem::OpenStream {
-            id,
-            stream,
-            reply_tx,
-            cancelled: Arc::clone(&cancelled),
-        })
+        let mut selected = None;
+        let start = (id.as_u64() % self.lanes.len() as u64) as usize;
+        for offset in 0..self.lanes.len() {
+            let lane = &self.lanes[(start + offset) % self.lanes.len()];
+            match &lane.admission {
+                None => {
+                    selected = Some((lane, None));
+                    break;
+                }
+                Some(gate) => {
+                    if let Ok(permit) = Arc::clone(gate).try_acquire_owned() {
+                        selected = Some((lane, Some(permit)));
+                        break;
+                    }
+                }
+            }
+        }
+        let (lane, admission) = selected.ok_or(SessionError::Busy)?;
+        send_item(
+            &lane.tx,
+            WorkItem::OpenStream {
+                id,
+                stream,
+                admission,
+                reply_tx,
+                cancelled: Arc::clone(&cancelled),
+            },
+        )
         .await?;
         Ok(SessionHandle {
             id,
-            work_tx: self.work_tx.clone(),
+            work_tx: lane.tx.clone(),
             reply_rx,
             cancelled,
             permits: Arc::new(Semaphore::new(self.limits.in_flight_per_session)),
             push_timeout: self.limits.push_timeout,
         })
     }
-
-    async fn send(&self, item: WorkItem<E::CallState>) -> Result<(), SessionError> {
-        send_item(&self.work_tx, item).await
-    }
 }
 
 /// Connection-side handle for one session: sends work, receives events.
-pub struct SessionHandle<C> {
+pub struct SessionHandle {
     id: SessionId,
-    work_tx: mpsc::Sender<WorkItem<C>>,
+    work_tx: mpsc::Sender<WorkItem>,
     reply_rx: mpsc::UnboundedReceiver<ConnEvent>,
     cancelled: Arc<AtomicBool>,
     permits: Arc<Semaphore>,
     push_timeout: Duration,
 }
 
-impl<C> SessionHandle<C> {
+impl Drop for SessionHandle {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+        // Normal connection cleanup awaits cancel. This covers an aborted
+        // connection future: a full lane already has work which will sweep
+        // closed reply channels before processing its next item.
+        let _ = self
+            .work_tx
+            .try_send(WorkItem::CancelStream { id: self.id });
+    }
+}
+
+impl SessionHandle {
     /// Session id this handle controls.
     pub fn id(&self) -> SessionId {
         self.id
@@ -267,10 +341,7 @@ impl<C> SessionHandle<C> {
     }
 }
 
-async fn send_item<C>(
-    tx: &mpsc::Sender<WorkItem<C>>,
-    item: WorkItem<C>,
-) -> Result<(), SessionError> {
+async fn send_item(tx: &mpsc::Sender<WorkItem>, item: WorkItem) -> Result<(), SessionError> {
     tx.send(item).await.map_err(|_| worker_stopped())
 }
 
@@ -280,35 +351,53 @@ fn worker_stopped() -> SessionError {
 
 fn worker_main<E: Engine>(
     mut engine: E,
-    mut work_rx: mpsc::Receiver<WorkItem<E::CallState>>,
+    mut work_rx: mpsc::Receiver<WorkItem>,
     live: Arc<AtomicUsize>,
 ) {
     let mut slots: HashMap<SessionId, Slot<E::CallState>> = HashMap::new();
 
     while let Some(item) = work_rx.blocking_recv() {
+        let abandoned: Vec<_> = slots
+            .iter()
+            .filter(|(_, slot)| slot.reply_tx.is_closed())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in abandoned {
+            if let Some(slot) = remove(&mut slots, &live, id) {
+                let _ = slot.stream.cancel(&mut engine);
+            }
+        }
         match item {
             WorkItem::OpenStream {
                 id,
-                mut stream,
+                stream,
+                admission,
                 reply_tx,
                 cancelled,
-            } => match engine.open_stream(&mut stream) {
-                Ok(()) => {
-                    slots.insert(
-                        id,
-                        Slot {
-                            stream,
-                            reply_tx,
-                            cancelled,
-                        },
-                    );
-                    live.fetch_add(1, Ordering::AcqRel);
-                    deliver(&mut engine, &mut slots, &live, id, ConnEvent::Opened);
+            } => {
+                let mut stream = stream.into_worker();
+                if cancelled.load(Ordering::Acquire) || reply_tx.is_closed() {
+                    continue;
                 }
-                Err(err) => {
-                    let _ = reply_tx.send(ConnEvent::Failed(SessionError::Engine(err)));
+                match engine.open_stream(&mut stream) {
+                    Ok(()) => {
+                        slots.insert(
+                            id,
+                            Slot {
+                                stream,
+                                reply_tx,
+                                cancelled,
+                                _admission: admission,
+                            },
+                        );
+                        live.fetch_add(1, Ordering::AcqRel);
+                        deliver(&mut engine, &mut slots, &live, id, ConnEvent::Opened);
+                    }
+                    Err(err) => {
+                        let _ = reply_tx.send(ConnEvent::Failed(SessionError::Engine(err)));
+                    }
                 }
-            },
+            }
             WorkItem::PushAudio {
                 id,
                 pcm16,
@@ -490,7 +579,7 @@ mod tests {
     }
 
     /// Skip partials and return on `Finalized`; anything else fails the test.
-    async fn recv_finalized<C>(session: &mut super::SessionHandle<C>) {
+    async fn recv_finalized(session: &mut super::SessionHandle) {
         loop {
             match session.recv().await {
                 Some(ConnEvent::Partial(_)) => {}
@@ -771,5 +860,165 @@ mod tests {
         // Both skipped items have been dropped by the worker, so the full
         // allowance is available again.
         assert_eq!(session.permits.available_permits(), 2);
+    }
+    #[tokio::test]
+    async fn pool_admission_is_bounded_and_reuses_released_lane() {
+        let (worker, join) = EngineWorker::spawn_pool(
+            vec![MockEngine::new(), MockEngine::new()],
+            WorkerLimits::default(),
+        );
+        let mut sessions = Vec::new();
+        for _ in 0..2 {
+            let id = worker.next_session_id();
+            let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+            assert_eq!(session.recv().await, Some(ConnEvent::Opened));
+            sessions.push(session);
+        }
+        let id = worker.next_session_id();
+        assert!(matches!(
+            worker.open(id, StreamState::new(id)).await,
+            Err(SessionError::Busy)
+        ));
+        sessions[0].cancel().await.unwrap();
+        assert_eq!(sessions[0].recv().await, Some(ConnEvent::Cancelled));
+        // The terminal event precedes release by at most the end of this worker
+        // iteration. Wait on the admission permit, rather than live count.
+        wait_until(|| {
+            worker
+                .lanes
+                .iter()
+                .any(|lane| lane.admission.as_ref().unwrap().available_permits() == 1)
+        })
+        .await;
+        let id = worker.next_session_id();
+        let mut replacement = worker.open(id, StreamState::new(id)).await.unwrap();
+        assert_eq!(replacement.recv().await, Some(ConnEvent::Opened));
+        assert_eq!(worker.live_sessions(), 2);
+        drop(replacement);
+        drop(sessions);
+        wait_until(|| worker.live_sessions() == 0).await;
+        drop(worker);
+        tokio::time::timeout(Duration::from_secs(2), join)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    struct ThreadLocalCall {
+        owner: std::thread::ThreadId,
+        _not_send: std::rc::Rc<()>,
+    }
+    impl Drop for ThreadLocalCall {
+        fn drop(&mut self) {
+            assert_eq!(self.owner, std::thread::current().id());
+        }
+    }
+    struct LocalEngine {
+        rendezvous: Arc<(Mutex<usize>, std::sync::Condvar)>,
+    }
+    impl Engine for LocalEngine {
+        type CallState = ThreadLocalCall;
+        fn open_stream(
+            &mut self,
+            state: &mut StreamState<Self::CallState>,
+        ) -> Result<(), EngineError> {
+            state.set_engine_call(ThreadLocalCall {
+                owner: std::thread::current().id(),
+                _not_send: std::rc::Rc::new(()),
+            });
+            Ok(())
+        }
+        fn push_audio(
+            &mut self,
+            state: &mut StreamState<Self::CallState>,
+            _: &[i16],
+        ) -> Result<Option<EngineEvent>, EngineError> {
+            assert_eq!(
+                state.engine_call().unwrap().owner,
+                std::thread::current().id()
+            );
+            // Fail within a bounded time if the pool accidentally serializes
+            // calls, rather than deadlocking the test's blocking threads.
+            let (count, ready) = &*self.rendezvous;
+            let mut count = count.lock().unwrap();
+            *count += 1;
+            ready.notify_all();
+            let (count, _) = ready
+                .wait_timeout_while(count, Duration::from_secs(2), |count| *count < 2)
+                .unwrap();
+            assert_eq!(*count, 2, "engine calls must overlap");
+            Ok(None)
+        }
+        fn finalize(
+            &mut self,
+            state: &mut StreamState<Self::CallState>,
+        ) -> Result<EngineEvent, EngineError> {
+            state.clear_engine_call();
+            Ok(EngineEvent::Final {
+                text: String::new(),
+            })
+        }
+        fn cancel(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError> {
+            state.clear_engine_call();
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn pool_keeps_non_send_state_on_one_thread_and_overlaps_calls() {
+        let rendezvous = Arc::new((Mutex::new(0), std::sync::Condvar::new()));
+        let engines = (0..2)
+            .map(|_| LocalEngine {
+                rendezvous: Arc::clone(&rendezvous),
+            })
+            .collect();
+        let (worker, join) = EngineWorker::spawn_pool(engines, WorkerLimits::default());
+        let mut sessions = Vec::new();
+        for _ in 0..2 {
+            let id = worker.next_session_id();
+            let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+            assert_eq!(session.recv().await, Some(ConnEvent::Opened));
+            session.push_audio(vec![0]).await.unwrap();
+            sessions.push(session);
+        }
+        for session in &mut sessions {
+            assert_eq!(session.recv().await, Some(ConnEvent::Partial(None)));
+            session.finalize().await.unwrap();
+            recv_finalized(session).await;
+        }
+        drop(sessions);
+        drop(worker);
+        tokio::time::timeout(Duration::from_secs(2), join)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_open_returns_admission_slot() {
+        let (worker, join) = EngineWorker::spawn_pool(
+            vec![CountingEngine {
+                fail_open: true,
+                ..CountingEngine::default()
+            }],
+            WorkerLimits::default(),
+        );
+        for _ in 0..3 {
+            let id = worker.next_session_id();
+            let mut session = worker.open(id, StreamState::new(id)).await.unwrap();
+            assert!(matches!(session.recv().await, Some(ConnEvent::Failed(_))));
+            wait_until(|| {
+                worker.lanes[0]
+                    .admission
+                    .as_ref()
+                    .unwrap()
+                    .available_permits()
+                    == 1
+            })
+            .await;
+        }
+        assert_eq!(worker.live_sessions(), 0);
+        drop(worker);
+        join.await.unwrap();
     }
 }

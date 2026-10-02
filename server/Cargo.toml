@@ -17,6 +17,9 @@ ort = ["dep:parakeet-rs", "dep:hound"]
 # ORT with CUDA EP. Implies `ort`.
 cuda = ["ort", "parakeet-rs/cuda"]
 
+# Native NeMo SDK is loaded at runtime; CUDA is selected by that SDK.
+nemo = ["dep:nemo-speech"]
+
 [dependencies]
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
@@ -28,6 +31,7 @@ log = { workspace = true }
 # Pinned to 0.3.6: uses ort 2.0.0-rc.12 (same as rmlk-runtime). 0.3.7+ needs
 # ort rc.13 and conflicts with the workspace lock (rc.13 is CUDA-13-only).
 parakeet-rs = { version = "=0.3.6", optional = true }
+nemo-speech = { git = "https://github.com/kckeiks/nemo-speech.git", rev = "262354c79631f2b32a69203416d1584d1300dfaf", optional = true }
 thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
@@ -40,6 +44,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.29"
 tower = { version = "0.5", features = ["util"] }

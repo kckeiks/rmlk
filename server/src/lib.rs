@@ -15,6 +15,9 @@ pub const FEATURE_ORT: bool = cfg!(feature = "ort");
 /// `true` when built with `--features cuda`.
 pub const FEATURE_CUDA: bool = cfg!(feature = "cuda");
 
+/// `true` when built with the optional native NeMo adapter.
+pub const FEATURE_NEMO: bool = cfg!(feature = "nemo");
+
 /// Best-effort text of a panic payload for logging.
 pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
     if let Some(s) = payload.downcast_ref::<&str>() {
@@ -49,6 +52,7 @@ pub fn install_panic_hook() {
 
 #[cfg(test)]
 mod feature_tests {
+    #[cfg(not(any(feature = "ort", feature = "cuda")))]
     #[test]
     fn default_build_excludes_ort_and_cuda() {
         assert!(

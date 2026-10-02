@@ -24,8 +24,8 @@ impl SessionId {
     }
 }
 
-/// Per-call streaming state. The connection task creates it and hands it to
-/// the engine worker, which owns it for the life of the session.
+/// Per-call streaming state. Connections send empty session metadata; the
+/// engine worker creates backend state locally and owns it for the session.
 ///
 /// `C` is the engine's [`Engine::CallState`] (caches, tokens, transcript).
 /// Protocol code must not depend on the fields of `C`; only the engine does.
@@ -119,6 +119,20 @@ impl<C> StreamState<C> {
     /// Cancel through `engine` without a final transcript, then drop state.
     pub fn cancel<E: Engine<CallState = C>>(mut self, engine: &mut E) -> Result<(), SessionError> {
         Ok(engine.cancel(&mut self)?)
+    }
+}
+
+impl StreamState<()> {
+    /// Transfer only session metadata into worker-local state. Backend state is
+    /// created after this transfer, so thread-bound native handles never travel
+    /// through the work channel.
+    pub(crate) fn into_worker<C>(mut self) -> StreamState<C> {
+        StreamState {
+            session_id: self.session_id,
+            chunks_pushed: self.chunks_pushed,
+            drop_counter: self.drop_counter.take(),
+            engine_call: None,
+        }
     }
 }
 

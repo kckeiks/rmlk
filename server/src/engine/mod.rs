@@ -8,6 +8,11 @@ mod parakeet;
 #[cfg(feature = "ort")]
 pub use parakeet::{OrtParakeetEngine, CHUNK_SAMPLES, MODEL_DIR_ENV};
 
+#[cfg(feature = "nemo")]
+mod nemo;
+#[cfg(feature = "nemo")]
+pub use nemo::{NemoConfig, NemoEngine};
+
 use std::time::Duration;
 
 use thiserror::Error;
@@ -47,8 +52,8 @@ pub enum EngineError {
 /// [`Engine::CallState`] is monomorphized into [`StreamState`]; there is no
 /// type erasure.
 pub trait Engine: Send {
-    /// Per-call caches / tokens / transcript owned by the connection task.
-    type CallState: Send;
+    /// Per-call state created and owned on the worker thread; it need not be Send.
+    type CallState;
 
     /// Prepare per-call inference state when a session opens.
     fn open_stream(&mut self, state: &mut StreamState<Self::CallState>) -> Result<(), EngineError>;

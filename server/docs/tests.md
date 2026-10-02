@@ -50,3 +50,10 @@ and [`test-data.md`](test-data.md).
 | `RMLK_TESTDATA_CACHE` | Flat `{id}.wav` directory (default `<repo>/.cache/rmlk/testdata`) |
 
 Details: [`test-data.md`](test-data.md).
+
+## Native NeMo e2e (ignored)
+
+Build with `--features nemo` to test the in-process GGUF backend. The host suite
+needs no native SDK; the opt-in native WebSocket gate needs a trusted SDK, model,
+and the checksum-verified e2e WAVs. See [nemo.md](nemo.md) for setup, commands,
+thread ownership, admission/batching settings, and recorded GPU validation.
